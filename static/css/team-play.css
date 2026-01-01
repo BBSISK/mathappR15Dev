@@ -1,0 +1,596 @@
+/**
+ * Team Play Styles - AgentMath
+ * Version 1.1 - December 2025
+ */
+
+/* ==================== SIDEBAR CARD ==================== */
+.team-play-card {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    border-radius: 16px;
+    padding: 20px;
+    color: white;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+}
+
+.team-play-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.team-play-icon {
+    font-size: 1.5rem;
+}
+
+.team-play-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.team-play-badge {
+    background: #fbbf24;
+    color: #1f2937;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 12px;
+    margin-left: auto;
+}
+
+.team-play-bonus-banner {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% { background: rgba(255, 255, 255, 0.15); }
+    50% { background: rgba(255, 255, 255, 0.25); }
+}
+
+.team-play-bonus-banner .bonus-icon {
+    font-size: 1.3rem;
+}
+
+.team-play-bonus-banner .bonus-text {
+    font-size: 0.9rem;
+}
+
+.team-play-description {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    margin-bottom: 15px;
+    line-height: 1.4;
+}
+
+.team-play-bonus-details {
+    display: flex;
+    justify-content: space-between;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 15px;
+}
+
+.bonus-tier {
+    text-align: center;
+    flex: 1;
+}
+
+.bonus-tier .players {
+    display: block;
+    font-size: 0.75rem;
+    opacity: 0.8;
+}
+
+.bonus-tier .bonus {
+    display: block;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fbbf24;
+}
+
+.team-play-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.team-play-btn {
+    flex: 1;
+    padding: 12px 16px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.team-play-btn.create {
+    background: white;
+    color: #7c3aed;
+}
+
+.team-play-btn.create:hover {
+    background: #f3f4f6;
+    transform: scale(1.02);
+}
+
+.team-play-btn.join {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+}
+
+.team-play-btn.join:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.02);
+}
+
+/* ==================== MODAL ==================== */
+.team-play-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 20px;
+}
+
+.team-play-modal-content {
+    background: white;
+    border-radius: 20px;
+    max-width: 450px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+}
+
+.team-play-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.team-play-close {
+    background: none;
+    border: none;
+    font-size: 1.8rem;
+    color: #9ca3af;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.team-play-close:hover {
+    color: #6b7280;
+}
+
+.team-play-modal-body {
+    padding: 24px;
+}
+
+.team-play-bonus-highlight {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    border: 2px solid #fbbf24;
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.bonus-highlight-icon {
+    font-size: 2rem;
+}
+
+.bonus-highlight-text {
+    font-size: 0.95rem;
+    color: #92400e;
+    line-height: 1.4;
+}
+
+.team-play-form-group {
+    margin-bottom: 20px;
+}
+
+.team-play-form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #374151;
+}
+
+.team-play-form-group select,
+.team-play-form-group input {
+    width: 100%;
+    padding: 14px 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+.team-play-form-group select:focus,
+.team-play-form-group input:focus {
+    outline: none;
+    border-color: #8b5cf6;
+}
+
+.team-play-form-group select optgroup {
+    font-weight: 700;
+    color: #4b5563;
+    background: #f9fafb;
+}
+
+.team-play-form-group select option {
+    font-weight: 400;
+    color: #1f2937;
+    padding: 8px;
+}
+
+.team-play-create-btn,
+.team-play-join-btn {
+    width: 100%;
+    padding: 16px;
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.team-play-create-btn:hover,
+.team-play-join-btn:hover {
+    transform: scale(1.02);
+    box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4);
+}
+
+/* ==================== WAITING ROOM ==================== */
+.team-play-fullscreen {
+    padding: 0;
+}
+
+.team-play-waiting-room {
+    background: white;
+    width: 100%;
+    max-width: 800px;
+    height: 90vh;
+    max-height: 700px;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.waiting-room-header {
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: white;
+    padding: 20px 24px;
+    text-align: center;
+}
+
+.waiting-room-header h2 {
+    margin: 0 0 15px 0;
+    font-size: 1.4rem;
+}
+
+.session-code-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 12px 20px;
+}
+
+.code-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.code-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 3px;
+    cursor: pointer;
+}
+
+.copy-btn {
+    background: white;
+    color: #7c3aed;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.waiting-room-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.players-section {
+    flex: 1;
+    padding: 20px;
+    border-right: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+}
+
+.players-section h3,
+.chat-section h3 {
+    margin: 0 0 15px 0;
+    font-size: 1rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.players-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.player-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f9fafb;
+    border-radius: 10px;
+    margin-bottom: 8px;
+}
+
+.player-item.organiser {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+}
+
+.player-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 1.2rem;
+}
+
+.player-name {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.host-badge {
+    margin-left: auto;
+    background: #f59e0b;
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 10px;
+}
+
+.bonus-reminder {
+    margin-top: 15px;
+    padding: 12px;
+    background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+    border: 1px solid #6ee7b7;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    color: #065f46;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.chat-section {
+    flex: 1;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    background: #f9fafb;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.chat-message {
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+}
+
+.chat-player {
+    font-weight: 600;
+    color: #7c3aed;
+}
+
+.chat-text {
+    color: #374151;
+}
+
+.chat-input-area {
+    display: flex;
+    gap: 8px;
+}
+
+.chat-input-area input {
+    flex: 1;
+    padding: 12px;
+    border: 2px solid #e5e7eb;
+    border-radius: 10px;
+}
+
+.chat-input-area button {
+    padding: 12px 20px;
+    background: #8b5cf6;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.waiting-room-footer {
+    padding: 20px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.start-quiz-btn {
+    padding: 14px 30px;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.start-quiz-btn:disabled {
+    background: #d1d5db;
+    cursor: not-allowed;
+}
+
+.waiting-message {
+    color: #6b7280;
+    font-style: italic;
+}
+
+.leave-btn {
+    padding: 14px 24px;
+    background: #f3f4f6;
+    color: #6b7280;
+    border: none;
+    border-radius: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.leave-btn:hover {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+/* ==================== INVITATION POPUP ==================== */
+.team-play-invitation-popup {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    padding: 20px;
+    max-width: 320px;
+    z-index: 10001;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.invitation-content {
+    text-align: center;
+}
+
+.invitation-icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+}
+
+.invitation-text {
+    margin-bottom: 15px;
+    color: #374151;
+}
+
+.invitation-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.invitation-buttons button {
+    flex: 1;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.invitation-buttons button:first-child {
+    background: #8b5cf6;
+    color: white;
+}
+
+.invitation-buttons button.decline {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+/* ==================== RESPONSIVE ==================== */
+@media (max-width: 768px) {
+    .waiting-room-content {
+        flex-direction: column;
+    }
+    
+    .players-section {
+        border-right: none;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    
+    .team-play-bonus-details {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .bonus-tier {
+        display: flex;
+        justify-content: space-between;
+        padding: 5px 10px;
+    }
+}

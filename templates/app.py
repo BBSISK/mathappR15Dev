@@ -1,0 +1,17203 @@
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, send_from_directory
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
+from datetime import datetime, timedelta, date
+import os
+import random
+import re
+import uuid
+from werkzeug.utils import secure_filename
+import json
+
+# Import Irish school calendar for streak tracking
+try:
+    from irish_school_calendar import (
+        is_school_day, is_consecutive_school_day, should_reset_streak,
+        get_streak_milestone, get_next_milestone, STREAK_MILESTONES
+    )
+    IRISH_CALENDAR_ENABLED = True
+except ImportError:
+    IRISH_CALENDAR_ENABLED = False
+    print("Warning: irish_school_calendar.py not found - using simple streak logic")
+
+# Import Adaptive Learning System
+try:
+    from adaptive_learning_routes import register_adaptive_routes, update_adaptive_after_quiz
+    ADAPTIVE_LEARNING_AVAILABLE = True
+except ImportError:
+    ADAPTIVE_LEARNING_AVAILABLE = False
+    print("Note: Adaptive Learning System not available")
+
+# Import Adaptive Question System (parallel system with _adaptive suffix)
+try:
+    from question_generator_adaptive import register_adaptive_generator_routes
+    ADAPTIVE_GENERATOR_AVAILABLE = True
+except ImportError:
+    ADAPTIVE_GENERATOR_AVAILABLE = False
+    print("Note: Adaptive Question Generator not available")
+
+try:
+    from adaptive_quiz_engine import register_adaptive_quiz_routes
+    ADAPTIVE_QUIZ_ENGINE_AVAILABLE = True
+except ImportError:
+    ADAPTIVE_QUIZ_ENGINE_AVAILABLE = False
+    print("Note: Adaptive Quiz Engine not available")
+
+# Import Team Play System
+try:
+    from team_play_routes import register_team_play_routes
+    TEAM_PLAY_AVAILABLE = True
+except ImportError:
+    TEAM_PLAY_AVAILABLE = False
+    print("Note: Team Play System not available")
+
+app = Flask(__name__)
+
+# ==================== FEATURE FLAGS ====================
+# Avatar system can be disabled instantly by setting these to False
+# Set via environment variables or change defaults here
+FEATURE_FLAGS = {
+    'AVATAR_SYSTEM_ENABLED': os.environ.get('AVATAR_SYSTEM_ENABLED', 'false').lower() == 'true',
+    'AVATAR_SHOP_ENABLED': os.environ.get('AVATAR_SHOP_ENABLED', 'false').lower() == 'true',
+    'AVATAR_ON_QUIZ_ENABLED': os.environ.get('AVATAR_ON_QUIZ_ENABLED', 'false').lower() == 'true',
+    'AVATAR_ON_LEADERBOARD_ENABLED': os.environ.get('AVATAR_ON_LEADERBOARD_ENABLED', 'false').lower() == 'true',
+    'PRIZE_SYSTEM_ENABLED': os.environ.get('PRIZE_SYSTEM_ENABLED', 'false').lower() == 'true',
+}
+
+def get_feature_flag(flag_name):
+    """Get a feature flag value"""
+    return FEATURE_FLAGS.get(flag_name, False)
+# ==================== FALLBACK TOPIC CONFIGURATION ====================
+# FALLBACK ONLY - Primary source is the `topics` database table
+# This list is used ONLY when database is unavailable
+# To add new topics, use Admin Dashboard > Topic Management
+FALLBACK_TOPICS = [
+    # Number Strand
+    'arithmetic', 'fractions', 'decimals', 'multiplication_division',
+    'number_systems', 'bodmas', 'sets', 'surds',
+    
+    # Algebra and Functions Strand
+    'introductory_algebra', 'functions', 'patterns', 'solving_equations',
+    'simplifying_expressions', 'expanding_factorising',
+    'complex_numbers_intro', 'complex_numbers_expanded', 'simultaneous_equations',
+    
+    # Geometry and Trigonometry Strand
+    'coordinate_geometry', 'trigonometry',
+    
+    # Statistics and Probability Strand
+    'probability', 'descriptive_statistics',
+]
+
+VALID_DIFFICULTIES = ['beginner', 'intermediate', 'advanced']
+
+# Cache for database topics (refreshed periodically)
+_topics_cache = {'topics': None, 'timestamp': None}
+_CACHE_DURATION_SECONDS = 300  # 5 minutes
+
+def get_valid_topics_from_db():
+    """
+    Get valid topics from the database `topics` table.
+    Returns list of topic_id strings that are visible.
+    Falls back to FALLBACK_TOPICS if database unavailable.
+    
+    This is the SINGLE SOURCE OF TRUTH for topic validation.
+    When you add a topic via Admin Dashboard, it automatically becomes valid everywhere.
+    """
+    import time
+    from sqlalchemy import text
+    
+    # Check cache first
+    current_time = time.time()
+    if (_topics_cache['topics'] is not None and 
+        _topics_cache['timestamp'] is not None and
+        current_time - _topics_cache['timestamp'] < _CACHE_DURATION_SECONDS):
+        return _topics_cache['topics']
+    
+    try:
+        # Query visible topics from database
+        result = db.session.execute(text(
+            "SELECT topic_id FROM topics WHERE is_visible = 1"
+        )).fetchall()
+        
+        if result:
+            topics = [row[0] for row in result]
+            # Update cache
+            _topics_cache['topics'] = topics
+            _topics_cache['timestamp'] = current_time
+            return topics
+        else:
+            # No topics in database, use fallback
+            return FALLBACK_TOPICS
+            
+    except Exception as e:
+        # Database error, use fallback
+        print(f"Warning: Could not load topics from database: {e}")
+        return FALLBACK_TOPICS
+
+def invalidate_topics_cache():
+    """Call this after adding/removing topics via admin to refresh cache immediately"""
+    _topics_cache['topics'] = None
+    _topics_cache['timestamp'] = None
+
+
+app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mathquiz.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Session configuration for guest mode
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+
+# ==================== WHO AM I CONFIGURATION ====================
+UPLOAD_FOLDER = 'static/who_am_i_images'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+db = SQLAlchemy(app)
+
+# ==================== TEMPLATE CONTEXT PROCESSOR ====================
+@app.context_processor
+def inject_feature_flags():
+    """Make feature flags available in all templates"""
+    return {
+        'feature_flags': FEATURE_FLAGS,
+        'avatar_enabled': FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False)
+    }
+# ==================== SESSION SECURITY ====================
+@app.after_request
+def add_no_cache_headers(response):
+    """Add no-cache headers to authenticated pages to prevent back-button session resumption"""
+    # Only add headers to HTML responses (not API calls or static files)
+    if 'text/html' in response.content_type:
+        # Check if this is an authenticated route (has user_id in session)
+        if 'user_id' in session or 'is_guest' in session:
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+    return response
+
+
+
+# ==================== DATABASE MODELS ====================
+
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    full_name = db.Column(db.String(100), nullable=False)
+    role = db.Column(db.String(20), nullable=False)  # 'student', 'teacher', 'admin'
+    is_approved = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    quiz_attempts = db.relationship('QuizAttempt', backref='user', lazy=True)
+    classes_enrolled = db.relationship('ClassEnrollment', backref='student', lazy=True)
+    classes_teaching = db.relationship('Class', backref='teacher', lazy=True)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'full_name': self.full_name,
+            'role': self.role,
+            'is_approved': self.is_approved,
+            'created_at': self.created_at.isoformat()
+        }
+
+class Class(db.Model):
+    __tablename__ = 'classes'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    enrollments = db.relationship('ClassEnrollment', backref='class_obj', lazy=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'teacher_id': self.teacher_id,
+            'teacher_name': self.teacher.full_name if self.teacher else None,
+            'student_count': len(self.enrollments),
+            'created_at': self.created_at.isoformat()
+        }
+
+class ClassEnrollment(db.Model):
+    __tablename__ = 'class_enrollments'
+    id = db.Column(db.Integer, primary_key=True)
+    class_id = db.Column(db.Integer, db.ForeignKey('classes.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    enrolled_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint('class_id', 'student_id', name='unique_enrollment'),)
+
+class Question(db.Model):
+    __tablename__ = 'questions'
+    id = db.Column(db.Integer, primary_key=True)
+    topic = db.Column(db.String(50), nullable=False)
+    difficulty = db.Column(db.String(20), nullable=False)
+    question_text = db.Column(db.Text, nullable=False)
+    option_a = db.Column(db.String(100), nullable=False)
+    option_b = db.Column(db.String(100), nullable=False)
+    option_c = db.Column(db.String(100), nullable=False)
+    option_d = db.Column(db.String(100), nullable=False)
+    correct_answer = db.Column(db.Integer, nullable=False)
+    explanation = db.Column(db.Text, nullable=False)
+    # Phase 1: Image support
+    image_url = db.Column(db.String(500), nullable=True)  # Path to image file
+    image_caption = db.Column(db.String(200), nullable=True)  # Optional caption
+    # Phase 1: Hints
+    hint_text = db.Column(db.String(500), nullable=True)  # Optional hint
+    hint_penalty = db.Column(db.Integer, default=50)  # Percentage of points lost for using hint
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'topic': self.topic,
+            'difficulty': self.difficulty,
+            'question': self.question_text,
+            'options': [self.option_a, self.option_b, self.option_c, self.option_d],
+            'correct': self.correct_answer,
+            'explanation': self.explanation,
+            'image_url': self.image_url,
+            'image_caption': self.image_caption,
+            'hint_text': self.hint_text,
+            'hint_penalty': self.hint_penalty or 50,
+            'has_image': bool(self.image_url),
+            'has_hint': bool(self.hint_text)
+        }
+
+class QuestionFlag(db.Model):
+    """Track user-reported issues with questions - supports both registered and guest users"""
+    __tablename__ = 'question_flags'
+    id = db.Column(db.Integer, primary_key=True)
+    question_id = db.Column(db.Integer, db.ForeignKey('questions.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # Now nullable for guests
+    guest_identifier = db.Column(db.String(100), nullable=True)  # For guest users
+    guest_email = db.Column(db.String(120), nullable=True)  # Optional guest email
+    flag_type = db.Column(db.String(50), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    admin_notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    resolved_at = db.Column(db.DateTime)
+    resolved_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+
+    question = db.relationship('Question', backref='flags')
+    reporter = db.relationship('User', foreign_keys=[user_id], backref='flags_reported')
+    resolver = db.relationship('User', foreign_keys=[resolved_by], backref='flags_resolved')
+
+    def to_dict(self):
+        # Determine reporter name
+        if self.user_id:
+            reporter_name = self.reporter.full_name if self.reporter else 'Unknown User'
+        else:
+            reporter_name = f"Guest ({self.guest_identifier or 'Anonymous'})"
+
+        return {
+            'id': self.id,
+            'question_id': self.question_id,
+            'user_id': self.user_id,
+            'user_name': reporter_name,
+            'guest_email': self.guest_email,
+            'flag_type': self.flag_type,
+            'description': self.description,
+            'status': self.status,
+            'admin_notes': self.admin_notes,
+            'created_at': self.created_at.isoformat(),
+            'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None,
+            'resolver_name': self.resolver.full_name if self.resolver else None
+        }
+
+
+class AdaptiveQuestionFlag(db.Model):
+    """Track user-reported issues with adaptive quiz questions"""
+    __tablename__ = 'adaptive_question_flags'
+    id = db.Column(db.Integer, primary_key=True)
+    question_id = db.Column(db.Integer, nullable=False)  # References questions_adaptive.id
+    topic = db.Column(db.String(50), nullable=False)  # Topic for context
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    guest_identifier = db.Column(db.String(100), nullable=True)
+    flag_type = db.Column(db.String(50), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    question_text = db.Column(db.Text)  # Store question text for reference
+    status = db.Column(db.String(20), default='pending')
+    admin_notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    resolved_at = db.Column(db.DateTime)
+    resolved_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+
+    reporter = db.relationship('User', foreign_keys=[user_id], backref='adaptive_flags_reported')
+    resolver = db.relationship('User', foreign_keys=[resolved_by], backref='adaptive_flags_resolved')
+
+    def to_dict(self):
+        if self.user_id:
+            reporter_name = self.reporter.full_name if self.reporter else 'Unknown User'
+        else:
+            reporter_name = f"Guest ({self.guest_identifier or 'Anonymous'})"
+
+        return {
+            'id': self.id,
+            'question_id': self.question_id,
+            'topic': self.topic,
+            'user_id': self.user_id,
+            'user_name': reporter_name,
+            'flag_type': self.flag_type,
+            'description': self.description,
+            'question_text': self.question_text,
+            'status': self.status,
+            'admin_notes': self.admin_notes,
+            'created_at': self.created_at.isoformat(),
+            'resolved_at': self.resolved_at.isoformat() if self.resolved_at else None,
+            'resolver_name': self.resolver.full_name if self.resolver else None,
+            'is_adaptive': True
+        }
+
+
+class QuestionEdit(db.Model):
+    """Track all edits made to questions"""
+    __tablename__ = 'question_edits'
+    id = db.Column(db.Integer, primary_key=True)
+    question_id = db.Column(db.Integer, db.ForeignKey('questions.id'), nullable=False)
+    edited_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    edit_type = db.Column(db.String(50), nullable=False)
+
+    old_question_text = db.Column(db.Text)
+    old_option_a = db.Column(db.String(100))
+    old_option_b = db.Column(db.String(100))
+    old_option_c = db.Column(db.String(100))
+    old_option_d = db.Column(db.String(100))
+    old_correct_answer = db.Column(db.Integer)
+    old_explanation = db.Column(db.Text)
+
+    new_question_text = db.Column(db.Text)
+    new_option_a = db.Column(db.String(100))
+    new_option_b = db.Column(db.String(100))
+    new_option_c = db.Column(db.String(100))
+    new_option_d = db.Column(db.String(100))
+    new_correct_answer = db.Column(db.Integer)
+    new_explanation = db.Column(db.Text)
+
+    edit_notes = db.Column(db.Text)
+    edited_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    question = db.relationship('Question', backref='edit_history')
+    editor = db.relationship('User', backref='question_edits')
+
+    def to_dict(self):
+        changes = {}
+        if self.old_question_text != self.new_question_text:
+            changes['question_text'] = {'old': self.old_question_text, 'new': self.new_question_text}
+        if self.old_option_a != self.new_option_a:
+            changes['option_a'] = {'old': self.old_option_a, 'new': self.new_option_a}
+        if self.old_option_b != self.new_option_b:
+            changes['option_b'] = {'old': self.old_option_b, 'new': self.new_option_b}
+        if self.old_option_c != self.new_option_c:
+            changes['option_c'] = {'old': self.old_option_c, 'new': self.new_option_c}
+        if self.old_option_d != self.new_option_d:
+            changes['option_d'] = {'old': self.old_option_d, 'new': self.new_option_d}
+        if self.old_correct_answer != self.new_correct_answer:
+            changes['correct_answer'] = {'old': self.old_correct_answer, 'new': self.new_correct_answer}
+        if self.old_explanation != self.new_explanation:
+            changes['explanation'] = {'old': self.old_explanation, 'new': self.new_explanation}
+
+        return {
+            'id': self.id,
+            'question_id': self.question_id,
+            'edited_by': self.editor.full_name,
+            'edit_type': self.edit_type,
+            'edit_notes': self.edit_notes,
+            'edited_at': self.edited_at.isoformat(),
+            'changes': changes
+        }
+
+class QuizAttempt(db.Model):
+    __tablename__ = 'quiz_attempts'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    topic = db.Column(db.String(50), nullable=False)
+    difficulty = db.Column(db.String(20), nullable=False)
+    score = db.Column(db.Integer, nullable=False)
+    total_questions = db.Column(db.Integer, nullable=False)
+    percentage = db.Column(db.Float, nullable=False)
+    time_taken = db.Column(db.Integer)  # seconds
+    completed_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'user_name': self.user.full_name,
+            'topic': self.topic,
+            'difficulty': self.difficulty,
+            'score': self.score,
+            'total_questions': self.total_questions,
+            'percentage': self.percentage,
+            'time_taken': self.time_taken,
+            'completed_at': self.completed_at.isoformat()
+        }
+
+# ==================== BADGES & PROGRESS TRACKING MODELS ====================
+
+class Badge(db.Model):
+    """Badge definitions"""
+    __tablename__ = 'badges'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    description = db.Column(db.Text, nullable=False)
+    icon = db.Column(db.String(50), nullable=False)
+    category = db.Column(db.String(50), nullable=False)  # beginner, progress, accuracy, streak, mastery
+    requirement_type = db.Column(db.String(50), nullable=False)
+    requirement_value = db.Column(db.Integer, nullable=False)
+    points = db.Column(db.Integer, default=10)
+    color = db.Column(db.String(50), default='blue')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'icon': self.icon,
+            'category': self.category,
+            'requirement_type': self.requirement_type,
+            'requirement_value': self.requirement_value,
+            'points': self.points,
+            'color': self.color
+        }
+
+class UserBadge(db.Model):
+    """Tracks badges earned by users"""
+    __tablename__ = 'user_badges'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    badge_id = db.Column(db.Integer, db.ForeignKey('badges.id'), nullable=False)
+    earned_at = db.Column(db.DateTime, default=datetime.utcnow)
+    progress = db.Column(db.Integer, default=0)
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'badge_id', name='unique_user_badge'),)
+
+    badge = db.relationship('Badge', backref='earned_by')
+    user = db.relationship('User', backref='earned_badges')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'badge': self.badge.to_dict(),
+            'earned_at': self.earned_at.isoformat(),
+            'progress': self.progress
+        }
+
+class UserStats(db.Model):
+    """Overall user statistics and progress"""
+    __tablename__ = 'user_stats'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
+    total_quizzes = db.Column(db.Integer, default=0)
+    total_questions_answered = db.Column(db.Integer, default=0)
+    total_correct_answers = db.Column(db.Integer, default=0)
+    current_streak_days = db.Column(db.Integer, default=0)
+    longest_streak_days = db.Column(db.Integer, default=0)
+    last_quiz_date = db.Column(db.Date)
+    total_points = db.Column(db.Integer, default=0)
+    level = db.Column(db.Integer, default=1)
+    topics_mastered = db.Column(db.Integer, default=0)
+    perfect_scores = db.Column(db.Integer, default=0)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Prize Shop PIN protection
+    prize_pin = db.Column(db.String(50), nullable=True)  # The passcode (stored lowercase)
+    prize_pin_hint = db.Column(db.String(100), nullable=True)  # Hint like "Family" or "Pet"
+
+    user = db.relationship('User', backref='stats', uselist=False)
+
+    def to_dict(self):
+        overall_accuracy = 0
+        if self.total_questions_answered > 0:
+            overall_accuracy = round((self.total_correct_answers / self.total_questions_answered) * 100, 1)
+
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'total_quizzes': self.total_quizzes,
+            'total_questions_answered': self.total_questions_answered,
+            'total_correct_answers': self.total_correct_answers,
+            'overall_accuracy': overall_accuracy,
+            'current_streak_days': self.current_streak_days,
+            'longest_streak_days': self.longest_streak_days,
+            'last_quiz_date': self.last_quiz_date.isoformat() if self.last_quiz_date else None,
+            'total_points': self.total_points,
+            'level': self.level,
+            'topics_mastered': self.topics_mastered,
+            'perfect_scores': self.perfect_scores,
+            'updated_at': self.updated_at.isoformat()
+        }
+
+# ==================== AVATAR SYSTEM MODELS ====================
+# These models support the avatar customization feature
+# BACKOUT: Set AVATAR_SYSTEM_ENABLED=false to disable without removing code
+
+class AvatarItem(db.Model):
+    """Shop items - animals, hats, glasses, backgrounds, accessories"""
+    __tablename__ = 'avatar_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_type = db.Column(db.String(50), nullable=False)  # 'animal', 'hat', 'glasses', 'background', 'accessory'
+    item_key = db.Column(db.String(50), nullable=False)   # 'panda', 'crown', etc.
+    display_name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    point_cost = db.Column(db.Integer, nullable=False, default=0)
+    rarity = db.Column(db.String(20), default='common')  # 'common', 'rare', 'epic', 'legendary'
+    is_default = db.Column(db.Boolean, default=False)    # Free starter items
+    is_active = db.Column(db.Boolean, default=True)      # Can hide items without deleting
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint('item_type', 'item_key', name='unique_item_type_key'),)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'item_type': self.item_type,
+            'item_key': self.item_key,
+            'display_name': self.display_name,
+            'description': self.description,
+            'point_cost': self.point_cost,
+            'rarity': self.rarity,
+            'is_default': self.is_default,
+            'is_active': self.is_active,
+            'sort_order': self.sort_order
+        }
+
+class UserAvatarInventory(db.Model):
+    """Tracks which items users/guests have purchased"""
+    __tablename__ = 'user_avatar_inventory'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    guest_code = db.Column(db.String(50), nullable=True)
+    item_id = db.Column(db.Integer, db.ForeignKey('avatar_items.id'), nullable=False)
+    purchased_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    item = db.relationship('AvatarItem', backref='purchases')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'guest_code': self.guest_code,
+            'item': self.item.to_dict() if self.item else None,
+            'purchased_at': self.purchased_at.isoformat() if self.purchased_at else None
+        }
+
+class UserAvatarEquipped(db.Model):
+    """Tracks currently equipped avatar configuration"""
+    __tablename__ = 'user_avatar_equipped'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    guest_code = db.Column(db.String(50), nullable=True)
+    animal_key = db.Column(db.String(50), default='panda')
+    hat_key = db.Column(db.String(50), default='none')
+    glasses_key = db.Column(db.String(50), default='none')
+    background_key = db.Column(db.String(50), default='none')
+    accessory_key = db.Column(db.String(50), default='none')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'user_id': self.user_id,
+            'guest_code': self.guest_code,
+            'animal': self.animal_key,
+            'hat': self.hat_key,
+            'glasses': self.glasses_key,
+            'background': self.background_key,
+            'accessory': self.accessory_key,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+class AvatarPurchaseLog(db.Model):
+    """Audit log for all purchases - useful for debugging and potential refunds"""
+    __tablename__ = 'avatar_purchase_log'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=True)
+    guest_code = db.Column(db.String(50), nullable=True)
+    item_id = db.Column(db.Integer, db.ForeignKey('avatar_items.id'), nullable=False)
+    points_spent = db.Column(db.Integer, nullable=False)
+    points_before = db.Column(db.Integer, nullable=False)
+    points_after = db.Column(db.Integer, nullable=False)
+    purchased_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    item = db.relationship('AvatarItem')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'guest_code': self.guest_code,
+            'item': self.item.to_dict() if self.item else None,
+            'points_spent': self.points_spent,
+            'points_before': self.points_before,
+            'points_after': self.points_after,
+            'purchased_at': self.purchased_at.isoformat() if self.purchased_at else None
+        }
+
+# ==================== PRIZE SYSTEM MODELS ====================
+# Points for Prizes - students redeem points for physical rewards
+# BACKOUT: Set PRIZE_SYSTEM_ENABLED=false to disable without removing code
+
+class SystemSetting(db.Model):
+    """Global system settings (key-value store)"""
+    __tablename__ = 'system_settings'
+
+    key = db.Column(db.String(100), primary_key=True)
+    value = db.Column(db.Text, nullable=False)
+    description = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    @staticmethod
+    def get(key, default=None):
+        """Get a setting value"""
+        setting = SystemSetting.query.get(key)
+        if setting:
+            # Try to parse as JSON for complex values
+            try:
+                import json
+                return json.loads(setting.value)
+            except:
+                return setting.value
+        return default
+
+    @staticmethod
+    def set(key, value, description=None, user_id=None):
+        """Set a setting value"""
+        import json
+        setting = SystemSetting.query.get(key)
+        if not setting:
+            setting = SystemSetting(key=key)
+
+        # Serialize complex values as JSON
+        if isinstance(value, (dict, list)):
+            setting.value = json.dumps(value)
+        else:
+            setting.value = str(value)
+
+        if description:
+            setting.description = description
+        setting.updated_by = user_id
+        setting.updated_at = datetime.utcnow()
+
+        db.session.add(setting)
+        db.session.commit()
+        return setting
+
+
+class PrizeSchool(db.Model):
+    """Schools participating in the prize programme"""
+    __tablename__ = 'prize_schools'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    roll_number = db.Column(db.String(20), unique=True, nullable=True)  # Irish school roll number
+    county = db.Column(db.String(50))
+    address = db.Column(db.Text)
+
+    # Status
+    status = db.Column(db.String(20), default='pending')  # pending, approved, suspended
+
+    # School-specific settings
+    points_multiplier = db.Column(db.Float, default=1.0)  # Multiplied with global multiplier
+
+    # School rep (main contact)
+    rep_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    rep_name = db.Column(db.String(100))
+    rep_email = db.Column(db.String(100))
+
+    # Admin tracking
+    approved_at = db.Column(db.DateTime)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    notes = db.Column(db.Text)
+
+    # Relationships
+    rep_user = db.relationship('User', foreign_keys=[rep_user_id], backref='rep_for_schools')
+    approver = db.relationship('User', foreign_keys=[approved_by])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'roll_number': self.roll_number,
+            'county': self.county,
+            'status': self.status,
+            'points_multiplier': self.points_multiplier,
+            'rep_name': self.rep_name,
+            'rep_email': self.rep_email,
+            'approved_at': self.approved_at.isoformat() if self.approved_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+class Prize(db.Model):
+    """Global prize catalogue (templates)"""
+    __tablename__ = 'prizes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+
+    # Points (base cost before multipliers)
+    base_point_cost = db.Column(db.Integer, nullable=False)
+
+    # Classification
+    tier = db.Column(db.String(20), default='bronze')  # bronze, silver, gold, platinum
+    prize_type = db.Column(db.String(20), default='physical')  # physical, raffle_entry, digital
+
+    # Level requirement (0 = no requirement)
+    minimum_level = db.Column(db.Integer, default=0)
+
+    # Display
+    emoji = db.Column(db.String(10), default='🎁')
+    image_url = db.Column(db.String(255))
+    sort_order = db.Column(db.Integer, default=0)
+
+    # Availability
+    is_active = db.Column(db.Boolean, default=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def get_cost_for_school(self, school):
+        """Calculate actual point cost for this prize at a specific school"""
+        # Check for school-specific override
+        override = SchoolPrize.query.filter_by(
+            school_id=school.id,
+            prize_id=self.id
+        ).first()
+
+        if override and override.point_cost_override:
+            return override.point_cost_override
+
+        # Apply multipliers
+        global_multiplier = float(SystemSetting.get('global_points_multiplier', 5.0))
+        school_multiplier = school.points_multiplier or 1.0
+
+        return int(self.base_point_cost * global_multiplier * school_multiplier)
+
+    def to_dict(self, school=None):
+        result = {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'base_point_cost': self.base_point_cost,
+            'tier': self.tier,
+            'prize_type': self.prize_type,
+            'minimum_level': self.minimum_level or 0,
+            'emoji': self.emoji,
+            'image_url': self.image_url,
+            'is_active': self.is_active,
+            'sort_order': self.sort_order
+        }
+
+        if school:
+            result['point_cost'] = self.get_cost_for_school(school)
+
+        return result
+
+
+class SchoolPrize(db.Model):
+    """School-specific prize overrides and custom prizes"""
+    __tablename__ = 'school_prizes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    school_id = db.Column(db.Integer, db.ForeignKey('prize_schools.id'), nullable=False)
+
+    # If prize_id is set, this is an override for a global prize
+    # If prize_id is NULL, this is a school-specific prize
+    prize_id = db.Column(db.Integer, db.ForeignKey('prizes.id'), nullable=True)
+
+    # Custom prize details (used when prize_id is NULL)
+    custom_name = db.Column(db.String(100))
+    custom_description = db.Column(db.Text)
+    custom_emoji = db.Column(db.String(10), default='🎁')
+
+    # Override settings
+    point_cost_override = db.Column(db.Integer, nullable=True)  # NULL = use calculated cost
+    stock_available = db.Column(db.Integer, nullable=True)  # NULL = unlimited
+    is_enabled = db.Column(db.Boolean, default=True)  # Can disable for this school
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    school = db.relationship('PrizeSchool', backref='prize_overrides')
+    prize = db.relationship('Prize', backref='school_overrides')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'school_id': self.school_id,
+            'prize_id': self.prize_id,
+            'custom_name': self.custom_name,
+            'custom_description': self.custom_description,
+            'custom_emoji': self.custom_emoji,
+            'point_cost_override': self.point_cost_override,
+            'stock_available': self.stock_available,
+            'is_enabled': self.is_enabled,
+            # Include global prize info if this is an override
+            'prize': self.prize.to_dict() if self.prize else None
+        }
+
+    def get_display_name(self):
+        """Get the display name (custom or from global prize)"""
+        if self.custom_name:
+            return self.custom_name
+        elif self.prize:
+            return self.prize.name
+        return "Unknown Prize"
+
+    def get_point_cost(self):
+        """Get the point cost for this school prize"""
+        if self.point_cost_override:
+            return self.point_cost_override
+        elif self.prize and self.school:
+            return self.prize.get_cost_for_school(self.school)
+        return 0
+
+
+class PrizeRedemption(db.Model):
+    """Student prize redemptions (token-based, no personal data)"""
+    __tablename__ = 'prize_redemptions'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Who redeemed
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    school_id = db.Column(db.Integer, db.ForeignKey('prize_schools.id'), nullable=False)
+
+    # What was redeemed
+    prize_id = db.Column(db.Integer, db.ForeignKey('prizes.id'), nullable=True)  # Global prize
+    school_prize_id = db.Column(db.Integer, db.ForeignKey('school_prizes.id'), nullable=True)  # School-specific
+
+    # Token for collection (GDPR-safe: no student name stored)
+    token = db.Column(db.String(20), unique=True, nullable=False)
+
+    # Points
+    points_spent = db.Column(db.Integer, nullable=False)
+
+    # Status tracking
+    status = db.Column(db.String(20), default='pending')  # pending, fulfilled, expired, cancelled
+
+    # Timestamps
+    redeemed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime)  # Token expiry
+    fulfilled_at = db.Column(db.DateTime)
+    fulfilled_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    fulfilment_notes = db.Column(db.Text)
+
+    # Relationships
+    user = db.relationship('User', foreign_keys=[user_id], backref='prize_redemptions')
+    school = db.relationship('PrizeSchool', backref='redemptions')
+    prize = db.relationship('Prize', backref='redemptions')
+    school_prize = db.relationship('SchoolPrize', backref='redemptions')
+    fulfiller = db.relationship('User', foreign_keys=[fulfilled_by])
+
+    def get_prize_name(self):
+        """Get the name of the redeemed prize"""
+        if self.school_prize:
+            return self.school_prize.get_display_name()
+        elif self.prize:
+            return self.prize.name
+        return "Unknown Prize"
+
+    def get_prize_emoji(self):
+        """Get the emoji for the redeemed prize"""
+        if self.school_prize and self.school_prize.custom_emoji:
+            return self.school_prize.custom_emoji
+        elif self.prize:
+            return self.prize.emoji
+        return "🎁"
+
+    def to_dict(self, include_user=False):
+        result = {
+            'id': self.id,
+            'school_id': self.school_id,
+            'school_name': self.school.name if self.school else None,
+            'prize_name': self.get_prize_name(),
+            'prize_emoji': self.get_prize_emoji(),
+            'token': self.token,
+            'points_spent': self.points_spent,
+            'status': self.status,
+            'redeemed_at': self.redeemed_at.isoformat() if self.redeemed_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'fulfilled_at': self.fulfilled_at.isoformat() if self.fulfilled_at else None
+        }
+
+        if include_user and self.user:
+            result['username'] = self.user.username
+
+        return result
+
+
+class SchoolRequest(db.Model):
+    """Student requests to add their school to the programme"""
+    __tablename__ = 'school_requests'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # School info from student
+    school_name = db.Column(db.String(200), nullable=False)
+    county = db.Column(db.String(50))
+    suggested_rep_email = db.Column(db.String(100))  # Optional: student suggests a teacher
+
+    # Who requested
+    requested_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+
+    # Status
+    status = db.Column(db.String(20), default='pending')  # pending, approved, rejected
+    admin_notes = db.Column(db.Text)
+
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    processed_at = db.Column(db.DateTime)
+    processed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    # If approved, link to created school
+    created_school_id = db.Column(db.Integer, db.ForeignKey('prize_schools.id'), nullable=True)
+
+    # Relationships
+    requester = db.relationship('User', foreign_keys=[requested_by], backref='school_requests')
+    processor = db.relationship('User', foreign_keys=[processed_by])
+    created_school = db.relationship('PrizeSchool')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'school_name': self.school_name,
+            'county': self.county,
+            'suggested_rep_email': self.suggested_rep_email,
+            'requested_by_username': self.requester.username if self.requester else None,
+            'status': self.status,
+            'admin_notes': self.admin_notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'processed_at': self.processed_at.isoformat() if self.processed_at else None
+        }
+
+
+class RaffleDraw(db.Model):
+    """Weekly raffle draws"""
+    __tablename__ = 'raffle_draws'
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    # Draw info
+    draw_name = db.Column(db.String(100), nullable=False)
+    prize_description = db.Column(db.Text, nullable=False)
+
+    # Scheduling
+    draw_date = db.Column(db.DateTime, nullable=False)
+    status = db.Column(db.String(20), default='scheduled')  # scheduled, completed, cancelled
+
+    # Winner
+    winner_redemption_id = db.Column(db.Integer, db.ForeignKey('prize_redemptions.id'), nullable=True)
+
+    # Admin
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    drawn_at = db.Column(db.DateTime)
+
+    # Relationships
+    winner_redemption = db.relationship('PrizeRedemption')
+    creator = db.relationship('User', foreign_keys=[created_by])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'draw_name': self.draw_name,
+            'prize_description': self.prize_description,
+            'draw_date': self.draw_date.isoformat() if self.draw_date else None,
+            'status': self.status,
+            'winner': self.winner_redemption.to_dict() if self.winner_redemption else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+# Helper function to generate prize tokens
+def generate_prize_token():
+    """Generate a unique prize redemption token"""
+    import string
+    chars = string.ascii_uppercase + string.digits
+    while True:
+        # Format: PRIZE-XXXX-XXXX
+        token = 'PRIZE-' + ''.join(random.choices(chars, k=4)) + '-' + ''.join(random.choices(chars, k=4))
+        # Check uniqueness
+        existing = PrizeRedemption.query.filter_by(token=token).first()
+        if not existing:
+            return token
+
+
+# ==================== DOMAIN RESTRICTION MODELS ====================
+
+class TeacherDomainAccess(db.Model):
+    """Tracks which email domains a teacher can access"""
+    __tablename__ = 'teacher_domain_access'
+
+    id = db.Column(db.Integer, primary_key=True)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    email_domain = db.Column(db.String(100), nullable=False)
+    granted_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    granted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    notes = db.Column(db.Text)
+
+    # Relationships
+    teacher = db.relationship('User', foreign_keys=[teacher_id], backref='domain_access')
+    granter = db.relationship('User', foreign_keys=[granted_by], backref='domains_granted')
+
+    # Unique constraint: one teacher can only have one record per domain
+    __table_args__ = (db.UniqueConstraint('teacher_id', 'email_domain', name='unique_teacher_domain'),)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'teacher_id': self.teacher_id,
+            'teacher_name': self.teacher.full_name,
+            'teacher_email': self.teacher.email,
+            'email_domain': self.email_domain,
+            'granted_by': self.granter.full_name,
+            'granted_at': self.granted_at.isoformat(),
+            'notes': self.notes
+        }
+
+class DomainAccessRequest(db.Model):
+    """Tracks teacher requests for domain access"""
+    __tablename__ = 'domain_access_requests'
+
+    id = db.Column(db.Integer, primary_key=True)
+    teacher_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    email_domain = db.Column(db.String(100), nullable=False)
+    reason = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), default='pending')  # pending, approved, denied
+    requested_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    reviewed_at = db.Column(db.DateTime)
+    admin_notes = db.Column(db.Text)
+
+    # Relationships
+    teacher = db.relationship('User', foreign_keys=[teacher_id], backref='domain_requests')
+    reviewer = db.relationship('User', foreign_keys=[reviewed_by], backref='domain_requests_reviewed')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'teacher_id': self.teacher_id,
+            'teacher_name': self.teacher.full_name,
+            'teacher_email': self.teacher.email,
+            'email_domain': self.email_domain,
+            'reason': self.reason,
+            'status': self.status,
+            'requested_at': self.requested_at.isoformat(),
+            'reviewed_by': self.reviewer.full_name if self.reviewer else None,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'admin_notes': self.admin_notes
+        }
+
+class TopicProgress(db.Model):
+    """Per-topic progress tracking"""
+    __tablename__ = 'topic_progress'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    topic = db.Column(db.String(50), nullable=False)
+    difficulty = db.Column(db.String(20), nullable=False)
+    attempts = db.Column(db.Integer, default=0)
+    best_score = db.Column(db.Integer, default=0)
+    best_percentage = db.Column(db.Float, default=0)
+    total_questions_answered = db.Column(db.Integer, default=0)
+    total_correct = db.Column(db.Integer, default=0)
+    is_mastered = db.Column(db.Boolean, default=False)
+    last_attempt_at = db.Column(db.DateTime)
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'topic', 'difficulty', name='unique_topic_progress'),)
+
+    user = db.relationship('User', backref='topic_progress')
+
+    def to_dict(self):
+        accuracy = 0
+        if self.total_questions_answered > 0:
+            accuracy = round((self.total_correct / self.total_questions_answered) * 100, 1)
+
+        return {
+            'id': self.id,
+            'topic': self.topic,
+            'difficulty': self.difficulty,
+            'attempts': self.attempts,
+            'best_score': self.best_score,
+            'best_percentage': self.best_percentage,
+            'accuracy': accuracy,
+            'is_mastered': self.is_mastered,
+            'last_attempt_at': self.last_attempt_at.isoformat() if self.last_attempt_at else None
+        }
+
+
+# ==================== PUZZLE OF THE WEEK MODELS ====================
+
+class WeeklyPuzzle(db.Model):
+    """Weekly puzzle for students"""
+    __tablename__ = 'weekly_puzzles'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    
+    # Puzzle content (either image or text)
+    puzzle_type = db.Column(db.String(20), default='image')  # 'image' or 'text'
+    puzzle_image = db.Column(db.String(500))  # Path to puzzle image (800x600)
+    puzzle_text = db.Column(db.Text)  # Text-based puzzle content
+    
+    # Answer content
+    answer_image = db.Column(db.String(500))  # Path to answer image
+    answer_text = db.Column(db.Text)  # Text-based answer
+    
+    # Hint
+    hint = db.Column(db.Text)
+    
+    # Scheduling
+    week_number = db.Column(db.Integer, nullable=False)  # ISO week 1-52
+    year = db.Column(db.Integer, nullable=False)
+    is_active = db.Column(db.Boolean, default=False)
+    
+    # Stats
+    view_count = db.Column(db.Integer, default=0)
+    reveal_count = db.Column(db.Integer, default=0)
+    hint_view_count = db.Column(db.Integer, default=0)
+    
+    # Admin tracking
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    
+    # Relationships
+    creator = db.relationship('User', foreign_keys=[created_by])
+    
+    def to_dict(self, include_answer=False):
+        data = {
+            'id': self.id,
+            'title': self.title,
+            'description': self.description,
+            'puzzle_type': self.puzzle_type,
+            'puzzle_image': self.puzzle_image,
+            'puzzle_text': self.puzzle_text,
+            'hint': self.hint,
+            'week_number': self.week_number,
+            'year': self.year,
+            'is_active': self.is_active,
+            'view_count': self.view_count,
+            'reveal_count': self.reveal_count,
+            'hint_view_count': self.hint_view_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+        if include_answer:
+            data['answer_image'] = self.answer_image
+            data['answer_text'] = self.answer_text
+        return data
+
+
+class PuzzleUserStatus(db.Model):
+    """Tracks user interaction with puzzles"""
+    __tablename__ = 'puzzle_user_status'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    puzzle_id = db.Column(db.Integer, db.ForeignKey('weekly_puzzles.id'), nullable=False)
+    
+    # User identification (one of these will be set)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    guest_code = db.Column(db.String(20), nullable=True)
+    session_id = db.Column(db.String(100), nullable=True)
+    
+    # Status flags
+    dismissed_popup = db.Column(db.Boolean, default=False)  # Don't show splash this week
+    dismissed_answer = db.Column(db.Boolean, default=False)  # Don't offer answer reveal
+    revealed_answer = db.Column(db.Boolean, default=False)  # Has seen the answer
+    hint_viewed = db.Column(db.Boolean, default=False)  # Has viewed the hint
+    
+    # Stats
+    view_count = db.Column(db.Integer, default=1)  # Times viewed puzzle
+    
+    # Timestamps
+    first_viewed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    answer_revealed_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    puzzle = db.relationship('WeeklyPuzzle', backref='user_statuses')
+    user = db.relationship('User', foreign_keys=[user_id])
+
+
+# ==================== PUZZLE HELPER FUNCTIONS ====================
+
+def get_current_week_year():
+    """Get current ISO week number and year"""
+    now = datetime.utcnow()
+    iso_cal = now.isocalendar()
+    return iso_cal[1], iso_cal[0]  # week_number, year
+
+
+def get_active_puzzle():
+    """Get the currently active puzzle for this week"""
+    week, year = get_current_week_year()
+    return WeeklyPuzzle.query.filter_by(
+        week_number=week,
+        year=year,
+        is_active=True
+    ).first()
+
+
+def get_user_puzzle_status(puzzle_id, user_id=None, guest_code=None, session_id=None):
+    """Get or create puzzle status for a user"""
+    query = PuzzleUserStatus.query.filter_by(puzzle_id=puzzle_id)
+    
+    if user_id:
+        status = query.filter_by(user_id=user_id).first()
+        if not status:
+            status = PuzzleUserStatus(puzzle_id=puzzle_id, user_id=user_id)
+            db.session.add(status)
+            db.session.commit()
+    elif guest_code:
+        status = query.filter_by(guest_code=guest_code).first()
+        if not status:
+            status = PuzzleUserStatus(puzzle_id=puzzle_id, guest_code=guest_code)
+            db.session.add(status)
+            db.session.commit()
+    elif session_id:
+        status = query.filter_by(session_id=session_id).first()
+        if not status:
+            status = PuzzleUserStatus(puzzle_id=puzzle_id, session_id=session_id)
+            db.session.add(status)
+            db.session.commit()
+    else:
+        return None
+    
+    return status
+
+
+# ==================== BONUS QUESTION MODELS ====================
+
+class BonusQuestion(db.Model):
+    """Bonus questions for high-scoring students (dinosaurs, flags, etc.)"""
+    __tablename__ = 'bonus_questions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    category = db.Column(db.String(50), nullable=False)  # 'dinosaurs', 'flags', 'scientists', etc.
+    correct_answer = db.Column(db.String(100), nullable=False)
+    option_a = db.Column(db.String(100), nullable=False)
+    option_b = db.Column(db.String(100), nullable=False)
+    option_c = db.Column(db.String(100), nullable=False)
+    option_d = db.Column(db.String(100), nullable=False)
+    image_url = db.Column(db.String(500), nullable=False)
+    fun_fact = db.Column(db.Text)
+    difficulty = db.Column(db.String(20), default='medium')  # easy, medium, hard
+    era_or_region = db.Column(db.String(100))  # For dinos: "Late Cretaceous", for flags: "Europe"
+    is_active = db.Column(db.Boolean, default=True)
+    times_shown = db.Column(db.Integer, default=0)
+    times_correct = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        options = [self.option_a, self.option_b, self.option_c, self.option_d]
+        # Shuffle options but remember correct answer
+        random.shuffle(options)
+        return {
+            'id': self.id,
+            'category': self.category,
+            'correct_answer': self.correct_answer,
+            'options': options,
+            'image_url': self.image_url,
+            'fun_fact': self.fun_fact,
+            'era_or_region': self.era_or_region
+        }
+    
+    def to_admin_dict(self):
+        accuracy = 0
+        if self.times_shown > 0:
+            accuracy = round((self.times_correct / self.times_shown) * 100, 1)
+        return {
+            'id': self.id,
+            'category': self.category,
+            'correct_answer': self.correct_answer,
+            'option_a': self.option_a,
+            'option_b': self.option_b,
+            'option_c': self.option_c,
+            'option_d': self.option_d,
+            'image_url': self.image_url,
+            'fun_fact': self.fun_fact,
+            'difficulty': self.difficulty,
+            'era_or_region': self.era_or_region,
+            'is_active': self.is_active,
+            'times_shown': self.times_shown,
+            'times_correct': self.times_correct,
+            'accuracy': accuracy
+        }
+
+
+class BonusQuestionAttempt(db.Model):
+    """Track bonus question attempts"""
+    __tablename__ = 'bonus_question_attempts'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    question_id = db.Column(db.Integer, db.ForeignKey('bonus_questions.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    guest_code = db.Column(db.String(20), nullable=True)
+    selected_answer = db.Column(db.String(100), nullable=False)
+    is_correct = db.Column(db.Boolean, nullable=False)
+    points_earned = db.Column(db.Integer, default=0)
+    quiz_topic = db.Column(db.String(50))  # What quiz they just completed
+    quiz_score = db.Column(db.Integer)  # Their quiz score that unlocked this
+    attempted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    question = db.relationship('BonusQuestion', backref='attempts')
+
+
+class UserQuestionHistory(db.Model):
+    """Track which questions each user has seen to prevent duplicates in quizzes"""
+    __tablename__ = 'user_question_history'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    guest_code = db.Column(db.String(20), nullable=True)  # For guest users
+    question_id = db.Column(db.Integer, db.ForeignKey('questions.id'), nullable=False)
+    topic = db.Column(db.String(50), nullable=False)
+    difficulty = db.Column(db.String(20), nullable=False)
+    seen_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Indexes for fast lookups
+    __table_args__ = (
+        db.Index('idx_user_question', 'user_id', 'question_id'),
+        db.Index('idx_guest_question', 'guest_code', 'question_id'),
+        db.Index('idx_user_topic_diff', 'user_id', 'topic', 'difficulty'),
+        db.Index('idx_guest_topic_diff', 'guest_code', 'topic', 'difficulty'),
+    )
+
+
+class UserAdaptiveQuestionHistory(db.Model):
+    """Track which adaptive questions each user has seen to prevent duplicates in Learning in Stages"""
+    __tablename__ = 'user_adaptive_question_history'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    guest_code = db.Column(db.String(20), nullable=True)  # For guest users
+    question_id = db.Column(db.Integer, nullable=False)  # References questions_adaptive.id
+    topic = db.Column(db.String(50), nullable=False)
+    difficulty_level = db.Column(db.Integer, nullable=False)  # 1-12
+    seen_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Indexes for fast lookups
+    __table_args__ = (
+        db.Index('idx_adaptive_user_question', 'user_id', 'question_id'),
+        db.Index('idx_adaptive_guest_question', 'guest_code', 'question_id'),
+        db.Index('idx_adaptive_user_topic_level', 'user_id', 'topic', 'difficulty_level'),
+        db.Index('idx_adaptive_guest_topic_level', 'guest_code', 'topic', 'difficulty_level'),
+    )
+
+
+# ==================== DECORATORS ====================
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Allow full accounts (user_id), casual guests (is_guest + user_id), and repeat guests (guest_code)
+        if 'user_id' not in session and 'guest_code' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+def role_required(*roles):
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # Repeat guests are considered students
+            if 'guest_code' in session and 'student' in roles:
+                return f(*args, **kwargs)
+
+            # Full accounts and casual guests
+            if 'user_id' not in session:
+                return jsonify({'error': 'Authentication required'}), 401
+            user = User.query.get(session['user_id'])
+            if not user or user.role not in roles:
+                return jsonify({'error': 'Insufficient permissions'}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+def approved_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Allow casual guests through
+        if 'is_guest' in session:
+            return f(*args, **kwargs)
+
+        # Allow repeat guests through
+        if 'guest_code' in session:
+            return f(*args, **kwargs)
+
+        # For regular users, check authentication and approval
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        user = User.query.get(session['user_id'])
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        if user.role == 'teacher' and not user.is_approved:
+            return jsonify({'error': 'Teacher account pending approval'}), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
+def guest_or_login_required(f):
+    """Allow both guest users and logged-in users"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'is_guest' not in session and 'user_id' not in session and 'guest_code' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+# ==================== AVATAR HELPER FUNCTIONS ====================
+
+def get_avatar_user_points(user_id=None, guest_code=None):
+    """
+    Get current points for user or guest.
+    Returns (points, level) tuple.
+
+    NOTE: guest_code takes priority over user_id because repeat guests
+    have BOTH set in session (user_id points to shared guest account).
+    """
+    from sqlalchemy import text
+
+    # Check guest_code FIRST (repeat guests have both user_id and guest_code)
+    if guest_code:
+        # Guest user - get from guest_users table (NOT guest_stats!)
+        result = db.session.execute(text(
+            "SELECT total_score FROM guest_users WHERE guest_code = :code"
+        ), {"code": guest_code}).fetchone()
+        points = result[0] if result else 0
+    elif user_id:
+        # Registered user - get from UserStats
+        result = db.session.execute(text(
+            "SELECT total_points FROM user_stats WHERE user_id = :uid"
+        ), {"uid": user_id}).fetchone()
+        points = result[0] if result else 0
+    else:
+        points = 0
+
+    level = (points // 100) + 1
+    return points, level
+
+def avatar_owns_item(item_id, user_id=None, guest_code=None):
+    """Check if user/guest owns a specific item"""
+    query = UserAvatarInventory.query.filter_by(item_id=item_id)
+
+    # Check guest_code FIRST (repeat guests have both user_id and guest_code)
+    if guest_code:
+        return query.filter_by(guest_code=guest_code).first() is not None
+    elif user_id:
+        return query.filter_by(user_id=user_id).first() is not None
+
+    return False
+
+def get_equipped_avatar(user_id=None, guest_code=None):
+    """Get currently equipped avatar configuration
+
+    NOTE: guest_code takes priority because repeat guests have BOTH
+    a shared user_id AND their unique guest_code in session.
+    """
+    equipped = None
+
+    # Check guest_code FIRST (repeat guests have both user_id and guest_code)
+    if guest_code:
+        equipped = UserAvatarEquipped.query.filter_by(guest_code=guest_code).first()
+        print(f"🔍 Looking for equipped by guest_code={guest_code}, found: {equipped}")
+
+    # Only check user_id if no guest_code OR no equipped found for guest
+    if not equipped and user_id:
+        equipped = UserAvatarEquipped.query.filter_by(user_id=user_id).first()
+        print(f"🔍 Looking for equipped by user_id={user_id}, found: {equipped}")
+
+    # Return default configuration if none exists
+    if not equipped:
+        print(f"⚠️ No equipped record found, returning defaults")
+        return {
+            'animal': 'panda',
+            'hat': 'none',
+            'glasses': 'none',
+            'background': 'none',
+            'accessory': 'none'
+        }
+
+    result = equipped.to_dict()
+    print(f"✅ Found equipped record: {result}")
+    return result
+
+def grant_default_avatar_items(user_id=None, guest_code=None):
+    """Grant all default items to a new user/guest"""
+    if not FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False):
+        return
+
+    default_items = AvatarItem.query.filter_by(is_default=True).all()
+
+    for item in default_items:
+        if not avatar_owns_item(item.id, user_id, guest_code):
+            # For guests, only store guest_code (not the shared user_id)
+            inventory_entry = UserAvatarInventory(
+                user_id=user_id if not guest_code else None,
+                guest_code=guest_code,
+                item_id=item.id
+            )
+            db.session.add(inventory_entry)
+
+    try:
+        db.session.commit()
+    except:
+        db.session.rollback()
+
+def get_animal_from_guest_code(guest_code):
+    """
+    Extract animal name from guest code like 'panda42'.
+    Returns animal key if it matches an avatar animal.
+    For legacy codes (gnat42, slug15, etc.), returns 'panda' as fallback.
+    """
+    if not guest_code:
+        return 'panda'
+
+    code_lower = guest_code.lower()
+
+    # Check for avatar-friendly animals first (these have matching avatars)
+    for animal in AVATAR_ANIMALS:
+        if code_lower.startswith(animal):
+            return animal
+
+    # Check for legacy animals (these get mapped to panda)
+    for animal in LEGACY_ANIMALS:
+        if code_lower.startswith(animal):
+            # Legacy animal without avatar - use panda as fallback
+            return 'panda'
+
+    # Unknown format - default to panda
+    return 'panda'
+
+# ==================== BADGES HELPER FUNCTIONS ====================
+
+def initialize_user_stats(user_id):
+    """Create initial stats record for a user if it doesn't exist"""
+    stats = UserStats.query.filter_by(user_id=user_id).first()
+    if not stats:
+        stats = UserStats(
+            user_id=user_id,
+            total_quizzes=0,
+            total_questions_answered=0,
+            total_correct_answers=0,
+            current_streak_days=0,
+            longest_streak_days=0,
+            total_points=0,
+            level=1,
+            topics_mastered=0,
+            perfect_scores=0
+        )
+        db.session.add(stats)
+        db.session.commit()
+    return stats
+
+def update_user_stats_after_quiz(user_id, quiz_attempt):
+    """Update user stats after completing a quiz"""
+    from datetime import date
+
+    stats = initialize_user_stats(user_id)
+
+    # Update basic stats
+    stats.total_quizzes += 1
+    stats.total_questions_answered += quiz_attempt.total_questions
+    stats.total_correct_answers += quiz_attempt.score
+
+    # Check for perfect score
+    if quiz_attempt.percentage == 100:
+        stats.perfect_scores += 1
+
+    # Award points for quiz completion with deduplication
+    base_points = 5  # Base points for completing any quiz
+    performance_bonus = int(quiz_attempt.percentage / 10)  # 0-10 points based on score
+    quiz_points = base_points + performance_bonus
+    
+    # Only award points for first completion OR improvement
+    from sqlalchemy import text
+    existing_best = db.session.execute(text('''
+        SELECT MAX(percentage) as best_pct
+        FROM quiz_attempts
+        WHERE user_id = :user_id 
+        AND topic = :topic 
+        AND difficulty = :difficulty
+        AND id != :current_id
+    '''), {
+        'user_id': user_id,
+        'topic': quiz_attempt.topic,
+        'difficulty': quiz_attempt.difficulty,
+        'current_id': quiz_attempt.id
+    }).fetchone()
+    
+    previous_best = existing_best.best_pct if existing_best and existing_best.best_pct else 0
+    
+    if previous_best == 0:
+        # First time - award full points
+        stats.total_points += quiz_points
+    elif quiz_attempt.percentage > previous_best:
+        # Improvement - award points for improvement only
+        improvement_points = int((quiz_attempt.percentage - previous_best) / 10)
+        if improvement_points > 0:
+            stats.total_points += improvement_points
+
+    # Update streak (using Irish school calendar if available)
+    today = date.today()
+    streak_bonus = 0
+    streak_milestone = None
+
+    if IRISH_CALENDAR_ENABLED:
+        # Smart streak tracking - only counts school days
+        if stats.last_quiz_date:
+            if stats.last_quiz_date == today:
+                # Same day - no change to streak
+                pass
+            elif is_consecutive_school_day(stats.last_quiz_date, today):
+                # Consecutive school day - streak continues!
+                stats.current_streak_days += 1
+            elif should_reset_streak(stats.last_quiz_date, today):
+                # Missed a school day - streak resets
+                stats.current_streak_days = 1
+            else:
+                # Edge case (e.g., activity during holidays) - continue streak
+                stats.current_streak_days += 1
+        else:
+            # First quiz ever
+            stats.current_streak_days = 1
+
+        # Check for streak milestone bonus
+        streak_milestone = get_streak_milestone(stats.current_streak_days)
+        if streak_milestone:
+            streak_bonus = streak_milestone['points']
+            stats.total_points += streak_bonus
+    else:
+        # Fallback to simple consecutive day tracking
+        if stats.last_quiz_date:
+            days_diff = (today - stats.last_quiz_date).days
+            if days_diff == 1:
+                stats.current_streak_days += 1
+            elif days_diff > 1:
+                stats.current_streak_days = 1
+            # If same day, don't change streak
+        else:
+            stats.current_streak_days = 1
+
+    # Update longest streak
+    if stats.current_streak_days > stats.longest_streak_days:
+        stats.longest_streak_days = stats.current_streak_days
+
+    stats.last_quiz_date = today
+
+    # Calculate level (every 100 points = 1 level)
+    stats.level = (stats.total_points // 100) + 1
+
+    stats.updated_at = datetime.utcnow()
+    db.session.commit()
+
+    # Update topic progress
+    update_topic_progress(user_id, quiz_attempt)
+
+    # Check for new badges
+    newly_earned = check_and_award_badges(user_id)
+
+    return stats, newly_earned
+
+def update_topic_progress(user_id, quiz_attempt):
+    """Update progress for a specific topic/difficulty"""
+    progress = TopicProgress.query.filter_by(
+        user_id=user_id,
+        topic=quiz_attempt.topic,
+        difficulty=quiz_attempt.difficulty
+    ).first()
+
+    if not progress:
+        progress = TopicProgress(
+            user_id=user_id,
+            topic=quiz_attempt.topic,
+            difficulty=quiz_attempt.difficulty,
+            attempts=0,
+            best_score=0,
+            best_percentage=0,
+            total_questions_answered=0,
+            total_correct=0,
+            is_mastered=False
+        )
+        db.session.add(progress)
+
+    progress.attempts += 1
+    progress.total_questions_answered += quiz_attempt.total_questions
+    progress.total_correct += quiz_attempt.score
+
+    # Update best score
+    if quiz_attempt.score > progress.best_score:
+        progress.best_score = quiz_attempt.score
+    if quiz_attempt.percentage > progress.best_percentage:
+        progress.best_percentage = quiz_attempt.percentage
+
+    progress.last_attempt_at = datetime.utcnow()
+
+    # Check for mastery (90%+ accuracy with 5+ attempts)
+    if progress.attempts >= 5:
+        accuracy = (progress.total_correct / progress.total_questions_answered) * 100
+        if accuracy >= 90 and not progress.is_mastered:
+            progress.is_mastered = True
+
+            # Update user's mastered topics count
+            stats = UserStats.query.filter_by(user_id=user_id).first()
+            if stats:
+                # Count total mastered topics across all difficulties
+                mastered_count = TopicProgress.query.filter_by(
+                    user_id=user_id,
+                    is_mastered=True
+                ).count()
+                stats.topics_mastered = mastered_count
+
+    db.session.commit()
+
+def check_and_award_badges(user_id):
+    """Check if user has earned any new badges"""
+    # Get all badges
+    all_badges = Badge.query.all()
+
+    # Get already earned badges
+    earned_badge_ids = {ub.badge_id for ub in UserBadge.query.filter_by(user_id=user_id).all()}
+
+    # Get user stats
+    stats = UserStats.query.filter_by(user_id=user_id).first()
+    if not stats:
+        return []
+
+    newly_earned = []
+
+    for badge in all_badges:
+        # Skip if already earned
+        if badge.id in earned_badge_ids:
+            continue
+
+        # Check if requirements are met
+        earned = False
+
+        if badge.requirement_type == 'quizzes_completed':
+            earned = stats.total_quizzes >= badge.requirement_value
+
+        elif badge.requirement_type == 'perfect_scores':
+            earned = stats.perfect_scores >= badge.requirement_value
+
+        elif badge.requirement_type == 'high_scores':
+            # Count quizzes with 90%+
+            high_scores = QuizAttempt.query.filter(
+                QuizAttempt.user_id == user_id,
+                QuizAttempt.percentage >= 90
+            ).count()
+            earned = high_scores >= badge.requirement_value
+
+        elif badge.requirement_type == 'streak_days':
+            earned = stats.current_streak_days >= badge.requirement_value
+
+        elif badge.requirement_type == 'topics_mastered':
+            earned = stats.topics_mastered >= badge.requirement_value
+
+        if earned:
+            # Award the badge
+            user_badge = UserBadge(
+                user_id=user_id,
+                badge_id=badge.id,
+                progress=100
+            )
+            db.session.add(user_badge)
+
+            # Award points
+            stats.total_points += badge.points
+
+            newly_earned.append(badge.to_dict())
+
+    if newly_earned:
+        db.session.commit()
+
+    return newly_earned
+
+# ==================== ROUTES ====================
+
+def generate_options_for_answer(correct_answer, count=4, range_size=10, allow_negative=False):
+    """
+    Helper function to generate multiple choice options
+
+    Args:
+        correct_answer: The correct answer
+        count: Number of options to generate (default 4)
+        range_size: Range for generating wrong answers
+        allow_negative: Whether to allow negative wrong answers
+
+    Returns:
+        List of options shuffled with correct answer included
+    """
+    options = [correct_answer]
+
+    # Generate wrong answers
+    attempts = 0
+    max_attempts = 100
+
+    while len(options) < count and attempts < max_attempts:
+        attempts += 1
+
+        # Create wrong answer within range
+        offset = random.randint(-range_size, range_size)
+        if offset == 0:
+            offset = random.choice([-1, 1]) * random.randint(1, range_size)
+
+        wrong_answer = correct_answer + offset
+
+        # Apply negative restriction if needed
+        if not allow_negative and wrong_answer < 0:
+            wrong_answer = abs(wrong_answer)
+
+        # Ensure unique and not zero (unless correct answer is zero)
+        if wrong_answer not in options and (wrong_answer != 0 or correct_answer == 0):
+            options.append(wrong_answer)
+
+    # If we couldn't generate enough unique options, add some calculated ones
+    while len(options) < count:
+        # Generate wrong answers based on common mistakes
+        if correct_answer > 0:
+            wrong = correct_answer + random.choice([1, -1, 2, -2, 5, -5, 10, -10])
+        else:
+            wrong = correct_answer + random.choice([1, -1, 2, -2])
+
+        if wrong not in options:
+            options.append(wrong)
+
+    # Shuffle so correct answer isn't always first
+    random.shuffle(options)
+
+    return options
+
+
+def generate_multiplication_division_beginner():
+    """
+    Generate beginner level multiplication and division questions
+    - Single digit × single digit (2 × 3 = ?)
+    - Simple division with no remainders (6 ÷ 2 = ?)
+    - NO NEGATIVE NUMBERS
+    """
+    operation = random.choice(['multiply', 'divide'])
+
+    if operation == 'multiply':
+        a = random.randint(1, 10)
+        b = random.randint(1, 10)
+        answer = a * b
+        question = f"{a} × {b}"
+    else:  # divide
+        divisor = random.randint(1, 10)
+        quotient = random.randint(1, 10)
+        dividend = divisor * quotient
+        answer = quotient
+        question = f"{dividend} ÷ {divisor}"
+
+    options = generate_options_for_answer(answer, count=4, range_size=10)
+
+    return {
+        'question': question,
+        'answer': answer,
+        'options': options,
+        'explanation': f"The correct answer is {answer}"
+    }
+
+
+def generate_multiplication_division_intermediate():
+    """
+    Generate intermediate level multiplication and division questions
+    - INCLUDES SINGLE NEGATIVE NUMBERS with low value integers
+    """
+    operation = random.choice(['multiply', 'divide'])
+    include_negative = random.choice([True, False])
+
+    if operation == 'multiply':
+        if include_negative:
+            a = random.choice(list(range(-10, 0)) + list(range(1, 11)))
+            b = random.choice(list(range(-10, 0)) + list(range(1, 11)))
+
+            # Ensure only ONE is negative
+            if a < 0 and b < 0:
+                b = abs(b)
+            elif a > 0 and b > 0:
+                if random.choice([True, False]):
+                    a = -a
+                else:
+                    b = -b
+        else:
+            a = random.randint(10, 25)
+            b = random.randint(2, 12)
+
+        answer = a * b
+        question = f"{a} × {b}"
+    else:  # divide
+        if include_negative:
+            divisor = random.choice(list(range(-10, 0)) + list(range(2, 11)))
+            quotient = random.choice(list(range(-10, 0)) + list(range(1, 11)))
+
+            # Ensure only ONE is negative
+            if divisor < 0 and quotient < 0:
+                quotient = abs(quotient)
+            elif divisor > 0 and quotient > 0:
+                if random.choice([True, False]):
+                    divisor = -divisor
+                else:
+                    quotient = -quotient
+
+            dividend = divisor * quotient
+            answer = quotient
+        else:
+            divisor = random.randint(2, 12)
+            quotient = random.randint(10, 50)
+            dividend = divisor * quotient
+            answer = quotient
+
+        question = f"{dividend} ÷ {divisor}"
+
+    options = generate_options_for_answer(answer, count=4, range_size=20, allow_negative=True)
+
+    return {
+        'question': question,
+        'answer': answer,
+        'options': options,
+        'explanation': f"The correct answer is {answer}"
+    }
+
+
+def generate_multiplication_division_advanced():
+    """
+    Generate advanced level multiplication and division questions
+    - DOUBLE NEGATIVE CALCULATIONS
+    - THREE DIGIT COMPUTATIONS
+    """
+    operation = random.choice(['multiply', 'divide', 'mixed', 'three_digit'])
+
+    if operation == 'multiply':
+        neg_type = random.choices(['double_neg', 'single_neg', 'positive'], weights=[0.4, 0.4, 0.2])[0]
+
+        if neg_type == 'double_neg':
+            a = random.randint(-50, -10)
+            b = random.randint(-20, -2)
+            answer = a * b
+            question = f"({a}) × ({b})"
+        elif neg_type == 'single_neg':
+            a = random.randint(10, 50)
+            b = random.randint(2, 25)
+            if random.choice([True, False]):
+                a = -a
+            else:
+                b = -b
+            answer = a * b
+            question = f"{a} × {b}"
+        else:
+            a = random.randint(20, 99)
+            b = random.randint(11, 25)
+            answer = a * b
+            question = f"{a} × {b}"
+
+    elif operation == 'divide':
+        neg_type = random.choices(['double_neg', 'single_neg', 'positive'], weights=[0.4, 0.4, 0.2])[0]
+
+        if neg_type == 'double_neg':
+            divisor = random.randint(-25, -2)
+            quotient = random.randint(-50, -5)
+            dividend = divisor * quotient
+            answer = quotient
+            question = f"({dividend}) ÷ ({divisor})"
+        elif neg_type == 'single_neg':
+            divisor = random.randint(2, 25)
+            quotient = random.randint(5, 50)
+            if random.choice([True, False]):
+                divisor = -divisor
+            else:
+                quotient = -quotient
+            dividend = divisor * quotient
+            answer = quotient
+            question = f"{dividend} ÷ {divisor}"
+        else:
+            divisor = random.randint(11, 25)
+            quotient = random.randint(20, 100)
+            dividend = divisor * quotient
+            answer = quotient
+            question = f"{dividend} ÷ {divisor}"
+
+    elif operation == 'mixed':
+        mix_type = random.choice(['mult_then_div', 'div_then_mult'])
+
+        if mix_type == 'mult_then_div':
+            a = random.randint(-30, 30)
+            if a == 0:
+                a = random.choice([-15, 15])
+            b = random.randint(2, 10)
+            c = random.randint(-10, 10)
+            if c == 0:
+                c = random.choice([-5, 5])
+
+            temp = a * b
+            if temp % c != 0:
+                quotient = temp // c
+                temp = quotient * c
+                a = temp // b
+
+            answer = (a * b) // c
+            a_str = f"({a})" if a < 0 else str(a)
+            b_str = f"({b})" if b < 0 else str(b)
+            c_str = f"({c})" if c < 0 else str(c)
+            question = f"({a_str} × {b_str}) ÷ {c_str}"
+        else:
+            a = random.randint(-100, 100)
+            if a == 0:
+                a = random.choice([-48, 48])
+            b = random.randint(-10, 10)
+            if b == 0:
+                b = random.choice([-6, 6])
+            quotient = random.randint(-20, 20)
+            if quotient == 0:
+                quotient = random.choice([-8, 8])
+            a = quotient * b
+            c = random.randint(-10, 10)
+            if c == 0:
+                c = random.choice([-3, 3])
+
+            answer = (a // b) * c
+            a_str = f"({a})" if a < 0 else str(a)
+            b_str = f"({b})" if b < 0 else str(b)
+            c_str = f"({c})" if c < 0 else str(c)
+            question = f"({a_str} ÷ {b_str}) × {c_str}"
+
+    else:  # three_digit
+        sub_type = random.choice(['mult_3digit', 'div_3digit'])
+
+        if sub_type == 'mult_3digit':
+            a = random.randint(100, 999)
+            b = random.randint(10, 99)
+            answer = a * b
+            question = f"{a} × {b}"
+        else:
+            divisor = random.randint(10, 99)
+            quotient = random.randint(10, 99)
+            dividend = divisor * quotient
+            answer = quotient
+            question = f"{dividend} ÷ {divisor}"
+
+    options = generate_options_for_answer(answer, count=4, range_size=50, allow_negative=True)
+
+    return {
+        'question': question,
+        'answer': answer,
+        'options': options,
+        'explanation': f"The correct answer is {answer}"
+    }
+
+# ==================== AUTHENTICATION ROUTES ====================
+
+# ==================== DOMAIN RESTRICTION HELPER FUNCTIONS ====================
+
+def extract_domain(email):
+    """Extract domain from email address"""
+    if not email or '@' not in email:
+        return None
+    return email.split('@')[1].lower()
+
+def get_all_domains_in_system():
+    """Get all unique email domains from both students and teachers"""
+    domains = {}
+
+    # Get student domains
+    students = User.query.filter_by(role='student').all()
+    for student in students:
+        domain = extract_domain(student.email)
+        if domain:
+            if domain not in domains:
+                domains[domain] = {
+                    'domain': domain,
+                    'student_count': 0,
+                    'teacher_count': 0,
+                    'teachers_with_access': []
+                }
+            domains[domain]['student_count'] += 1
+
+    # Get teacher domains
+    teachers = User.query.filter_by(role='teacher').all()
+    for teacher in teachers:
+        domain = extract_domain(teacher.email)
+        if domain:
+            if domain not in domains:
+                domains[domain] = {
+                    'domain': domain,
+                    'student_count': 0,
+                    'teacher_count': 0,
+                    'teachers_with_access': []
+                }
+            domains[domain]['teacher_count'] += 1
+
+    # Get teachers with access to each domain
+    for domain_name in domains.keys():
+        access_records = TeacherDomainAccess.query.filter_by(email_domain=domain_name).all()
+        for record in access_records:
+            domains[domain_name]['teachers_with_access'].append({
+                'id': record.teacher_id,
+                'name': record.teacher.full_name,
+                'email': record.teacher.email
+            })
+
+    return list(domains.values())
+
+def teacher_has_domain_access(teacher_id, domain):
+    """Check if a teacher has access to a specific domain"""
+    if not domain:
+        return True
+
+    # Check if teacher has any domain restrictions
+    has_any_restrictions = TeacherDomainAccess.query.filter_by(teacher_id=teacher_id).first()
+
+    # If teacher has NO restrictions at all, they can see ALL students (backward compatible)
+    if not has_any_restrictions:
+        return True
+
+    # If teacher has restrictions, check if they have access to THIS specific domain
+    access = TeacherDomainAccess.query.filter_by(
+        teacher_id=teacher_id,
+        email_domain=domain
+    ).first()
+
+    return access is not None
+
+def get_teacher_accessible_domains(teacher_id):
+    """Get all domains a teacher has access to"""
+    # Check if teacher has any restrictions
+    restrictions = TeacherDomainAccess.query.filter_by(teacher_id=teacher_id).all()
+
+    if not restrictions:
+        # No restrictions = access to all domains
+        return None  # None means "all domains"
+
+    # Return list of accessible domains
+    return [r.email_domain for r in restrictions]
+
+def filter_students_by_domain_access(students_query, teacher_id):
+    """Filter a SQLAlchemy query of students based on teacher's domain access"""
+    accessible_domains = get_teacher_accessible_domains(teacher_id)
+
+    # If None, teacher has access to all domains
+    if accessible_domains is None:
+        return students_query
+
+    # If empty list, teacher has no access to any domains
+    if not accessible_domains:
+        return students_query.filter(User.id == -1)
+
+    # Filter students by accessible domains
+    filtered_students = []
+    for student in students_query.all():
+        student_domain = extract_domain(student.email)
+        if student_domain in accessible_domains:
+            filtered_students.append(student.id)
+
+    if not filtered_students:
+        return students_query.filter(User.id == -1)
+
+    return students_query.filter(User.id.in_(filtered_students))
+
+def get_teacher_domain_statistics(teacher_id):
+    """Get statistics about a teacher's domain access"""
+    accessible_domains = get_teacher_accessible_domains(teacher_id)
+
+    if accessible_domains is None:
+        # Teacher has access to all
+        total_students = User.query.filter_by(role='student').count()
+        all_domains = set()
+        for student in User.query.filter_by(role='student').all():
+            domain = extract_domain(student.email)
+            if domain:
+                all_domains.add(domain)
+
+        return {
+            'has_restrictions': False,
+            'accessible_domains': list(all_domains),
+            'accessible_student_count': total_students,
+            'restricted_domains': []
+        }
+
+    # Count students in accessible domains
+    accessible_count = 0
+    all_domains = set()
+
+    for student in User.query.filter_by(role='student').all():
+        domain = extract_domain(student.email)
+        if domain:
+            all_domains.add(domain)
+            if domain in accessible_domains:
+                accessible_count += 1
+
+    restricted_domains = list(all_domains - set(accessible_domains))
+
+    return {
+        'has_restrictions': True,
+        'accessible_domains': accessible_domains,
+        'accessible_student_count': accessible_count,
+        'restricted_domains': restricted_domains
+    }
+
+
+# ==================== PWA (Progressive Web App) ROUTES ====================
+
+@app.route('/manifest.json')
+def pwa_manifest():
+    """Serve the PWA manifest file"""
+    return send_from_directory(
+        app.static_folder,
+        'manifest.json',
+        mimetype='application/manifest+json'
+    )
+
+@app.route('/sw.js')
+def pwa_service_worker():
+    """Serve the service worker from root (required for scope)"""
+    return send_from_directory(
+        app.static_folder,
+        'sw.js',
+        mimetype='application/javascript'
+    )
+
+@app.route('/offline.html')
+def pwa_offline():
+    """Serve the offline fallback page"""
+    return send_from_directory(
+        app.static_folder,
+        'offline.html',
+        mimetype='text/html'
+    )
+
+
+@app.route('/')
+def index():
+    if 'user_id' in session:
+        user = User.query.get(session['user_id'])
+        if user:
+            if user.role == 'admin':
+                return redirect(url_for('admin_dashboard'))
+            elif user.role == 'teacher':
+                if not user.is_approved:
+                    return render_template('pending_approval.html')
+                return redirect(url_for('teacher_dashboard'))
+            else:
+                return render_template('student_app.html')
+    
+    # Check if full account login is enabled (default: False for GDPR)
+    full_account_enabled = SystemSetting.get('FULL_ACCOUNT_LOGIN_ENABLED', False)
+    # Convert string 'true'/'false' to boolean if needed
+    if isinstance(full_account_enabled, str):
+        full_account_enabled = full_account_enabled.lower() == 'true'
+    
+    return render_template('login.html', full_account_enabled=full_account_enabled)
+
+@app.route('/register', methods=['GET'])
+def register_page():
+    return render_template('register.html')
+
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.json
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+    full_name = data.get('full_name', '').strip()
+    role = data.get('role', 'student')
+
+    # Validation
+    if not email or not password or not full_name:
+        return jsonify({'error': 'All fields are required'}), 400
+
+    if not re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', email):
+        return jsonify({'error': 'Invalid email format'}), 400
+
+    if len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+
+    if role not in ['student', 'teacher']:
+        return jsonify({'error': 'Invalid role'}), 400
+
+    # Check if user exists
+    if User.query.filter_by(email=email).first():
+        return jsonify({'error': 'Email already registered'}), 400
+
+    # Create user
+    user = User(
+        email=email,
+        full_name=full_name,
+        role=role,
+        is_approved=(role == 'student')  # Students auto-approved, teachers need approval
+    )
+    user.set_password(password)
+
+    db.session.add(user)
+    db.session.commit()
+
+    message = 'Registration successful!' if role == 'student' else 'Registration successful! Your teacher account is pending admin approval.'
+
+    return jsonify({
+        'message': message,
+        'user': user.to_dict()
+    }), 201
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
+
+    user = User.query.filter_by(email=email).first()
+
+    if not user or not user.check_password(password):
+        return jsonify({'error': 'Invalid email or password'}), 401
+
+    session['user_id'] = user.id
+    session['user_role'] = user.role
+    session['user_name'] = user.full_name
+
+    return jsonify({
+        'message': 'Login successful',
+        'role': user.role,
+        'is_approved': user.is_approved,
+        'user': user.to_dict()
+    }), 200
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    """Logout API endpoint with proper session invalidation"""
+    session.clear()
+    response = jsonify({'message': 'Logged out successfully', 'redirect': '/login?logged_out=1'})
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    response.delete_cookie('session')
+    return response, 200
+
+
+# ==================== FIXED GUEST ROUTES ====================
+# REPLACE your existing guest routes (lines ~1185-1208) with these:
+
+@app.route('/api/guest-start', methods=['POST'])
+def guest_start():
+    """Initialize guest session with proper user_id"""
+    import uuid
+
+    try:
+        session.clear()
+
+        # Get or create the guest user in database
+        guest_user = User.query.filter_by(email='guest@agentmath.app').first()
+
+        if not guest_user:
+            # Create guest user if it doesn't exist
+            guest_user = User(
+                email='guest@agentmath.app',
+                password_hash='no_password_required',
+                full_name='Guest User',
+                role='student',
+                is_approved=True
+            )
+            db.session.add(guest_user)
+            db.session.commit()
+
+        # Set up guest session properly
+        session['is_guest'] = True
+        session['guest_session_id'] = str(uuid.uuid4())
+        session['user_id'] = guest_user.id  # CRITICAL: Set user_id
+        session['role'] = 'student'
+
+        # Try to create guest_sessions table if it doesn't exist
+        try:
+            from sqlalchemy import text
+            db.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS guest_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT UNIQUE NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    quiz_attempts INTEGER DEFAULT 0
+                )
+            """))
+
+            # Insert this guest session
+            db.session.execute(
+                text("INSERT OR IGNORE INTO guest_sessions (session_id) VALUES (:sid)"),
+                {"sid": session['guest_session_id']}
+            )
+            db.session.commit()
+        except Exception as e:
+            print(f"Note: Could not create guest_sessions table: {e}")
+            # Not critical, continue anyway
+
+        return jsonify({
+            'success': True,
+            'message': 'Guest session started',
+            'redirect': '/student'
+        }), 200
+
+    except Exception as e:
+        print(f"Error starting guest session: {e}")
+        db.session.rollback()
+        return jsonify({'error': f'Failed to start guest session: {str(e)}'}), 500
+
+
+@app.route('/guest')
+def guest_app():
+    """Guest mode redirect - initializes session if needed"""
+    import uuid
+
+    # If not already a guest, set up guest session
+    if 'is_guest' not in session or 'user_id' not in session:
+        try:
+            # Get or create guest user
+            guest_user = User.query.filter_by(email='guest@agentmath.app').first()
+
+            if not guest_user:
+                guest_user = User(
+                    email='guest@agentmath.app',
+                    password_hash='no_password_required',
+                    full_name='Guest User',
+                    role='student',
+                    is_approved=True
+                )
+                db.session.add(guest_user)
+                db.session.commit()
+
+            # Set up session
+            session['is_guest'] = True
+            session['guest_session_id'] = str(uuid.uuid4())
+            session['user_id'] = guest_user.id
+            session['role'] = 'student'
+
+        except Exception as e:
+            print(f"Error setting up guest session: {e}")
+            return redirect('/')
+
+    # Redirect to student app
+    return redirect('/student')
+
+
+@app.route('/api/guest-info')
+def guest_info():
+    """Return guest session information"""
+    if session.get('is_guest'):
+        return jsonify({
+            'is_guest': True,
+            'guest_id': session.get('guest_session_id', 'unknown'),
+            'user_id': session.get('user_id')
+        }), 200
+    return jsonify({'is_guest': False}), 200
+
+
+@app.route('/api/change-password', methods=['POST'])
+@login_required
+def change_password():
+    """Allow users to change their own password"""
+    data = request.json
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+    confirm_password = data.get('confirm_password', '')
+
+    # Validation
+    if not current_password or not new_password or not confirm_password:
+        return jsonify({'error': 'All fields are required'}), 400
+
+    if new_password != confirm_password:
+        return jsonify({'error': 'New passwords do not match'}), 400
+
+    if len(new_password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters long'}), 400
+
+    # Get current user
+    user = User.query.get(session['user_id'])
+
+    # Verify current password
+    if not user.check_password(current_password):
+        return jsonify({'error': 'Current password is incorrect'}), 401
+
+    # Update password
+    user.set_password(new_password)
+    db.session.commit()
+
+    return jsonify({'message': 'Password changed successfully'}), 200
+
+@app.route('/api/current-user')
+def current_user():
+    """Get current user info - supports both regular and guest users"""
+    if 'is_guest' in session:
+        return jsonify({
+            'is_guest': True,
+            'guest_type': session.get('guest_type', 'casual'),
+            'guest_code': session.get('guest_code'),
+            'full_name': 'Guest User',
+            'email': 'guest@example.com',
+            'role': 'student'
+        }), 200
+
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    return jsonify(user.to_dict()), 200
+
+
+# ==================== COMBINED INIT ENDPOINT ====================
+# This endpoint returns ALL data needed for initial page load in ONE request
+# Reduces 10+ API calls to 1, saving ~5-8 seconds of server latency
+
+@app.route('/api/init')
+@guest_or_login_required
+@approved_required
+def api_init():
+    """
+    Combined endpoint that returns ALL data needed for initial page load.
+    Reduces 10+ API calls to just 1, dramatically improving load time.
+    
+    Returns: user, mastery, topics, progress, badges, online_count, resources, weekly_challenge
+    """
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
+    
+    result = {
+        'success': True,
+        'user': None,
+        'mastery': {},
+        'topics': [],
+        'strands': {},
+        'strand_info': {},
+        'progress': {},
+        'badges': {'earned': [], 'available': [], 'total_points': 0, 'level': 1},
+        'online_count': 1,
+        'resources': [],
+        'weekly_challenge': None,
+        'adaptive_progress': {}
+    }
+    
+    try:
+        user_id = session.get('user_id')
+        is_guest = session.get('is_guest', False)
+        guest_code = session.get('guest_code')
+        
+        # ===== 1. CURRENT USER =====
+        if is_guest:
+            result['user'] = {
+                'is_guest': True,
+                'guest_type': session.get('guest_type', 'casual'),
+                'guest_code': guest_code,
+                'full_name': 'Guest User',
+                'email': 'guest@example.com',
+                'role': 'student'
+            }
+        elif user_id:
+            user = User.query.get(user_id)
+            if user:
+                result['user'] = user.to_dict()
+        
+        # ===== 2. TOPICS (with strand grouping) =====
+        try:
+            topics_result = db.session.execute(text("""
+                SELECT id, topic_id, name, description, icon, color, strand, 
+                       is_new, beta_only, is_visible, display_order, jc_levels
+                FROM topics
+                WHERE is_visible = 1
+                ORDER BY display_order, name
+            """)).fetchall()
+            
+            strands = {}
+            for row in topics_result:
+                topic_data = {
+                    'id': row[0],
+                    'topic_id': row[1],
+                    'name': row[2],
+                    'description': row[3],
+                    'icon': row[4],
+                    'color': row[5],
+                    'strand': row[6],
+                    'is_new': bool(row[7]),
+                    'beta_only': bool(row[8]),
+                    'jc_levels': row[11]
+                }
+                result['topics'].append(topic_data)
+                
+                strand = row[6] or 'Other'
+                if strand not in strands:
+                    strands[strand] = []
+                strands[strand].append(topic_data)
+            
+            result['strands'] = strands
+            
+            # Strand info
+            result['strand_info'] = {
+                'Number': {'icon': 'fa-calculator', 'color': 'blue', 'order': 1},
+                'Algebra and Functions': {'icon': 'fa-superscript', 'color': 'purple', 'order': 2},
+                'Geometry and Trigonometry': {'icon': 'fa-shapes', 'color': 'green', 'order': 3},
+                'Statistics and Probability': {'icon': 'fa-chart-bar', 'color': 'orange', 'order': 4}
+            }
+        except Exception as e:
+            print(f"Init - topics error: {e}")
+        
+        # ===== 3. MASTERY DATA =====
+        try:
+            topics_list = get_valid_topics_from_db()
+            difficulties = VALID_DIFFICULTIES
+            
+            if guest_code:
+                mastery_query = text("""
+                    SELECT topic, difficulty, MAX(CAST(score AS FLOAT) / total_questions * 100) as best_score
+                    FROM guest_quiz_attempts
+                    WHERE guest_code = :code
+                    GROUP BY topic, difficulty
+                """)
+                mastery_results = db.session.execute(mastery_query, {'code': guest_code}).fetchall()
+            elif user_id and not is_guest:
+                mastery_query = text("""
+                    SELECT topic, difficulty, MAX(percentage) as best_score
+                    FROM quiz_attempts
+                    WHERE user_id = :user_id
+                    GROUP BY topic, difficulty
+                """)
+                mastery_results = db.session.execute(mastery_query, {'user_id': user_id}).fetchall()
+            else:
+                mastery_results = []
+            
+            # Build lookup
+            best_scores = {}
+            for row in mastery_results:
+                topic, difficulty, best_score = row
+                if topic not in best_scores:
+                    best_scores[topic] = {}
+                best_scores[topic][difficulty] = best_score or 0
+            
+            # Build mastery data structure
+            for topic in topics_list:
+                result['mastery'][topic] = {
+                    'difficulties': {},
+                    'topic_mastered': False
+                }
+                mastered_count = 0
+                for difficulty in difficulties:
+                    best_score = best_scores.get(topic, {}).get(difficulty, 0)
+                    result['mastery'][topic]['difficulties'][difficulty] = {
+                        'mastered': best_score > 80,
+                        'best_score': round(best_score, 1) if best_score else 0
+                    }
+                    if best_score > 80:
+                        mastered_count += 1
+                result['mastery'][topic]['topic_mastered'] = (mastered_count == 3)
+        except Exception as e:
+            print(f"Init - mastery error: {e}")
+        
+        # ===== 4. ADAPTIVE PROGRESS (all topics at once) =====
+        try:
+            adaptive_topics = ['arithmetic', 'fractions', 'percentages', 'decimals', 'ratio', 
+                             'sets', 'descriptive_statistics', 'patterns', 'functions', 
+                             'area_perimeter_volume', 'solving_equations', 'simultaneous_equations',
+                             'linear_inequalities', 'introductory_algebra', 'applied_arithmetic',
+                             'currency', 'speed_distance_time', 'probability', 'coordinate_geometry',
+                             'trigonometry', 'number_systems', 'indices', 'geometry',
+                             'simplifying_expressions', 'expanding_factorising']
+            
+            if user_id and not is_guest:
+                adaptive_query = text("""
+                    SELECT topic, current_level, current_points, total_questions, correct_answers
+                    FROM adaptive_progress
+                    WHERE user_id = :user_id
+                """)
+                adaptive_results = db.session.execute(adaptive_query, {'user_id': user_id}).fetchall()
+            elif guest_code:
+                adaptive_query = text("""
+                    SELECT topic, current_level, current_points, total_questions, correct_answers
+                    FROM adaptive_progress
+                    WHERE guest_code = :guest_code
+                """)
+                adaptive_results = db.session.execute(adaptive_query, {'guest_code': guest_code}).fetchall()
+            else:
+                adaptive_results = []
+            
+            # Build adaptive progress dict
+            for row in adaptive_results:
+                result['adaptive_progress'][row[0]] = {
+                    'current_level': row[1],
+                    'current_points': row[2],
+                    'total_questions': row[3],
+                    'correct_answers': row[4]
+                }
+            
+            # Fill in defaults for topics without progress
+            for topic in adaptive_topics:
+                if topic not in result['adaptive_progress']:
+                    result['adaptive_progress'][topic] = {
+                        'current_level': 1,
+                        'current_points': 0,
+                        'total_questions': 0,
+                        'correct_answers': 0
+                    }
+        except Exception as e:
+            print(f"Init - adaptive progress error: {e}")
+        
+        # ===== 5. BADGES =====
+        try:
+            total_points = 0
+            level = 1
+            
+            if guest_code:
+                # Get guest stats
+                guest_stats = db.session.execute(text("""
+                    SELECT total_score FROM guest_users WHERE guest_code = :code
+                """), {'code': guest_code}).fetchone()
+                
+                if guest_stats:
+                    total_points = guest_stats[0] or 0
+                    level = (total_points // 100) + 1
+                
+                # Get guest badges
+                try:
+                    guest_badges = db.session.execute(text("""
+                        SELECT badge_name, earned_at FROM guest_badges
+                        WHERE guest_code = :code ORDER BY earned_at DESC
+                    """), {'code': guest_code}).fetchall()
+                    
+                    for badge_row in guest_badges:
+                        badge = Badge.query.filter_by(name=badge_row[0]).first()
+                        if badge:
+                            result['badges']['earned'].append({
+                                'name': badge.name,
+                                'description': badge.description,
+                                'icon': badge.icon,
+                                'earned_at': badge_row[1].isoformat() if badge_row[1] else None
+                            })
+                except:
+                    pass
+                    
+            elif user_id and not is_guest:
+                user = User.query.get(user_id)
+                if user:
+                    stats = UserStats.query.filter_by(user_id=user_id).first()
+                    if stats:
+                        total_points = stats.total_points or 0
+                        level = stats.level or 1
+                    
+                    # Get user badges
+                    user_badges = UserBadge.query.filter_by(user_id=user_id).all()
+                    for ub in user_badges:
+                        if ub.badge:
+                            result['badges']['earned'].append({
+                                'name': ub.badge.name,
+                                'description': ub.badge.description,
+                                'icon': ub.badge.icon,
+                                'earned_at': ub.earned_at.isoformat() if ub.earned_at else None
+                            })
+            
+            result['badges']['total_points'] = total_points
+            result['badges']['level'] = level
+        except Exception as e:
+            print(f"Init - badges error: {e}")
+        
+        # ===== 6. ONLINE COUNT =====
+        try:
+            five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+            
+            registered_count = db.session.execute(text("""
+                SELECT COUNT(DISTINCT user_id) FROM quiz_attempts WHERE created_at > :since
+            """), {'since': five_minutes_ago}).fetchone()[0] or 0
+            
+            guest_count = db.session.execute(text("""
+                SELECT COUNT(*) FROM guest_users WHERE last_active > :since
+            """), {'since': five_minutes_ago}).fetchone()[0] or 0
+            
+            result['online_count'] = max(1, registered_count + guest_count)
+        except Exception as e:
+            print(f"Init - online count error: {e}")
+            result['online_count'] = 1
+        
+        # ===== 7. RESOURCES =====
+        try:
+            resources_result = db.session.execute(text("""
+                SELECT id, button_text, link_url, popup_text, image_filename, display_order, category
+                FROM additional_resources
+                WHERE is_active = 1
+                ORDER BY display_order, id
+            """)).fetchall()
+            
+            for row in resources_result:
+                image_url = f'/static/resources/{row[4]}' if row[4] else None
+                result['resources'].append({
+                    'id': row[0],
+                    'button_text': row[1],
+                    'link_url': row[2],
+                    'popup_text': row[3],
+                    'image_url': image_url,
+                    'display_order': row[5],
+                    'category': row[6]
+                })
+        except Exception as e:
+            print(f"Init - resources error: {e}")
+        
+        # ===== 8. WEEKLY CHALLENGE =====
+        try:
+            today = datetime.utcnow().date()
+            start_of_week = today - timedelta(days=today.weekday())
+            
+            if guest_code:
+                quiz_count = db.session.execute(text("""
+                    SELECT COUNT(*) FROM guest_quiz_attempts
+                    WHERE guest_code = :code AND DATE(completed_at) >= :start
+                """), {'code': guest_code, 'start': start_of_week}).fetchone()[0]
+                
+                high_score_count = db.session.execute(text("""
+                    SELECT COUNT(*) FROM guest_quiz_attempts
+                    WHERE guest_code = :code AND DATE(completed_at) >= :start AND percentage >= 80
+                """), {'code': guest_code, 'start': start_of_week}).fetchone()[0]
+            elif user_id:
+                quiz_count = db.session.execute(text("""
+                    SELECT COUNT(*) FROM quiz_attempts
+                    WHERE user_id = :uid AND DATE(created_at) >= :start
+                """), {'uid': user_id, 'start': start_of_week}).fetchone()[0]
+                
+                high_score_count = db.session.execute(text("""
+                    SELECT COUNT(*) FROM quiz_attempts
+                    WHERE user_id = :uid AND DATE(created_at) >= :start AND percentage >= 80
+                """), {'uid': user_id, 'start': start_of_week}).fetchone()[0]
+            else:
+                quiz_count = 0
+                high_score_count = 0
+            
+            result['weekly_challenge'] = {
+                'goals': [
+                    {'id': 'goal1', 'target': 5, 'current': quiz_count, 'points': 50, 'type': 'quizzes'},
+                    {'id': 'goal2', 'target': 3, 'current': high_score_count, 'points': 75, 'type': 'highscores'},
+                    {'id': 'goal3', 'target': 5, 'current': 0, 'points': 100, 'type': 'streak'}
+                ],
+                'week_start': start_of_week.isoformat()
+            }
+        except Exception as e:
+            print(f"Init - weekly challenge error: {e}")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Init endpoint error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ==================== STUDENT ROUTES ====================
+
+@app.route('/student')
+@login_required
+@approved_required
+def student_redirect():
+    """Redirect /student to /app for backwards compatibility"""
+    return redirect(url_for('student_app'))
+
+@app.route('/app')
+@login_required
+@approved_required
+def student_app():
+    # Handle repeat guests (they don't have user_id)
+    if 'guest_code' in session:
+        return render_template('student_app.html')
+
+    # Handle full accounts and casual guests
+    user = User.query.get(session['user_id'])
+    if user.role != 'student':
+        return redirect(url_for('index'))
+    return render_template('student_app.html')
+
+@app.route('/api/topics')
+@guest_or_login_required
+@approved_required
+def get_topics():
+    """Get topics grouped by strands - reads from topics table (admin managed)"""
+    from sqlalchemy import text
+
+    # Strand colors and descriptions
+    strand_info = {
+        'Numeracy': {
+            'color': '#10b981',
+            'icon': '🧮',
+            'description': 'Build strong number skills for everyday maths'
+        },
+        'L1LP': {
+            'color': '#8b5cf6',
+            'icon': '🌟',
+            'description': 'Level 1 Learning Programme - Accessible numeracy for all learners'
+        },
+        'L2LP': {
+            'color': '#f97316',
+            'icon': '⭐',
+            'description': 'Level 2 Learning Programme - Building numeracy for independent living'
+        },
+        'Number': {
+            'color': '#667eea',
+            'icon': '📊',
+            'description': 'Master the fundamentals of numbers and operations'
+        },
+        'Algebra and Functions': {
+            'color': '#f093fb',
+            'icon': '🔢',
+            'description': 'Discover patterns, equations, and functions'
+        },
+        'Statistics and Probability': {
+            'color': '#4facfe',
+            'icon': '📈',
+            'description': 'Analyze data and understand probability'
+        },
+        'Senior Cycle - Algebra': {
+            'color': '#fa709a',
+            'icon': '🎓',
+            'description': 'Advanced algebraic concepts for senior students'
+        },
+        'Geometry and Trigonometry': {
+            'color': '#764ba2',
+            'icon': '📐',
+            'description': 'Explore shapes, measurements, and spatial reasoning'
+        },
+        'LC Higher Level': {
+            'color': '#3b82f6',
+            'icon': '🎓',
+            'description': 'Leaving Certificate Higher Level Mathematics (SEC aligned)'
+        },
+        'LC Ordinary Level': {
+            'color': '#10b981',
+            'icon': '📗',
+            'description': 'Leaving Certificate Ordinary Level Mathematics (SEC aligned)'
+        }
+    }
+
+    strands = {}
+    topics_flat = {}
+
+    try:
+        # Query topics from the topics table (managed by admin)
+        # Only get visible topics, ordered by strand and sort_order
+        topics_query = db.session.execute(text("""
+            SELECT t.topic_id, t.display_name, t.icon, s.name as strand_name, t.sort_order
+            FROM topics t
+            LEFT JOIN strands s ON t.strand_id = s.id
+            WHERE t.is_visible = 1
+            ORDER BY
+                CASE s.name
+                    WHEN 'Numeracy' THEN 0
+                    WHEN 'L1LP' THEN 1
+                    WHEN 'L2LP' THEN 2
+                    WHEN 'Number' THEN 3
+                    WHEN 'Algebra and Functions' THEN 4
+                    WHEN 'Statistics and Probability' THEN 5
+                    WHEN 'Senior Cycle - Algebra' THEN 6
+                    WHEN 'Geometry and Trigonometry' THEN 7
+                    WHEN 'LC Ordinary Level' THEN 8
+                    WHEN 'LC Higher Level' THEN 9
+                    ELSE 10
+                END,
+                t.sort_order,
+                t.display_name
+        """)).fetchall()
+
+        if topics_query:
+            for topic_id, display_name, icon, strand_name, sort_order in topics_query:
+                # Use strand name or 'Other' for unassigned topics
+                strand = strand_name or 'Other'
+
+                if strand not in strands:
+                    strands[strand] = []
+
+                # Add topic to strand list
+                strands[strand].append(topic_id)
+
+                # Add topic metadata to flat dict
+                topics_flat[topic_id] = {
+                    'title': display_name,
+                    'icon': icon or 'book'
+                }
+
+            # Add any new strands to strand_info with default styling
+            for strand_name in strands.keys():
+                if strand_name not in strand_info:
+                    strand_info[strand_name] = {
+                        'color': '#6b7280',
+                        'icon': '📚',
+                        'description': f'Topics in {strand_name}'
+                    }
+        else:
+            # No topics in database, use fallback
+            raise Exception("No topics found in topics table")
+
+    except Exception as e:
+        # Fallback: Query from questions table (old method)
+        topic_info = {
+            'arithmetic': {'title': 'Arithmetic', 'icon': 'calculator'},
+            'fractions': {'title': 'Fractions', 'icon': 'divide'},
+            'decimals': {'title': 'Decimals', 'icon': 'percent'},
+            'multiplication_division': {'title': 'Multiplication & Division', 'icon': 'x'},
+            'number_systems': {'title': 'Number Systems', 'icon': 'hash'},
+            'bodmas': {'title': 'BODMAS', 'icon': 'book'},
+            'introductory_algebra': {'title': 'Introductory Algebra', 'icon': 'book-open'},
+            'functions': {'title': 'Functions', 'icon': 'chart'},
+            'patterns': {'title': 'Patterns', 'icon': 'trending-up'},
+            'solving_equations': {'title': 'Solving Equations', 'icon': 'equals'},
+            'simplifying_expressions': {'title': 'Simplifying Expressions', 'icon': 'calculator'},
+            'expanding_factorising': {'title': 'Expanding & Factorising', 'icon': 'brackets'},
+            'probability': {'title': 'Probability', 'icon': 'dice'},
+            'descriptive_statistics': {'title': 'Descriptive Statistics', 'icon': 'chart-bar'},
+            'sets': {'title': 'Sets', 'icon': 'layers'},
+            'surds': {'title': 'Surds', 'icon': 'radical'},
+            'complex_numbers_intro': {'title': 'Complex Numbers Intro', 'icon': 'infinity'},
+            'complex_numbers_expanded': {'title': 'Complex Numbers - Expanded', 'icon': 'rotate'},
+            'percentages': {'title': 'Percentages', 'icon': 'percent'},
+            'geometry': {'title': 'Geometry', 'icon': 'shapes'},
+            'trigonometry': {'title': 'Trigonometry', 'icon': 'ruler'}
+        }
+
+        try:
+            # Try to get topics from questions table
+            topics_query = db.session.execute(text("""
+                SELECT DISTINCT topic, strand
+                FROM questions
+                WHERE strand IS NOT NULL
+                ORDER BY strand, topic
+            """)).fetchall()
+
+            for topic, strand in topics_query:
+                if strand not in strands:
+                    strands[strand] = []
+                strands[strand].append(topic)
+
+                if topic in topic_info:
+                    topics_flat[topic] = topic_info[topic]
+                else:
+                    topics_flat[topic] = {
+                        'title': topic.replace('_', ' ').title(),
+                        'icon': 'book'
+                    }
+        except:
+            # Ultimate fallback - hardcoded
+            strands = {
+                'Number': ['arithmetic', 'multiplication_division', 'number_systems',
+                          'bodmas', 'fractions', 'decimals', 'sets'],
+                'Algebra and Functions': ['introductory_algebra', 'functions', 'patterns',
+                                         'solving_equations', 'simplifying_expressions',
+                                         'expanding_factorising'],
+                'Statistics and Probability': ['probability', 'descriptive_statistics'],
+                'Senior Cycle - Algebra': ['surds', 'complex_numbers_intro',
+                                           'complex_numbers_expanded']
+            }
+            topics_flat = topic_info
+
+    return jsonify({
+        'topics': topics_flat,
+        'strands': strands,
+        'strand_info': strand_info
+    })
+
+@app.route('/api/questions/<topic>/<difficulty>')
+@guest_or_login_required
+@approved_required
+def get_questions(topic, difficulty):
+    """
+    Get 25 random questions from the pool, excluding questions the user has already seen.
+    If fewer than 25 unseen questions are available, returns all available unseen questions.
+    This ensures users never see duplicate questions, even if the quiz is shorter.
+    Questions are marked as seen immediately when fetched.
+    """
+    from sqlalchemy import text
+    
+    # Get user identifier
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    # Get IDs of questions this user has already seen for this topic/difficulty
+    seen_question_ids = set()
+    
+    try:
+        if user_id:
+            seen = db.session.execute(text("""
+                SELECT question_id FROM user_question_history
+                WHERE user_id = :user_id AND topic = :topic AND difficulty = :difficulty
+            """), {'user_id': user_id, 'topic': topic, 'difficulty': difficulty}).fetchall()
+            seen_question_ids = {row.question_id for row in seen}
+        elif guest_code:
+            seen = db.session.execute(text("""
+                SELECT question_id FROM user_question_history
+                WHERE guest_code = :guest_code AND topic = :topic AND difficulty = :difficulty
+            """), {'guest_code': guest_code, 'topic': topic, 'difficulty': difficulty}).fetchall()
+            seen_question_ids = {row.question_id for row in seen}
+    except Exception as e:
+        # Table might not exist yet - proceed without filtering
+        print(f"Note: Could not check question history (table may not exist): {e}")
+        seen_question_ids = set()
+    
+    # Get all questions for this topic/difficulty
+    questions = Question.query.filter_by(topic=topic, difficulty=difficulty).all()
+    
+    # Filter out seen questions
+    unseen_questions = [q for q in questions if q.id not in seen_question_ids]
+    
+    # If no unseen questions, reset history for this topic/difficulty and use all questions
+    if len(unseen_questions) == 0 and len(questions) > 0:
+        try:
+            if user_id:
+                db.session.execute(text("""
+                    DELETE FROM user_question_history
+                    WHERE user_id = :user_id AND topic = :topic AND difficulty = :difficulty
+                """), {'user_id': user_id, 'topic': topic, 'difficulty': difficulty})
+            elif guest_code:
+                db.session.execute(text("""
+                    DELETE FROM user_question_history
+                    WHERE guest_code = :guest_code AND topic = :topic AND difficulty = :difficulty
+                """), {'guest_code': guest_code, 'topic': topic, 'difficulty': difficulty})
+            db.session.commit()
+            unseen_questions = questions  # All questions are now "unseen" again
+            print(f"Reset question history for {user_id or guest_code} on {topic}/{difficulty}")
+        except Exception as e:
+            print(f"Could not reset question history: {e}")
+            unseen_questions = questions
+    
+    # Convert to dict and shuffle
+    questions_list = [q.to_dict() for q in unseen_questions]
+    random.shuffle(questions_list)
+
+    # Return up to 25 questions (or fewer if not enough unseen)
+    selected_questions = questions_list[:25]
+    
+    # Record these questions as seen
+    if selected_questions:
+        try:
+            for q in selected_questions:
+                if user_id:
+                    db.session.execute(text("""
+                        INSERT OR IGNORE INTO user_question_history 
+                        (user_id, question_id, topic, difficulty, seen_at)
+                        VALUES (:user_id, :question_id, :topic, :difficulty, CURRENT_TIMESTAMP)
+                    """), {
+                        'user_id': user_id,
+                        'question_id': q['id'],
+                        'topic': topic,
+                        'difficulty': difficulty
+                    })
+                elif guest_code:
+                    db.session.execute(text("""
+                        INSERT OR IGNORE INTO user_question_history 
+                        (guest_code, question_id, topic, difficulty, seen_at)
+                        VALUES (:guest_code, :question_id, :topic, :difficulty, CURRENT_TIMESTAMP)
+                    """), {
+                        'guest_code': guest_code,
+                        'question_id': q['id'],
+                        'topic': topic,
+                        'difficulty': difficulty
+                    })
+            db.session.commit()
+        except Exception as e:
+            # Don't fail the request if tracking fails
+            print(f"Could not record question history: {e}")
+            db.session.rollback()
+    
+    # Log if quiz will be shorter than usual
+    if len(selected_questions) < 25 and len(questions) >= 25:
+        print(f"Quiz for {user_id or guest_code}: {len(selected_questions)} unseen questions available (of {len(questions)} total)")
+    
+    return jsonify(selected_questions)
+
+
+# ===== ADAPTIVE QUIZ BETA API =====
+@app.route('/api/adaptive/question/<topic>/<int:level>')
+@guest_or_login_required
+@approved_required
+def get_adaptive_question(topic, level):
+    """
+    Get a random question for adaptive quiz at the specified level.
+    Uses questions_adaptive table with difficulty_level column.
+    
+    SERVER-SIDE DUPLICATE PREVENTION:
+    - Tracks seen questions in user_adaptive_question_history table
+    - Ensures students never see repeat questions until all questions exhausted
+    - Works across sessions, page refreshes, and device changes
+    
+    Also supports ?exclude=1,2,3 parameter as secondary mechanism.
+    """
+    from sqlalchemy import text
+    
+    # Get user identifier for tracking
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    # Get excluded question IDs from query parameter (secondary mechanism)
+    exclude_param = request.args.get('exclude', '')
+    frontend_excluded_ids = []
+    if exclude_param:
+        try:
+            frontend_excluded_ids = [int(x) for x in exclude_param.split(',') if x.strip().isdigit()]
+        except:
+            frontend_excluded_ids = []
+    
+    # Map level to difficulty band
+    if level <= 3:
+        band = 'beginner'
+    elif level <= 6:
+        band = 'intermediate'
+    elif level <= 9:
+        band = 'advanced'
+    elif level == 10:
+        band = 'mastery'
+    elif level == 11:
+        band = 'application'
+    else:
+        band = 'linked'  # Level 12
+    
+    # === SERVER-SIDE DUPLICATE PREVENTION ===
+    # Get IDs of questions this user has already seen for this topic/level
+    seen_question_ids = set()
+    
+    try:
+        if user_id:
+            seen = db.session.execute(text("""
+                SELECT question_id FROM user_adaptive_question_history
+                WHERE user_id = :user_id AND topic = :topic AND difficulty_level = :level
+            """), {'user_id': user_id, 'topic': topic, 'level': level}).fetchall()
+            seen_question_ids = {row.question_id for row in seen}
+        elif guest_code:
+            seen = db.session.execute(text("""
+                SELECT question_id FROM user_adaptive_question_history
+                WHERE guest_code = :guest_code AND topic = :topic AND difficulty_level = :level
+            """), {'guest_code': guest_code, 'topic': topic, 'level': level}).fetchall()
+            seen_question_ids = {row.question_id for row in seen}
+    except Exception as e:
+        # Table might not exist yet - proceed without filtering
+        print(f"Note: Could not check adaptive question history (table may not exist): {e}")
+        seen_question_ids = set()
+    
+    # Combine server-side seen IDs with frontend excluded IDs
+    all_excluded_ids = seen_question_ids.union(set(frontend_excluded_ids))
+    
+    try:
+        # Build exclusion clause
+        exclude_clause = ""
+        params = {'topic': topic, 'level': level, 'band': band}
+        if all_excluded_ids:
+            exclude_clause = f"AND id NOT IN ({','.join(str(x) for x in all_excluded_ids)})"
+        
+        # Try to get a question from questions_adaptive table
+        result = db.session.execute(text(f"""
+            SELECT id, topic, question_text, option_a, option_b, option_c, option_d,
+                   correct_answer, explanation, difficulty_level, difficulty_band,
+                   question_type, image_svg
+            FROM questions_adaptive
+            WHERE topic = :topic 
+              AND difficulty_level = :level
+              AND is_active = 1
+              {exclude_clause}
+            ORDER BY RANDOM()
+            LIMIT 1
+        """), params).fetchone()
+        
+        # If no exact level match, try the band
+        if not result:
+            result = db.session.execute(text(f"""
+                SELECT id, topic, question_text, option_a, option_b, option_c, option_d,
+                       correct_answer, explanation, difficulty_level, difficulty_band,
+                       question_type, image_svg
+                FROM questions_adaptive
+                WHERE topic = :topic 
+                  AND difficulty_band = :band
+                  AND is_active = 1
+                  {exclude_clause}
+                ORDER BY RANDOM()
+                LIMIT 1
+            """), params).fetchone()
+        
+        # If still no result and we have exclusions, reset history and try again
+        if not result and all_excluded_ids:
+            # All questions have been seen - reset history for this topic/level
+            try:
+                if user_id:
+                    db.session.execute(text("""
+                        DELETE FROM user_adaptive_question_history
+                        WHERE user_id = :user_id AND topic = :topic AND difficulty_level = :level
+                    """), {'user_id': user_id, 'topic': topic, 'level': level})
+                elif guest_code:
+                    db.session.execute(text("""
+                        DELETE FROM user_adaptive_question_history
+                        WHERE guest_code = :guest_code AND topic = :topic AND difficulty_level = :level
+                    """), {'guest_code': guest_code, 'topic': topic, 'level': level})
+                db.session.commit()
+                print(f"Reset adaptive question history for {user_id or guest_code} on {topic}/level {level}")
+            except Exception as e:
+                print(f"Could not reset adaptive question history: {e}")
+            
+            # Try again without exclusions
+            result = db.session.execute(text("""
+                SELECT id, topic, question_text, option_a, option_b, option_c, option_d,
+                       correct_answer, explanation, difficulty_level, difficulty_band,
+                       question_type, image_svg
+                FROM questions_adaptive
+                WHERE topic = :topic 
+                  AND difficulty_band = :band
+                  AND is_active = 1
+                ORDER BY RANDOM()
+                LIMIT 1
+            """), {'topic': topic, 'band': band}).fetchone()
+        
+        if result:
+            # Record this question as seen
+            try:
+                if user_id:
+                    db.session.execute(text("""
+                        INSERT OR IGNORE INTO user_adaptive_question_history 
+                        (user_id, question_id, topic, difficulty_level, seen_at)
+                        VALUES (:user_id, :question_id, :topic, :level, CURRENT_TIMESTAMP)
+                    """), {
+                        'user_id': user_id,
+                        'question_id': result.id,
+                        'topic': topic,
+                        'level': level
+                    })
+                elif guest_code:
+                    db.session.execute(text("""
+                        INSERT OR IGNORE INTO user_adaptive_question_history 
+                        (guest_code, question_id, topic, difficulty_level, seen_at)
+                        VALUES (:guest_code, :question_id, :topic, :level, CURRENT_TIMESTAMP)
+                    """), {
+                        'guest_code': guest_code,
+                        'question_id': result.id,
+                        'topic': topic,
+                        'level': level
+                    })
+                db.session.commit()
+            except Exception as e:
+                # Don't fail the request if tracking fails
+                print(f"Could not record adaptive question history: {e}")
+                db.session.rollback()
+            
+            question = {
+                'id': result.id,
+                'topic': result.topic,
+                'question_text': result.question_text,
+                'option_a': result.option_a,
+                'option_b': result.option_b,
+                'option_c': result.option_c,
+                'option_d': result.option_d,
+                'correct_answer': result.correct_answer,
+                'explanation': result.explanation or '',
+                'difficulty_level': result.difficulty_level,
+                'difficulty_band': result.difficulty_band,
+                'question_type': result.question_type or 'text',
+                'image_svg': result.image_svg or None
+            }
+            return jsonify(question)
+        else:
+            # Fallback: Try regular questions table with matching difficulty
+            difficulty_map = {'beginner': 'easy', 'intermediate': 'medium', 'advanced': 'hard'}
+            difficulty = difficulty_map.get(band, 'medium')
+            
+            fallback = Question.query.filter_by(topic=topic, difficulty=difficulty).order_by(db.func.random()).first()
+            
+            if fallback:
+                question = fallback.to_dict()
+                question['image_svg'] = None  # Regular questions don't have SVG
+                question['difficulty_level'] = level
+                question['difficulty_band'] = band
+                return jsonify(question)
+            else:
+                return jsonify({'error': f'No questions found for {topic} at level {level}'}), 404
+                
+    except Exception as e:
+        print(f"Error getting adaptive question: {e}")
+        # Table might not exist - fallback to regular questions
+        difficulty_map = {'beginner': 'easy', 'intermediate': 'medium', 'advanced': 'hard'}
+        difficulty = difficulty_map.get(band, 'medium')
+        
+        fallback = Question.query.filter_by(topic=topic, difficulty=difficulty).order_by(db.func.random()).first()
+        
+        if fallback:
+            question = fallback.to_dict()
+            question['image_svg'] = None
+            question['difficulty_level'] = level
+            question['difficulty_band'] = band
+            return jsonify(question)
+        else:
+            return jsonify({'error': f'No questions found for {topic}'}), 404
+
+
+@app.route('/api/adaptive/progress/<topic>')
+@guest_or_login_required
+def get_adaptive_progress(topic):
+    """
+    Get the user's current progress/level for a topic.
+    """
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    try:
+        # Check for existing progress
+        if user_id:
+            result = db.session.execute(text("""
+                SELECT current_level, current_points, total_questions, correct_answers
+                FROM adaptive_progress
+                WHERE user_id = :user_id AND topic = :topic
+            """), {'user_id': user_id, 'topic': topic}).fetchone()
+        elif guest_code:
+            result = db.session.execute(text("""
+                SELECT current_level, current_points, total_questions, correct_answers
+                FROM adaptive_progress
+                WHERE guest_code = :guest_code AND topic = :topic
+            """), {'guest_code': guest_code, 'topic': topic}).fetchone()
+        else:
+            result = None
+        
+        if result:
+            return jsonify({
+                'topic': topic,
+                'current_level': result.current_level,
+                'current_points': result.current_points,
+                'total_questions': result.total_questions,
+                'correct_answers': result.correct_answers
+            })
+        else:
+            # No progress yet - start at level 1
+            return jsonify({
+                'topic': topic,
+                'current_level': 1,
+                'current_points': 0,
+                'total_questions': 0,
+                'correct_answers': 0
+            })
+            
+    except Exception as e:
+        print(f"Error getting adaptive progress: {e}")
+        # Table might not exist
+        return jsonify({
+            'topic': topic,
+            'current_level': 1,
+            'current_points': 0,
+            'total_questions': 0,
+            'correct_answers': 0
+        })
+
+
+@app.route('/api/adaptive/save-progress', methods=['POST'])
+@guest_or_login_required
+def save_adaptive_progress():
+    """
+    Save the user's progress for a topic.
+    """
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    topic = data.get('topic')
+    current_level = data.get('current_level', 1)
+    current_points = data.get('current_points', 0)
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    if not topic:
+        return jsonify({'error': 'Topic is required'}), 400
+    
+    try:
+        if user_id:
+            db.session.execute(text("""
+                INSERT INTO adaptive_progress (user_id, topic, current_level, current_points, updated_at)
+                VALUES (:user_id, :topic, :level, :points, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, topic) DO UPDATE SET
+                    current_level = :level,
+                    current_points = :points,
+                    updated_at = CURRENT_TIMESTAMP
+            """), {'user_id': user_id, 'topic': topic, 'level': current_level, 'points': current_points})
+        elif guest_code:
+            db.session.execute(text("""
+                INSERT INTO adaptive_progress (guest_code, topic, current_level, current_points, updated_at)
+                VALUES (:guest_code, :topic, :level, :points, CURRENT_TIMESTAMP)
+                ON CONFLICT(guest_code, topic) DO UPDATE SET
+                    current_level = :level,
+                    current_points = :points,
+                    updated_at = CURRENT_TIMESTAMP
+            """), {'guest_code': guest_code, 'topic': topic, 'level': current_level, 'points': current_points})
+        
+        db.session.commit()
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error saving adaptive progress: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/adaptive/reset-progress', methods=['POST'])
+@guest_or_login_required
+def reset_adaptive_progress():
+    """
+    Reset the user's progress for a topic back to level 1.
+    """
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    topic = data.get('topic')
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    if not topic:
+        return jsonify({'error': 'Topic is required'}), 400
+    
+    try:
+        if user_id:
+            db.session.execute(text("""
+                DELETE FROM adaptive_progress
+                WHERE user_id = :user_id AND topic = :topic
+            """), {'user_id': user_id, 'topic': topic})
+        elif guest_code:
+            db.session.execute(text("""
+                DELETE FROM adaptive_progress
+                WHERE guest_code = :guest_code AND topic = :topic
+            """), {'guest_code': guest_code, 'topic': topic})
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Progress reset for {topic}'})
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error resetting adaptive progress: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
+# FLOW SUMS - INTERACTIVE ARITHMETIC CHAINS (NUMERACY STRAND)
+# =============================================================================
+
+def get_flow_sum_level_config(level: int) -> dict:
+    """Get configuration for a specific Flow Sum level"""
+    configs = {
+        1: {'steps': 3, 'ops': ['basic_add', 'basic_subtract'], 'num_range': (2, 15), 'gateway_range': (5, 15)},
+        2: {'steps': 3, 'ops': ['basic_add', 'basic_subtract'], 'num_range': (2, 20), 'gateway_range': (5, 20)},
+        3: {'steps': 4, 'ops': ['basic_add', 'basic_subtract', 'double'], 'num_range': (2, 20), 'gateway_range': (5, 25)},
+        4: {'steps': 4, 'ops': ['basic_add', 'basic_subtract', 'double', 'halve'], 'num_range': (2, 25), 'gateway_range': (10, 40)},
+        5: {'steps': 5, 'ops': ['basic_add', 'basic_subtract', 'double', 'halve', 'times'], 'num_range': (2, 10), 'gateway_range': (5, 30)},
+        6: {'steps': 5, 'ops': ['basic_add', 'basic_subtract', 'double', 'times', 'divide'], 'num_range': (2, 10), 'gateway_range': (10, 50)},
+        7: {'steps': 5, 'ops': ['basic_add', 'basic_subtract', 'times', 'divide', 'add_square', 'times_10'], 'num_range': (2, 12), 'gateway_range': (5, 30)},
+        8: {'steps': 6, 'ops': ['basic_add', 'basic_subtract', 'times', 'divide', 'add_square', 'times_10', 'divide_10'], 'num_range': (2, 15), 'gateway_range': (10, 50)},
+        9: {'steps': 6, 'ops': ['basic_add', 'basic_subtract', 'times', 'percent_50', 'percent_10', 'double'], 'num_range': (5, 20), 'gateway_range': (20, 100)},
+        10: {'steps': 7, 'ops': ['basic_add', 'basic_subtract', 'times', 'percent_50', 'percent_25', 'percent_200', 'double'], 'num_range': (5, 25), 'gateway_range': (20, 100)},
+        11: {'steps': 7, 'ops': ['basic_add', 'basic_subtract', 'times', 'subtract_from', 'add_square', 'percent_50', 'double'], 'num_range': (5, 30), 'gateway_range': (10, 50)},
+        12: {'steps': 8, 'ops': ['basic_add', 'basic_subtract', 'times', 'subtract_from', 'add_square', 'add_product', 'percent_50', 'times'], 'num_range': (5, 30), 'gateway_range': (10, 50)},
+    }
+    return configs.get(level, configs[1])
+
+
+def generate_flow_sum_operation(op_type: str, current_value: int, config: dict):
+    """Generate a single Flow Sum operation. Returns (display, new_value, hint)"""
+    import random
+    num_range = config['num_range']
+    
+    if op_type == 'basic_add':
+        n = random.randint(num_range[0], num_range[1])
+        return f"Add {n}", current_value + n, f"Take your number and add {n} to it"
+        
+    elif op_type == 'basic_subtract':
+        max_sub = min(num_range[1], current_value - 1)
+        if max_sub < 1:
+            n = random.randint(num_range[0], num_range[1])
+            return f"Add {n}", current_value + n, f"Add {n} to your number"
+        n = random.randint(max(1, num_range[0]), max(1, max_sub))
+        return f"Subtract {n}", current_value - n, f"Take away {n} from your number"
+        
+    elif op_type == 'double':
+        return "Double it", current_value * 2, "Multiply your number by 2"
+        
+    elif op_type == 'halve':
+        if current_value % 2 != 0:
+            return "Double it", current_value * 2, "Multiply your number by 2"
+        return "Halve it", current_value // 2, "Divide your number by 2"
+        
+    elif op_type == 'times':
+        n = random.randint(2, min(6, num_range[1]))
+        return f"Times {n}", current_value * n, f"Multiply your number by {n}"
+        
+    elif op_type == 'divide':
+        divisors = [d for d in range(2, min(10, current_value)) if current_value % d == 0]
+        if not divisors:
+            n = random.randint(2, 5)
+            return f"Times {n}", current_value * n, f"Multiply by {n}"
+        n = random.choice(divisors)
+        return f"Divide by {n}", current_value // n, f"Divide your number by {n}"
+        
+    elif op_type == 'add_square':
+        n = random.randint(2, 5)
+        return f"Add {n}²", current_value + (n * n), f"Calculate {n}² = {n*n}, then add it"
+        
+    elif op_type == 'times_10':
+        return "Times 10", current_value * 10, "Add a zero to the end"
+        
+    elif op_type == 'divide_10':
+        if current_value % 10 != 0:
+            return "Times 10", current_value * 10, "Add a zero to the end"
+        return "Divide by 10", current_value // 10, "Remove the last digit"
+        
+    elif op_type == 'percent_50':
+        if current_value % 2 != 0:
+            return "Double it", current_value * 2, "Multiply by 2"
+        return "Get 50% of this", current_value // 2, "Find half (50% means ÷2)"
+        
+    elif op_type == 'percent_25':
+        if current_value % 4 != 0:
+            return "Double it", current_value * 2, "Multiply by 2"
+        return "Get 25% of this", current_value // 4, "Find a quarter (25% means ÷4)"
+        
+    elif op_type == 'percent_10':
+        if current_value % 10 != 0:
+            return "Times 10", current_value * 10, "Add a zero"
+        return "Get 10% of this", current_value // 10, "Divide by 10"
+        
+    elif op_type == 'percent_200':
+        return "Get 200% of this", current_value * 2, "Double it (200% means ×2)"
+        
+    elif op_type == 'subtract_from':
+        n = ((current_value + random.randint(50, 200)) // 50) * 50
+        return f"Subtract from {n}", n - current_value, f"Take {n} and subtract your number from it"
+        
+    elif op_type == 'add_product':
+        a, b = random.randint(2, 8), random.randint(2, 8)
+        return f"Add the product of {a} and {b}", current_value + (a * b), f"Calculate {a} × {b} = {a*b}, then add it"
+        
+    else:
+        n = random.randint(num_range[0], num_range[1])
+        return f"Add {n}", current_value + n, f"Add {n} to your number"
+
+
+def generate_flow_sum(level: int) -> dict:
+    """Generate a complete Flow Sum question"""
+    import random
+    config = get_flow_sum_level_config(level)
+    
+    # Choose appropriate layouts based on level
+    # Levels 1-4: Simple vertical only (clearer for beginners)
+    # Levels 5-8: Vertical layouts
+    # Levels 9-12: All layouts including snake
+    if level <= 4:
+        layouts = ['arrow_down']
+    elif level <= 8:
+        layouts = ['arrow_down', 'arrow_up']
+    else:
+        layouts = ['arrow_down', 'arrow_up', 'snake_right', 'snake_left']
+    
+    for attempt in range(50):
+        try:
+            gateway = random.randint(config['gateway_range'][0], config['gateway_range'][1])
+            
+            # Adjust for divisibility if needed
+            if any(op in config['ops'] for op in ['halve', 'percent_50']):
+                gateway = (gateway // 2) * 2
+            if 'percent_25' in config['ops']:
+                gateway = (gateway // 4) * 4
+                
+            current_value = gateway
+            steps = []
+            used_ops = []
+            valid = True
+            
+            for step_num in range(config['steps']):
+                available_ops = [op for op in config['ops'] if op not in used_ops[-1:]]
+                if not available_ops:
+                    available_ops = config['ops']
+                    
+                op_type = random.choice(available_ops)
+                display, new_value, hint = generate_flow_sum_operation(op_type, current_value, config)
+                
+                # Validate
+                if not isinstance(new_value, int) or new_value <= 0 or new_value > 5000:
+                    valid = False
+                    break
+                if level <= 4 and new_value > 200:
+                    valid = False
+                    break
+                    
+                steps.append({
+                    'operation': display,
+                    'expected_value': new_value,
+                    'hint': hint
+                })
+                
+                current_value = new_value
+                used_ops.append(op_type)
+            
+            if valid and len(steps) == config['steps']:
+                # Choose layout based on level - simpler layouts for lower levels
+                if level <= 4:
+                    layout = 'arrow_down'  # Simple vertical flow for beginners
+                elif level <= 8:
+                    layout = random.choice(['arrow_down', 'arrow_up'])
+                else:
+                    layout = random.choice(layouts)
+                    
+                return {
+                    'gateway_number': gateway,
+                    'steps': steps,
+                    'final_answer': current_value,
+                    'layout': layout,
+                    'level': level,
+                    'total_steps': len(steps)
+                }
+                
+        except:
+            continue
+    
+    # Fallback simple question
+    gateway = random.randint(5, 15)
+    return {
+        'gateway_number': gateway,
+        'steps': [
+            {'operation': 'Add 5', 'expected_value': gateway + 5, 'hint': 'Add 5'},
+            {'operation': 'Double it', 'expected_value': (gateway + 5) * 2, 'hint': 'Multiply by 2'},
+            {'operation': 'Subtract 3', 'expected_value': (gateway + 5) * 2 - 3, 'hint': 'Take away 3'},
+        ],
+        'final_answer': (gateway + 5) * 2 - 3,
+        'layout': 'arrow_down',
+        'level': level,
+        'total_steps': 3
+    }
+
+
+@app.route('/api/flow-sums/question/<int:level>')
+@guest_or_login_required
+@approved_required
+def get_flow_sum_question(level):
+    """
+    Get a Flow Sum question for the specified level (1-12).
+    Returns an interactive arithmetic chain question.
+    """
+    if level < 1 or level > 12:
+        level = 1
+    
+    question = generate_flow_sum(level)
+    
+    return jsonify({
+        'success': True,
+        'question': question
+    })
+
+
+@app.route('/api/flow-sums/validate', methods=['POST'])
+@guest_or_login_required
+def validate_flow_sum_step():
+    """
+    Validate a single step in a Flow Sum.
+    """
+    data = request.get_json()
+    user_answer = data.get('answer')
+    expected = data.get('expected')
+    step_index = data.get('step_index', 0)
+    
+    try:
+        user_answer = int(user_answer)
+        expected = int(expected)
+        correct = (user_answer == expected)
+        
+        return jsonify({
+            'correct': correct,
+            'step_index': step_index
+        })
+    except:
+        return jsonify({
+            'correct': False,
+            'step_index': step_index,
+            'error': 'Invalid number'
+        })
+
+
+@app.route('/api/flow-sums/complete', methods=['POST'])
+@guest_or_login_required
+def complete_flow_sum():
+    """
+    Record completion of a Flow Sum question and award points.
+    """
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    level = data.get('level', 1)
+    hints_used = data.get('hints_used', 0)
+    total_attempts = data.get('total_attempts', 0)
+    time_taken = data.get('time_taken', 0)
+    steps_count = data.get('steps_count', 3)
+    
+    # Calculate points
+    base_points = 5 + (level * 2)  # Higher levels worth more
+    hint_penalty = hints_used * 2
+    attempt_penalty = max(0, (total_attempts - steps_count) * 1)
+    points = max(1, base_points - hint_penalty - attempt_penalty)
+    
+    # Award points to user
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    
+    try:
+        if guest_code:
+            db.session.execute(text("""
+                UPDATE guest_users 
+                SET total_score = total_score + :points
+                WHERE guest_code = :code
+            """), {'points': points, 'code': guest_code})
+            db.session.commit()
+        elif user_id:
+            db.session.execute(text("""
+                UPDATE users 
+                SET score = score + :points
+                WHERE id = :user_id
+            """), {'points': points, 'user_id': user_id})
+            db.session.commit()
+    except Exception as e:
+        print(f"Could not award Flow Sum points: {e}")
+        db.session.rollback()
+    
+    return jsonify({
+        'success': True,
+        'points_earned': points,
+        'base_points': base_points,
+        'hint_penalty': hint_penalty,
+        'attempt_penalty': attempt_penalty
+    })
+
+
+# =============================================================================
+# NUMBER PYRAMIDS - INTERACTIVE ADDITION PUZZLES (NUMERACY STRAND)
+# =============================================================================
+
+def get_pyramid_level_config(level: int) -> dict:
+    """Get configuration for a specific Number Pyramid level"""
+    configs = {
+        1:  {'rows': 3, 'num_range': (1, 5),   'blanks': 2,  'allow_negative': False},
+        2:  {'rows': 3, 'num_range': (1, 8),   'blanks': 3,  'allow_negative': False},
+        3:  {'rows': 4, 'num_range': (1, 10),  'blanks': 3,  'allow_negative': False},
+        4:  {'rows': 4, 'num_range': (1, 12),  'blanks': 4,  'allow_negative': False},
+        5:  {'rows': 4, 'num_range': (1, 15),  'blanks': 5,  'allow_negative': False},
+        6:  {'rows': 4, 'num_range': (2, 20),  'blanks': 5,  'allow_negative': False},
+        7:  {'rows': 5, 'num_range': (1, 15),  'blanks': 5,  'allow_negative': False},
+        8:  {'rows': 5, 'num_range': (2, 20),  'blanks': 6,  'allow_negative': False},
+        9:  {'rows': 5, 'num_range': (1, 25),  'blanks': 7,  'allow_negative': True},
+        10: {'rows': 5, 'num_range': (2, 30),  'blanks': 8,  'allow_negative': True},
+        11: {'rows': 6, 'num_range': (1, 20),  'blanks': 8,  'allow_negative': True},
+        12: {'rows': 6, 'num_range': (2, 25),  'blanks': 10, 'allow_negative': True},
+    }
+    return configs.get(level, configs[1])
+
+
+def generate_full_pyramid(rows: int, num_range: tuple) -> list:
+    """Generate a complete pyramid with all values filled in"""
+    import random
+    base = [random.randint(num_range[0], num_range[1]) for _ in range(rows)]
+    pyramid = [None] * rows
+    pyramid[rows - 1] = base
+    
+    for row in range(rows - 2, -1, -1):
+        pyramid[row] = []
+        for i in range(row + 1):
+            value = pyramid[row + 1][i] + pyramid[row + 1][i + 1]
+            pyramid[row].append(value)
+    
+    return pyramid
+
+
+def is_pyramid_solvable(pyramid: list, blanks: set) -> bool:
+    """Check if a pyramid with given blanks is solvable"""
+    rows = len(pyramid)
+    known = set()
+    
+    for row in range(rows):
+        for col in range(row + 1):
+            if (row, col) not in blanks:
+                known.add((row, col))
+    
+    changed = True
+    max_iterations = 50
+    iteration = 0
+    
+    while changed and iteration < max_iterations:
+        changed = False
+        iteration += 1
+        
+        for row in range(rows):
+            for col in range(row + 1):
+                if (row, col) in known:
+                    continue
+                
+                can_solve = False
+                
+                if row < rows - 1:
+                    left_below = (row + 1, col)
+                    right_below = (row + 1, col + 1)
+                    if left_below in known and right_below in known:
+                        can_solve = True
+                
+                if row > 0:
+                    if col > 0:
+                        parent = (row - 1, col - 1)
+                        sibling = (row, col - 1)
+                        if parent in known and sibling in known:
+                            can_solve = True
+                    if col < row:
+                        parent = (row - 1, col)
+                        sibling = (row, col + 1)
+                        if parent in known and sibling in known:
+                            can_solve = True
+                
+                if can_solve:
+                    known.add((row, col))
+                    changed = True
+    
+    total_cells = sum(range(1, rows + 1))
+    return len(known) == total_cells
+
+
+def select_pyramid_blanks(pyramid: list, num_blanks: int, level: int) -> set:
+    """Select which cells to blank out while ensuring solvability"""
+    import random
+    rows = len(pyramid)
+    all_cells = [(row, col) for row in range(rows) for col in range(row + 1)]
+    
+    for attempt in range(100):
+        blanks = set()
+        
+        if level <= 4:
+            candidates = [(r, c) for r, c in all_cells if r > 0 and r < rows - 1]
+            if len(candidates) < num_blanks:
+                candidates = [(r, c) for r, c in all_cells if r > 0]
+        elif level <= 8:
+            candidates = [(r, c) for r, c in all_cells if r > 0]
+        else:
+            candidates = [(r, c) for r, c in all_cells if r > 0]
+            base_cells = [(rows - 1, c) for c in range(rows)]
+            random.shuffle(base_cells)
+            candidates.extend(base_cells[:2])
+        
+        random.shuffle(candidates)
+        
+        for cell in candidates:
+            if len(blanks) >= num_blanks:
+                break
+            test_blanks = blanks | {cell}
+            if is_pyramid_solvable(pyramid, test_blanks):
+                blanks.add(cell)
+        
+        if len(blanks) >= num_blanks:
+            return blanks
+    
+    return blanks
+
+
+def generate_pyramid_puzzle(level: int) -> dict:
+    """Generate a Number Pyramid puzzle for the given level"""
+    import random
+    config = get_pyramid_level_config(level)
+    
+    for attempt in range(50):
+        pyramid = generate_full_pyramid(config['rows'], config['num_range'])
+        
+        max_top = 200 if level <= 6 else 500 if level <= 10 else 1000
+        if pyramid[0][0] > max_top:
+            continue
+        
+        blanks_set = select_pyramid_blanks(pyramid, config['blanks'], level)
+        
+        if len(blanks_set) >= config['blanks'] - 1:
+            # Create 2D boolean array for blanks (True = blank, False = given)
+            blanks_2d = []
+            for row in range(len(pyramid)):
+                blanks_row = []
+                for col in range(row + 1):
+                    blanks_row.append((row, col) in blanks_set)
+                blanks_2d.append(blanks_row)
+            
+            return {
+                'pyramid': pyramid,
+                'blanks': blanks_2d,
+                'level': level,
+                'rows': config['rows'],
+                'blank_count': len(blanks_set)
+            }
+    
+    # Fallback
+    pyramid = [[10], [4, 6], [1, 3, 3]]
+    return {
+        'pyramid': pyramid,
+        'blanks': [[False], [True, False], [False, False, True]],
+        'level': level,
+        'rows': 3,
+        'blank_count': 2
+    }
+
+
+def get_pyramid_hint(pyramid: list, row: int, col: int) -> str:
+    """Generate a hint for solving a specific cell"""
+    rows = len(pyramid)
+    
+    if row < rows - 1:
+        left = pyramid[row + 1][col]
+        right = pyramid[row + 1][col + 1]
+        return f"Add the two bricks below: {left} + {right}"
+    
+    if row > 0:
+        if col > 0:
+            parent = pyramid[row - 1][col - 1]
+            sibling = pyramid[row][col - 1]
+            return f"Subtract from brick above: {parent} - {sibling}"
+        else:
+            parent = pyramid[row - 1][col]
+            sibling = pyramid[row][col + 1]
+            return f"Subtract from brick above: {parent} - {sibling}"
+    
+    return "Look at the bricks around it"
+
+
+@app.route('/api/number-pyramids/question/<int:level>')
+@guest_or_login_required
+@approved_required
+def get_pyramid_question(level):
+    """Get a Number Pyramid puzzle for the specified level (1-12)"""
+    if level < 1 or level > 12:
+        level = 1
+    
+    puzzle = generate_pyramid_puzzle(level)
+    
+    return jsonify({
+        'success': True,
+        'puzzle': puzzle
+    })
+
+
+@app.route('/api/number-pyramids/validate', methods=['POST'])
+@guest_or_login_required
+def validate_pyramid_cell():
+    """Validate a single cell answer in a Number Pyramid"""
+    data = request.get_json()
+    user_answer = data.get('answer')
+    expected = data.get('expected')
+    row = data.get('row', 0)
+    col = data.get('col', 0)
+    
+    try:
+        user_answer = int(user_answer)
+        expected = int(expected)
+        correct = (user_answer == expected)
+        
+        return jsonify({
+            'correct': correct,
+            'row': row,
+            'col': col
+        })
+    except:
+        return jsonify({
+            'correct': False,
+            'row': row,
+            'col': col,
+            'error': 'Invalid number'
+        })
+
+
+@app.route('/api/number-pyramids/hint', methods=['POST'])
+@guest_or_login_required
+def get_pyramid_hint_endpoint():
+    """Get a hint for a specific cell"""
+    data = request.get_json()
+    pyramid = data.get('pyramid', [])
+    row = data.get('row', 0)
+    col = data.get('col', 0)
+    
+    hint = get_pyramid_hint(pyramid, row, col)
+    
+    return jsonify({
+        'success': True,
+        'hint': hint
+    })
+
+
+@app.route('/api/number-pyramids/complete', methods=['POST'])
+@guest_or_login_required
+def complete_pyramid():
+    """Record completion of a Number Pyramid and award points"""
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    level = data.get('level', 1)
+    hints_used = data.get('hints_used', 0)
+    total_attempts = data.get('total_attempts', 0)
+    total_blanks = data.get('total_blanks', 3)
+    time_taken = data.get('time_taken', 0)
+    
+    # Calculate points
+    base_points = 5 + (level * 2)
+    hint_penalty = hints_used * 2
+    attempt_penalty = max(0, (total_attempts - total_blanks) * 1)
+    points = max(1, base_points - hint_penalty - attempt_penalty)
+    
+    # Award points
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    
+    try:
+        if guest_code:
+            db.session.execute(text("""
+                UPDATE guest_users 
+                SET total_score = total_score + :points
+                WHERE guest_code = :code
+            """), {'points': points, 'code': guest_code})
+            db.session.commit()
+        elif user_id:
+            db.session.execute(text("""
+                UPDATE users 
+                SET score = score + :points
+                WHERE id = :user_id
+            """), {'points': points, 'user_id': user_id})
+            db.session.commit()
+    except Exception as e:
+        print(f"Could not award Number Pyramid points: {e}")
+        db.session.rollback()
+    
+    return jsonify({
+        'success': True,
+        'points_earned': points,
+        'base_points': base_points,
+        'hint_penalty': hint_penalty,
+        'attempt_penalty': attempt_penalty
+    })
+
+
+# =============================================================================
+# CODE BREAKER - LOGIC AND NUMERACY PUZZLE (NUMERACY STRAND)
+# =============================================================================
+
+def get_code_level_config(level: int) -> dict:
+    """Get configuration for a specific Code Breaker level"""
+    configs = {
+        1:  {'digits': 3, 'range': (1, 5), 'repeats': False, 'guesses': 8, 'clue_types': ['add']},
+        2:  {'digits': 3, 'range': (1, 5), 'repeats': False, 'guesses': 7, 'clue_types': ['add', 'biggest']},
+        3:  {'digits': 3, 'range': (1, 6), 'repeats': False, 'guesses': 7, 'clue_types': ['add', 'smallest', 'biggest']},
+        4:  {'digits': 3, 'range': (1, 7), 'repeats': False, 'guesses': 7, 'clue_types': ['add', 'odd_even', 'biggest']},
+        5:  {'digits': 3, 'range': (1, 9), 'repeats': True,  'guesses': 7, 'clue_types': ['add', 'odd_even', 'has_repeat']},
+        6:  {'digits': 3, 'range': (1, 9), 'repeats': True,  'guesses': 6, 'clue_types': ['add', 'multiply_two', 'odd_even']},
+        7:  {'digits': 4, 'range': (1, 6), 'repeats': False, 'guesses': 8, 'clue_types': ['add', 'multiply_two', 'biggest']},
+        8:  {'digits': 4, 'range': (1, 8), 'repeats': False, 'guesses': 7, 'clue_types': ['add', 'multiply_two', 'difference']},
+        9:  {'digits': 4, 'range': (1, 9), 'repeats': True,  'guesses': 7, 'clue_types': ['sum', 'product_two', 'double']},
+        10: {'digits': 4, 'range': (1, 9), 'repeats': True,  'guesses': 6, 'clue_types': ['sum', 'product_two', 'relationship']},
+        11: {'digits': 5, 'range': (1, 9), 'repeats': True,  'guesses': 7, 'clue_types': ['sum', 'product_two', 'consecutive']},
+        12: {'digits': 5, 'range': (1, 9), 'repeats': True,  'guesses': 6, 'clue_types': ['sum', 'product_all', 'relationship']},
+    }
+    return configs.get(level, configs[1])
+
+
+def generate_secret_code(config: dict) -> list:
+    """Generate a secret code based on config"""
+    import random
+    digits = config['digits']
+    min_val, max_val = config['range']
+    repeats = config['repeats']
+    
+    if repeats:
+        return [random.randint(min_val, max_val) for _ in range(digits)]
+    else:
+        available = list(range(min_val, max_val + 1))
+        random.shuffle(available)
+        return available[:digits]
+
+
+def generate_code_clue(code: list, clue_type: str, level: int) -> dict:
+    """Generate a single clue with simple or advanced language based on level"""
+    simple = level <= 8  # Simple language for levels 1-8
+    
+    if clue_type == 'add':
+        total = sum(code)
+        return {
+            'type': 'add',
+            'text': f"Add all the digits together to get {total}",
+            'value': total
+        }
+    
+    elif clue_type == 'sum':
+        total = sum(code)
+        return {
+            'type': 'sum',
+            'text': f"The sum of all digits is {total}",
+            'value': total
+        }
+    
+    elif clue_type == 'biggest':
+        biggest = max(code)
+        return {
+            'type': 'biggest',
+            'text': f"The biggest digit is {biggest}" if simple else f"The largest digit is {biggest}",
+            'value': biggest
+        }
+    
+    elif clue_type == 'smallest':
+        smallest = min(code)
+        return {
+            'type': 'smallest',
+            'text': f"The smallest digit is {smallest}",
+            'value': smallest
+        }
+    
+    elif clue_type == 'odd_even':
+        odd_count = sum(1 for d in code if d % 2 == 1)
+        even_count = len(code) - odd_count
+        if odd_count == 0:
+            text = "All the digits are even numbers"
+        elif even_count == 0:
+            text = "All the digits are odd numbers"
+        elif odd_count == 1:
+            text = "There is 1 odd number"
+        else:
+            text = f"There are {odd_count} odd numbers"
+        return {
+            'type': 'odd_even',
+            'text': text,
+            'odd_count': odd_count
+        }
+    
+    elif clue_type == 'has_repeat':
+        has_repeat = len(code) != len(set(code))
+        if has_repeat:
+            return {
+                'type': 'has_repeat',
+                'text': "At least two digits are the same",
+                'value': True
+            }
+        else:
+            return {
+                'type': 'has_repeat',
+                'text': "All digits are different",
+                'value': False
+            }
+    
+    elif clue_type == 'multiply_two':
+        product = code[0] * code[1]
+        return {
+            'type': 'multiply_two',
+            'text': f"Multiply the 1st and 2nd digits to get {product}",
+            'positions': [0, 1],
+            'value': product
+        }
+    
+    elif clue_type == 'product_two':
+        product = code[0] * code[1]
+        return {
+            'type': 'product_two',
+            'text': f"The product of digits 1 and 2 is {product}",
+            'positions': [0, 1],
+            'value': product
+        }
+    
+    elif clue_type == 'difference':
+        diff = max(code) - min(code)
+        return {
+            'type': 'difference',
+            'text': f"Take the smallest from the biggest to get {diff}" if simple else f"The difference between largest and smallest is {diff}",
+            'value': diff
+        }
+    
+    elif clue_type == 'double':
+        # Find if any digit is double another
+        for i, d1 in enumerate(code):
+            for j, d2 in enumerate(code):
+                if i != j and d1 == d2 * 2:
+                    pos1, pos2 = i + 1, j + 1
+                    return {
+                        'type': 'double',
+                        'text': f"Digit {pos1} is double digit {pos2}",
+                        'positions': [i, j]
+                    }
+        # Fallback
+        return generate_code_clue(code, 'biggest', level)
+    
+    elif clue_type == 'relationship':
+        # Check if any two digits add to another
+        if len(code) >= 3:
+            for i in range(len(code)):
+                for j in range(len(code)):
+                    for k in range(len(code)):
+                        if i != j and j != k and i != k:
+                            if code[i] + code[j] == code[k]:
+                                return {
+                                    'type': 'relationship',
+                                    'text': f"Digit {i+1} plus Digit {j+1} equals Digit {k+1}",
+                                    'positions': [i, j, k]
+                                }
+        # Fallback
+        return generate_code_clue(code, 'difference', level)
+    
+    elif clue_type == 'consecutive':
+        sorted_code = sorted(code)
+        for i in range(len(sorted_code) - 1):
+            if sorted_code[i+1] - sorted_code[i] == 1:
+                return {
+                    'type': 'consecutive',
+                    'text': "Two of the digits are next to each other when counting (like 3 and 4)",
+                    'value': True
+                }
+        return {
+            'type': 'consecutive',
+            'text': "No two digits are next to each other when counting",
+            'value': False
+        }
+    
+    elif clue_type == 'product_all':
+        product = 1
+        for d in code:
+            product *= d
+        return {
+            'type': 'product_all',
+            'text': f"Multiply all the digits together to get {product}",
+            'value': product
+        }
+    
+    return None
+
+
+def generate_code_clues(code: list, clue_types: list, level: int) -> list:
+    """Generate all clues for the code"""
+    clues = []
+    for clue_type in clue_types:
+        clue = generate_code_clue(code, clue_type, level)
+        if clue:
+            clues.append(clue)
+    return clues
+
+
+def generate_code_breaker(level: int) -> dict:
+    """Generate a complete Code Breaker puzzle for the given level"""
+    import random
+    config = get_code_level_config(level)
+    
+    for attempt in range(50):
+        code = generate_secret_code(config)
+        clues = generate_code_clues(code, config['clue_types'], level)
+        if len(clues) >= 1:
+            break
+    
+    # Simple tips for younger students
+    if level <= 4:
+        tip = "Use the clues to work out what digits are in the code!"
+    elif level <= 8:
+        tip = "Each clue helps you narrow down the possibilities."
+    else:
+        tip = "Combine the clues logically to crack the code."
+    
+    return {
+        'code': code,
+        'clues': clues,
+        'level': level,
+        'digits': config['digits'],
+        'digit_range': config['range'],
+        'allows_repeats': config['repeats'],
+        'max_guesses': config['guesses'],
+        'tip': tip
+    }
+
+
+def check_code_guess(guess: list, secret: list) -> dict:
+    """Check a guess against the secret code"""
+    result = []
+    secret_remaining = list(secret)
+    guess_remaining = []
+    
+    # First pass: exact matches (green)
+    for i, (g, s) in enumerate(zip(guess, secret)):
+        if g == s:
+            result.append({'position': i, 'status': 'correct'})
+            secret_remaining[i] = None
+        else:
+            result.append({'position': i, 'status': 'pending'})
+            guess_remaining.append((i, g))
+    
+    # Second pass: wrong position matches (yellow)
+    for i, g in guess_remaining:
+        if g in secret_remaining:
+            result[i] = {'position': i, 'status': 'wrong_position'}
+            secret_remaining[secret_remaining.index(g)] = None
+        else:
+            result[i] = {'position': i, 'status': 'not_in_code'}
+    
+    return {
+        'feedback': result,
+        'correct_count': sum(1 for r in result if r['status'] == 'correct'),
+        'wrong_position_count': sum(1 for r in result if r['status'] == 'wrong_position'),
+        'is_solved': all(r['status'] == 'correct' for r in result)
+    }
+
+
+@app.route('/api/code-breaker/question/<int:level>')
+@guest_or_login_required
+@approved_required
+def get_code_breaker_question(level):
+    """Get a Code Breaker puzzle for the specified level (1-12)"""
+    if level < 1 or level > 12:
+        level = 1
+    
+    puzzle = generate_code_breaker(level)
+    
+    # Don't send the actual code to the client!
+    # Store it in session for validation
+    session['code_breaker_code'] = puzzle['code']
+    session['code_breaker_level'] = level
+    
+    return jsonify({
+        'success': True,
+        'puzzle': {
+            'clues': puzzle['clues'],
+            'level': puzzle['level'],
+            'digits': puzzle['digits'],
+            'digit_range': puzzle['digit_range'],
+            'allows_repeats': puzzle['allows_repeats'],
+            'max_guesses': puzzle['max_guesses'],
+            'tip': puzzle['tip']
+        }
+    })
+
+
+@app.route('/api/code-breaker/guess', methods=['POST'])
+@guest_or_login_required
+def check_code_breaker_guess():
+    """Check a guess against the secret code"""
+    data = request.get_json()
+    guess = data.get('guess', [])
+    
+    secret = session.get('code_breaker_code')
+    if not secret:
+        return jsonify({'success': False, 'error': 'No active puzzle'})
+    
+    # Validate guess format
+    if len(guess) != len(secret):
+        return jsonify({'success': False, 'error': 'Wrong number of digits'})
+    
+    try:
+        guess = [int(g) for g in guess]
+    except:
+        return jsonify({'success': False, 'error': 'Invalid digits'})
+    
+    result = check_code_guess(guess, secret)
+    
+    return jsonify({
+        'success': True,
+        'result': result
+    })
+
+
+@app.route('/api/code-breaker/reveal', methods=['POST'])
+@guest_or_login_required
+def reveal_code_breaker():
+    """Reveal the secret code (when giving up or out of guesses)"""
+    secret = session.get('code_breaker_code')
+    if not secret:
+        return jsonify({'success': False, 'error': 'No active puzzle'})
+    
+    return jsonify({
+        'success': True,
+        'code': secret
+    })
+
+
+@app.route('/api/code-breaker/complete', methods=['POST'])
+@guest_or_login_required
+def complete_code_breaker():
+    """Record completion of a Code Breaker and award points"""
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    level = data.get('level', 1)
+    guesses_used = data.get('guesses_used', 1)
+    max_guesses = data.get('max_guesses', 8)
+    solved = data.get('solved', False)
+    
+    # Calculate points
+    if solved:
+        base_points = 5 + (level * 2)
+        # Bonus for fewer guesses
+        guesses_saved = max_guesses - guesses_used
+        guess_bonus = guesses_saved * 2
+        points = base_points + guess_bonus
+    else:
+        points = max(1, level)  # Participation points
+    
+    # Award points
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    
+    try:
+        if guest_code:
+            db.session.execute(text("""
+                UPDATE guest_users 
+                SET total_score = total_score + :points
+                WHERE guest_code = :code
+            """), {'points': points, 'code': guest_code})
+            db.session.commit()
+        elif user_id:
+            db.session.execute(text("""
+                UPDATE users 
+                SET score = score + :points
+                WHERE id = :user_id
+            """), {'points': points, 'user_id': user_id})
+            db.session.commit()
+    except Exception as e:
+        print(f"Could not award Code Breaker points: {e}")
+        db.session.rollback()
+    
+    # Clear session
+    session.pop('code_breaker_code', None)
+    session.pop('code_breaker_level', None)
+    
+    return jsonify({
+        'success': True,
+        'points_earned': points,
+        'solved': solved
+    })
+
+
+# =============================================================================
+# MASTERING COUNTING - NUMBER SEQUENCE ACTIVITY (NUMERACY STRAND)
+# =============================================================================
+
+def get_counting_level_config(level: int) -> dict:
+    """Get configuration for each Mastering Counting level"""
+    configs = {
+        # Level 1-2: Forward by 1s
+        1:  {'step': 1,  'direction': 'forward',  'min_start': 1,   'max_start': 10,  'cells': 15, 'rows': 3, 'blanks_per_row': 8,  'allow_negative': False, 'name': 'Count by 1s'},
+        2:  {'step': 1,  'direction': 'forward',  'min_start': 15,  'max_start': 40,  'cells': 15, 'rows': 3, 'blanks_per_row': 9,  'allow_negative': False, 'name': 'Count by 1s (bigger)'},
+        
+        # Level 3-4: Forward by 2s
+        3:  {'step': 2,  'direction': 'forward',  'min_start': 2,   'max_start': 10,  'cells': 12, 'rows': 3, 'blanks_per_row': 7,  'allow_negative': False, 'name': 'Count by 2s (even)', 'force_even': True},
+        4:  {'step': 2,  'direction': 'forward',  'min_start': 1,   'max_start': 11,  'cells': 12, 'rows': 3, 'blanks_per_row': 7,  'allow_negative': False, 'name': 'Count by 2s (odd)', 'force_odd': True},
+        
+        # Level 5-6: Forward by 5s and 10s
+        5:  {'step': 5,  'direction': 'forward',  'min_start': 0,   'max_start': 25,  'cells': 10, 'rows': 3, 'blanks_per_row': 6,  'allow_negative': False, 'name': 'Count by 5s'},
+        6:  {'step': 10, 'direction': 'forward',  'min_start': 0,   'max_start': 30,  'cells': 8,  'rows': 3, 'blanks_per_row': 5,  'allow_negative': False, 'name': 'Count by 10s'},
+        
+        # Level 7-9: Backwards
+        7:  {'step': 1,  'direction': 'backward', 'min_start': 15,  'max_start': 25,  'cells': 12, 'rows': 3, 'blanks_per_row': 8,  'allow_negative': False, 'name': 'Count back by 1s'},
+        8:  {'step': 2,  'direction': 'backward', 'min_start': 20,  'max_start': 30,  'cells': 10, 'rows': 3, 'blanks_per_row': 6,  'allow_negative': False, 'name': 'Count back by 2s'},
+        9:  {'step': 5,  'direction': 'backward', 'min_start': 40,  'max_start': 60,  'cells': 10, 'rows': 3, 'blanks_per_row': 6,  'allow_negative': False, 'name': 'Count back by 5s'},
+        
+        # Level 10-12: Through zero and negatives
+        10: {'step': 1,  'direction': 'forward',  'min_start': -5,  'max_start': -3,  'cells': 12, 'rows': 3, 'blanks_per_row': 7,  'allow_negative': True, 'name': 'Through zero (+1)'},
+        11: {'step': 2,  'direction': 'forward',  'min_start': -12, 'max_start': -8,  'cells': 10, 'rows': 3, 'blanks_per_row': 6,  'allow_negative': True, 'name': 'Negatives by 2s'},
+        12: {'step': 2,  'direction': 'backward', 'min_start': 8,   'max_start': 12,  'cells': 12, 'rows': 4, 'blanks_per_row': 7,  'allow_negative': True, 'name': 'Back through zero'},
+    }
+    return configs.get(level, configs[1])
+
+
+def generate_counting_row(config: dict) -> dict:
+    """Generate a single row of the counting sequence"""
+    import random
+    step = config['step']
+    direction = config['direction']
+    cells = config['cells']
+    blanks = config['blanks_per_row']
+    
+    # Determine start value
+    start = random.randint(config['min_start'], config['max_start'])
+    
+    # Force even/odd for levels 3-4
+    if config.get('force_even') and start % 2 != 0:
+        start += 1
+    if config.get('force_odd') and start % 2 == 0:
+        start += 1
+    
+    # Generate the full sequence
+    sequence = []
+    current = start
+    for i in range(cells):
+        sequence.append(current)
+        if direction == 'forward':
+            current += step
+        else:
+            current -= step
+    
+    # Show at least 3-4 cells at the start as hints
+    hints_at_start = random.randint(3, min(5, cells - blanks))
+    
+    # Create blank positions
+    available_positions = list(range(hints_at_start, cells))
+    random.shuffle(available_positions)
+    blank_positions = set(available_positions[:blanks])
+    
+    # Build the row data
+    row_data = []
+    for i, value in enumerate(sequence):
+        row_data.append({
+            'value': value,
+            'is_blank': i in blank_positions,
+            'position': i
+        })
+    
+    return {
+        'cells': row_data,
+        'start': start,
+        'step': step,
+        'direction': direction
+    }
+
+
+def generate_counting_puzzle(level: int) -> dict:
+    """Generate a complete counting puzzle for the given level"""
+    import random
+    config = get_counting_level_config(level)
+    
+    rows = []
+    for i in range(config['rows']):
+        row_config = config.copy()
+        
+        # Vary start for each row
+        if config['direction'] == 'forward':
+            row_config['min_start'] = config['min_start'] + (i * config['step'] * 2)
+            row_config['max_start'] = config['max_start'] + (i * config['step'] * 2)
+        else:
+            row_config['min_start'] = config['min_start'] + (i * config['step'])
+            row_config['max_start'] = config['max_start'] + (i * config['step'])
+        
+        rows.append(generate_counting_row(row_config))
+    
+    # Count total blanks
+    total_blanks = sum(
+        sum(1 for cell in row['cells'] if cell['is_blank'])
+        for row in rows
+    )
+    
+    # Simple instruction based on level
+    if level <= 2:
+        instruction = "Fill in the missing numbers. Count forward by 1."
+    elif level <= 4:
+        instruction = "Fill in the missing numbers. Count forward by 2."
+    elif level == 5:
+        instruction = "Fill in the missing numbers. Count forward by 5."
+    elif level == 6:
+        instruction = "Fill in the missing numbers. Count forward by 10."
+    elif level == 7:
+        instruction = "Fill in the missing numbers. Count backwards by 1."
+    elif level == 8:
+        instruction = "Fill in the missing numbers. Count backwards by 2."
+    elif level == 9:
+        instruction = "Fill in the missing numbers. Count backwards by 5."
+    elif level == 10:
+        instruction = "Fill in the missing numbers. Count through zero!"
+    elif level == 11:
+        instruction = "Fill in the missing numbers. Counting with negative numbers."
+    else:
+        instruction = "Fill in the missing numbers. Count backwards through zero!"
+    
+    return {
+        'level': level,
+        'level_name': config['name'],
+        'rows': rows,
+        'total_blanks': total_blanks,
+        'step': config['step'],
+        'direction': config['direction'],
+        'instruction': instruction,
+        'allow_negative': config['allow_negative']
+    }
+
+
+@app.route('/api/mastering-counting/question/<int:level>')
+@guest_or_login_required
+@approved_required
+def get_counting_question(level):
+    """Get a Mastering Counting puzzle for the specified level (1-12)"""
+    if level < 1 or level > 12:
+        level = 1
+    
+    puzzle = generate_counting_puzzle(level)
+    
+    return jsonify({
+        'success': True,
+        'puzzle': puzzle
+    })
+
+
+@app.route('/api/mastering-counting/complete', methods=['POST'])
+@guest_or_login_required
+def complete_mastering_counting():
+    """Record completion of a Mastering Counting puzzle and award points"""
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    level = data.get('level', 1)
+    total_blanks = data.get('total_blanks', 10)
+    correct_count = data.get('correct_count', 0)
+    time_taken = data.get('time_taken', 0)
+    
+    # Calculate points
+    # Base: 5 + (level × 2) for perfect score
+    # Partial credit for incomplete
+    base_points = 5 + (level * 2)
+    
+    if correct_count >= total_blanks:
+        # Perfect - all blanks filled correctly
+        points = base_points
+        # Time bonus for speed (under 60 seconds)
+        if time_taken < 60:
+            points += 3
+        elif time_taken < 90:
+            points += 1
+    else:
+        # Partial credit
+        completion_ratio = correct_count / max(total_blanks, 1)
+        points = max(1, int(base_points * completion_ratio))
+    
+    # Award points
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    
+    try:
+        if guest_code:
+            db.session.execute(text("""
+                UPDATE guest_users 
+                SET total_score = total_score + :points
+                WHERE guest_code = :code
+            """), {'points': points, 'code': guest_code})
+            db.session.commit()
+        elif user_id:
+            db.session.execute(text("""
+                UPDATE users 
+                SET score = score + :points
+                WHERE id = :user_id
+            """), {'points': points, 'user_id': user_id})
+            db.session.commit()
+    except Exception as e:
+        print(f"Could not award Mastering Counting points: {e}")
+        db.session.rollback()
+    
+    return jsonify({
+        'success': True,
+        'points_earned': points,
+        'perfect': correct_count >= total_blanks
+    })
+
+
+# =============================================================================
+# WORDS TO NUMBERS - MATCHING ACTIVITY (NUMERACY STRAND)
+# =============================================================================
+
+# Number words mapping
+WORDS_NUMBER_MAP = {
+    1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five',
+    6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten',
+    11: 'eleven', 12: 'twelve', 13: 'thirteen', 14: 'fourteen', 15: 'fifteen',
+    16: 'sixteen', 17: 'seventeen', 18: 'eighteen', 19: 'nineteen', 20: 'twenty',
+    30: 'thirty', 40: 'forty', 50: 'fifty', 60: 'sixty',
+    70: 'seventy', 80: 'eighty', 90: 'ninety', 100: 'one hundred',
+}
+
+WORDS_TENS_MAP = {
+    20: 'twenty', 30: 'thirty', 40: 'forty', 50: 'fifty',
+    60: 'sixty', 70: 'seventy', 80: 'eighty', 90: 'ninety'
+}
+
+WORDS_ONES_MAP = {
+    1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five',
+    6: 'six', 7: 'seven', 8: 'eight', 9: 'nine'
+}
+
+MATH_VOCAB_LIST = [
+    ('plus', '+'), ('minus', '−'), ('equals', '='), ('add', '+'),
+    ('take away', '−'), ('subtract', '−'), ('multiply', '×'), ('times', '×'),
+    ('divide', '÷'), ('shared by', '÷'), ('greater than', '>'), ('less than', '<'),
+    ('half', '½'), ('quarter', '¼'), ('double', '×2'), ('total', '='),
+]
+
+
+def words_number_to_word(n: int) -> str:
+    """Convert a number to its word form"""
+    if n in WORDS_NUMBER_MAP:
+        return WORDS_NUMBER_MAP[n]
+    if 21 <= n <= 99:
+        tens = (n // 10) * 10
+        ones = n % 10
+        if ones == 0:
+            return WORDS_TENS_MAP[tens]
+        else:
+            return f"{WORDS_TENS_MAP[tens]} {WORDS_ONES_MAP[ones]}"
+    return str(n)
+
+
+def get_words_level_config(level: int) -> dict:
+    """Get configuration for Words to Numbers level"""
+    configs = {
+        1:  {'type': 'numbers', 'range': (1, 10),  'count': 6,  'name': 'Numbers 1-10'},
+        2:  {'type': 'numbers', 'range': (1, 10),  'count': 8,  'name': 'Numbers 1-10'},
+        3:  {'type': 'numbers', 'range': (11, 20), 'count': 6,  'name': 'Numbers 11-20'},
+        4:  {'type': 'numbers', 'range': (11, 20), 'count': 8,  'name': 'Numbers 11-20'},
+        5:  {'type': 'tens',    'range': (10, 100), 'count': 6, 'name': 'Counting by 10s'},
+        6:  {'type': 'tens',    'range': (10, 100), 'count': 8, 'name': 'Counting by 10s'},
+        7:  {'type': 'mixed',   'range': (1, 50),  'count': 6,  'name': 'Numbers to 50'},
+        8:  {'type': 'mixed',   'range': (1, 50),  'count': 8,  'name': 'Numbers to 50'},
+        9:  {'type': 'mixed',   'range': (1, 100), 'count': 6,  'name': 'Numbers to 100'},
+        10: {'type': 'mixed',   'range': (1, 100), 'count': 8,  'name': 'Numbers to 100'},
+        11: {'type': 'vocab',   'count': 6,  'name': 'Maths Words'},
+        12: {'type': 'vocab',   'count': 8,  'name': 'Maths Words'},
+    }
+    return configs.get(level, configs[1])
+
+
+def generate_words_pairs(level: int) -> list:
+    """Generate word-number pairs for the given level"""
+    import random
+    config = get_words_level_config(level)
+    pairs = []
+    
+    if config['type'] == 'vocab':
+        vocab_items = random.sample(MATH_VOCAB_LIST, min(config['count'], len(MATH_VOCAB_LIST)))
+        for word, symbol in vocab_items:
+            pairs.append({'word': word, 'value': symbol, 'display': symbol})
+    
+    elif config['type'] == 'tens':
+        tens = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        selected = random.sample(tens, min(config['count'], len(tens)))
+        for n in selected:
+            pairs.append({'word': words_number_to_word(n), 'value': n, 'display': str(n)})
+    
+    elif config['type'] == 'numbers':
+        min_val, max_val = config['range']
+        numbers = list(range(min_val, max_val + 1))
+        selected = random.sample(numbers, min(config['count'], len(numbers)))
+        for n in selected:
+            pairs.append({'word': words_number_to_word(n), 'value': n, 'display': str(n)})
+    
+    else:  # mixed
+        min_val, max_val = config['range']
+        candidates = []
+        simple = [n for n in range(1, 21) if min_val <= n <= max_val]
+        candidates.extend(simple)
+        tens = [n for n in [20, 30, 40, 50, 60, 70, 80, 90, 100] if min_val <= n <= max_val]
+        candidates.extend(tens)
+        compounds = [n for n in range(21, max_val + 1) if n % 10 != 0]
+        candidates.extend(random.sample(compounds, min(10, len(compounds))))
+        candidates = list(set(candidates))
+        selected = random.sample(candidates, min(config['count'], len(candidates)))
+        for n in selected:
+            pairs.append({'word': words_number_to_word(n), 'value': n, 'display': str(n)})
+    
+    return pairs
+
+
+def generate_words_to_numbers(level: int, mode: str = 'chain') -> dict:
+    """Generate a complete Words to Numbers puzzle"""
+    import random
+    config = get_words_level_config(level)
+    pairs = generate_words_pairs(level)
+    
+    words = [p['word'] for p in pairs]
+    values = [p['display'] for p in pairs]
+    random.shuffle(words)
+    random.shuffle(values)
+    
+    answer_key = {p['word']: p['display'] for p in pairs}
+    
+    if mode == 'jigsaw':
+        time_limit = 120
+        instruction = "Drag the word pieces to match the numbers!"
+    elif mode == 'balloon':
+        time_limit = 60
+        instruction = "Pop the matching pairs before time runs out!"
+    else:
+        time_limit = 90
+        instruction = "Tap a word, then tap its matching number!"
+    
+    return {
+        'level': level,
+        'level_name': config['name'],
+        'mode': mode,
+        'pairs': pairs,
+        'words': words,
+        'values': values,
+        'answer_key': answer_key,
+        'total_pairs': len(pairs),
+        'time_limit': time_limit,
+        'instruction': instruction
+    }
+
+
+@app.route('/api/words-to-numbers/question/<int:level>')
+@guest_or_login_required
+@approved_required
+def get_words_to_numbers_question(level):
+    """Get a Words to Numbers puzzle for the specified level"""
+    if level < 1 or level > 12:
+        level = 1
+    
+    mode = request.args.get('mode', 'chain')
+    puzzle = generate_words_to_numbers(level, mode)
+    
+    return jsonify({
+        'success': True,
+        'puzzle': puzzle
+    })
+
+
+@app.route('/api/words-to-numbers/complete', methods=['POST'])
+@guest_or_login_required
+def complete_words_to_numbers():
+    """Record completion of Words to Numbers and award points"""
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    level = data.get('level', 1)
+    total_pairs = data.get('total_pairs', 6)
+    correct_count = data.get('correct_count', 0)
+    mode = data.get('mode', 'chain')
+    time_taken = data.get('time_taken', 0)
+    
+    # Calculate points
+    base_points = 5 + (level * 2)
+    
+    if correct_count >= total_pairs:
+        points = base_points
+        # Time bonus
+        if mode == 'balloon' and time_taken < 30:
+            points += 5
+        elif time_taken < 45:
+            points += 3
+        elif time_taken < 60:
+            points += 1
+    else:
+        completion_ratio = correct_count / max(total_pairs, 1)
+        points = max(1, int(base_points * completion_ratio))
+    
+    # Award points
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    
+    try:
+        if guest_code:
+            db.session.execute(text("""
+                UPDATE guest_users 
+                SET total_score = total_score + :points
+                WHERE guest_code = :code
+            """), {'points': points, 'code': guest_code})
+            db.session.commit()
+        elif user_id:
+            db.session.execute(text("""
+                UPDATE users 
+                SET score = score + :points
+                WHERE id = :user_id
+            """), {'points': points, 'user_id': user_id})
+            db.session.commit()
+    except Exception as e:
+        print(f"Could not award Words to Numbers points: {e}")
+        db.session.rollback()
+    
+    return jsonify({
+        'success': True,
+        'points_earned': points,
+        'perfect': correct_count >= total_pairs
+    })
+
+
+# =============================================================================
+# ORDERING & NUMBER LINES - INTERACTIVE ACTIVITY (NUMERACY STRAND)
+# =============================================================================
+
+def get_ordering_level_config(level: int) -> dict:
+    """Get configuration for Ordering level"""
+    configs = {
+        # Levels 1-4: Sorting mode
+        1:  {'mode': 'sort', 'min': 1,    'max': 10,   'count': 4, 'name': 'Order to 10'},
+        2:  {'mode': 'sort', 'min': 1,    'max': 20,   'count': 5, 'name': 'Order to 20'},
+        3:  {'mode': 'sort', 'min': 1,    'max': 50,   'count': 5, 'name': 'Order to 50'},
+        4:  {'mode': 'sort', 'min': 1,    'max': 100,  'count': 6, 'name': 'Order to 100'},
+        # Levels 5-10: Number line mode (positive)
+        5:  {'mode': 'line', 'min': 0,    'max': 100,  'count': 4, 'name': 'Number Line 0-100'},
+        6:  {'mode': 'line', 'min': 0,    'max': 100,  'count': 5, 'name': 'Number Line 0-100'},
+        7:  {'mode': 'line', 'min': 0,    'max': 500,  'count': 5, 'name': 'Number Line 0-500'},
+        8:  {'mode': 'line', 'min': 0,    'max': 1000, 'count': 5, 'name': 'Number Line 0-1000'},
+        9:  {'mode': 'line', 'min': 0,    'max': 1000, 'count': 6, 'name': 'Number Line 0-1000'},
+        10: {'mode': 'line', 'min': 0,    'max': 1200, 'count': 6, 'name': 'Number Line 0-1200'},
+        # Levels 11-12: Number line with negatives
+        11: {'mode': 'line', 'min': -50,  'max': 50,   'count': 5, 'name': 'Negatives -50 to 50'},
+        12: {'mode': 'line', 'min': -100, 'max': 100,  'count': 6, 'name': 'Negatives -100 to 100'},
+    }
+    return configs.get(level, configs[1])
+
+
+def generate_sort_numbers(config: dict) -> list:
+    """Generate numbers for sorting mode"""
+    import random
+    min_val, max_val, count = config['min'], config['max'], config['count']
+    range_size = max_val - min_val
+    step = range_size // (count + 1)
+    
+    numbers = []
+    for i in range(count):
+        base = min_val + (i + 1) * step
+        variance = max(1, step // 3)
+        num = base + random.randint(-variance, variance)
+        num = max(min_val, min(max_val, num))
+        numbers.append(num)
+    
+    numbers = list(set(numbers))
+    while len(numbers) < count:
+        new_num = random.randint(min_val, max_val)
+        if new_num not in numbers:
+            numbers.append(new_num)
+    return numbers[:count]
+
+
+def generate_line_numbers(config: dict) -> list:
+    """Generate numbers for number line mode"""
+    import random
+    min_val, max_val, count = config['min'], config['max'], config['count']
+    buffer = (max_val - min_val) // 20
+    effective_min, effective_max = min_val + buffer, max_val - buffer
+    
+    numbers = []
+    attempts = 0
+    while len(numbers) < count and attempts < 100:
+        num = random.randint(effective_min, effective_max)
+        if max_val - min_val >= 500:
+            num = round(num / 5) * 5
+        min_gap = (max_val - min_val) // (count + 2)
+        too_close = any(abs(num - existing) < min_gap for existing in numbers)
+        if not too_close and num not in numbers:
+            numbers.append(num)
+        attempts += 1
+    
+    if len(numbers) < count:
+        step = (effective_max - effective_min) // (count + 1)
+        numbers = [effective_min + (i + 1) * step for i in range(count)]
+    return numbers[:count]
+
+
+def generate_ordering_puzzle(level: int) -> dict:
+    """Generate a complete Ordering puzzle"""
+    config = get_ordering_level_config(level)
+    mode = config['mode']
+    
+    if mode == 'sort':
+        numbers = generate_sort_numbers(config)
+        correct_order = sorted(numbers)
+        return {
+            'level': level,
+            'level_name': config['name'],
+            'mode': 'sort',
+            'numbers': numbers,
+            'correct_order': correct_order,
+            'count': len(numbers),
+            'instruction': 'Put these numbers in order from smallest to largest'
+        }
+    else:
+        numbers = generate_line_numbers(config)
+        line_min, line_max = config['min'], config['max']
+        positions = {}
+        for num in numbers:
+            percent = ((num - line_min) / (line_max - line_min)) * 100
+            positions[num] = round(percent, 1)
+        
+        range_size = line_max - line_min
+        if range_size <= 100:
+            tick_step = 10
+        elif range_size <= 200:
+            tick_step = 20
+        elif range_size <= 500:
+            tick_step = 50
+        else:
+            tick_step = 100
+        ticks = list(range(line_min, line_max + 1, tick_step))
+        
+        return {
+            'level': level,
+            'level_name': config['name'],
+            'mode': 'line',
+            'numbers': numbers,
+            'positions': positions,
+            'line_min': line_min,
+            'line_max': line_max,
+            'ticks': ticks,
+            'count': len(numbers),
+            'instruction': 'Drag each number to its position on the number line',
+            'tolerance': 5
+        }
+
+
+@app.route('/api/ordering/question/<int:level>')
+@guest_or_login_required
+@approved_required
+def get_ordering_question(level):
+    """Get an Ordering puzzle for the specified level"""
+    if level < 1 or level > 12:
+        level = 1
+    puzzle = generate_ordering_puzzle(level)
+    return jsonify({'success': True, 'puzzle': puzzle})
+
+
+@app.route('/api/ordering/complete', methods=['POST'])
+@guest_or_login_required
+def complete_ordering():
+    """Record completion of Ordering puzzle and award points"""
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    level = data.get('level', 1)
+    correct_count = data.get('correct_count', 0)
+    total_count = data.get('total_count', 4)
+    time_taken = data.get('time_taken', 0)
+    
+    base_points = 5 + (level * 2)
+    if correct_count >= total_count:
+        points = base_points
+        if time_taken < 30:
+            points += 5
+        elif time_taken < 60:
+            points += 2
+    else:
+        completion_ratio = correct_count / max(total_count, 1)
+        points = max(1, int(base_points * completion_ratio))
+    
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    
+    try:
+        if guest_code:
+            db.session.execute(text("""
+                UPDATE guest_users SET total_score = total_score + :points
+                WHERE guest_code = :code
+            """), {'points': points, 'code': guest_code})
+            db.session.commit()
+        elif user_id:
+            db.session.execute(text("""
+                UPDATE users SET score = score + :points WHERE id = :user_id
+            """), {'points': points, 'user_id': user_id})
+            db.session.commit()
+    except Exception as e:
+        print(f"Could not award Ordering points: {e}")
+        db.session.rollback()
+    
+    return jsonify({
+        'success': True,
+        'points_earned': points,
+        'perfect': correct_count >= total_count
+    })
+
+
+@app.route('/api/award-points', methods=['POST'])
+@guest_or_login_required
+def award_points():
+    """
+    Award points to a user's account.
+    Used by adaptive quiz and other features.
+    Supports: registered users, repeat guests (with code), casual guests (no persist)
+    """
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    points = data.get('points', 0)
+    source = data.get('source', 'unknown')
+    topic = data.get('topic', '')
+    level = data.get('level', 1)
+    
+    if points <= 0:
+        return jsonify({'success': False, 'error': 'Invalid points value'}), 400
+    
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    
+    # REPEAT GUEST: Has guest_code - persist to guest_users table
+    if guest_code:
+        try:
+            # Update guest_users.total_score
+            db.session.execute(
+                text("""
+                    UPDATE guest_users 
+                    SET total_score = total_score + :points
+                    WHERE guest_code = :code
+                """),
+                {'points': points, 'code': guest_code}
+            )
+            db.session.commit()
+            
+            # Get updated total
+            result = db.session.execute(
+                text("SELECT total_score FROM guest_users WHERE guest_code = :code"),
+                {'code': guest_code}
+            ).fetchone()
+            
+            total_points = result[0] if result else points
+            new_level = (total_points // 100) + 1
+            
+            print(f"📊 Awarded {points} points to repeat guest {guest_code} from {source} ({topic} L{level}) - Total: {total_points}")
+            
+            return jsonify({
+                'success': True,
+                'points_awarded': points,
+                'total_points': total_points,
+                'level': new_level
+            })
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error awarding points to repeat guest: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    # REGISTERED USER: Has user_id (not guest) - persist to user_stats table
+    elif user_id:
+        try:
+            # Get or create user stats
+            stats = UserStats.query.filter_by(user_id=user_id).first()
+            if not stats:
+                stats = UserStats(user_id=user_id, total_points=0, level=1)
+                db.session.add(stats)
+            
+            # Add points
+            stats.total_points += points
+            
+            # Recalculate level (every 100 points = 1 level)
+            stats.level = (stats.total_points // 100) + 1
+            
+            db.session.commit()
+            
+            print(f"📊 Awarded {points} points to user {user_id} from {source} ({topic} L{level}) - Total: {stats.total_points}")
+            
+            return jsonify({
+                'success': True,
+                'points_awarded': points,
+                'total_points': stats.total_points,
+                'level': stats.level
+            })
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error awarding points: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    # CASUAL GUEST: No guest_code, no user_id - don't persist
+    else:
+        return jsonify({
+            'success': True, 
+            'points_awarded': points,
+            'message': 'Points not persisted for casual guest users'
+        })
+
+# ===== END ADAPTIVE QUIZ BETA API =====
+
+# =====================================================
+# CLOCK CHALLENGE ROUTES (Beat the Clock) - Rev 3.0
+# =====================================================
+
+# Clock challenge configuration
+CLOCK_CHALLENGE_CONFIG = {
+    # Time allowed per level (in seconds)
+    'time_allowed': {
+        6: 120,   # 2 minutes
+        7: 150,   # 2.5 minutes
+        8: 180,   # 3 minutes
+        9: 210,   # 3.5 minutes
+        10: 240,  # 4 minutes
+    },
+    # Wrong answer penalty (in seconds)
+    'wrong_penalty': {
+        6: 10,
+        7: 10,
+        8: 15,
+        9: 15,
+        10: 20,
+    },
+    # Bonus tiers (percentage of time remaining)
+    'bonus_tiers': {
+        'lightning': {'min_percent': 40, 'points': 50},
+        'fast': {'min_percent': 20, 'points': 35},
+        'on_time': {'min_percent': 1, 'points': 20},
+    }
+}
+
+
+@app.route('/api/clock-challenge/intro-seen', methods=['GET'])
+@guest_or_login_required
+def check_clock_intro_seen():
+    """Check if user has seen the clock challenge intro"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    try:
+        if guest_code:
+            result = db.session.execute(text(
+                "SELECT 1 FROM clock_challenge_intro_seen WHERE guest_code = :code"
+            ), {'code': guest_code}).fetchone()
+        elif user_id:
+            result = db.session.execute(text(
+                "SELECT 1 FROM clock_challenge_intro_seen WHERE user_id = :uid"
+            ), {'uid': user_id}).fetchone()
+        else:
+            return jsonify({'seen': False})
+        
+        return jsonify({'seen': result is not None})
+    except Exception as e:
+        print(f"Error checking clock intro: {e}")
+        return jsonify({'seen': False})
+
+
+@app.route('/api/clock-challenge/intro-seen', methods=['POST'])
+@guest_or_login_required
+def mark_clock_intro_seen():
+    """Mark that user has seen the clock challenge intro"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    try:
+        if guest_code:
+            db.session.execute(text("""
+                INSERT OR IGNORE INTO clock_challenge_intro_seen (guest_code)
+                VALUES (:code)
+            """), {'code': guest_code})
+        elif user_id:
+            db.session.execute(text("""
+                INSERT OR IGNORE INTO clock_challenge_intro_seen (user_id)
+                VALUES (:uid)
+            """), {'uid': user_id})
+        
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error marking clock intro seen: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/clock-challenge/check', methods=['GET'])
+@guest_or_login_required
+def check_clock_challenge():
+    """Check if clock challenge is available for user at given topic/level"""
+    from sqlalchemy import text
+    
+    topic = request.args.get('topic')
+    level = request.args.get('level', type=int)
+    
+    if not topic or not level:
+        return jsonify({'error': 'Missing topic or level'}), 400
+    
+    if level < 6 or level > 10:
+        return jsonify({'available': False, 'reason': 'Clock challenge only for levels 6-10'})
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    try:
+        if guest_code:
+            state = db.session.execute(text("""
+                SELECT clock_available, clock_completed, attempts, best_time_remaining
+                FROM clock_challenge_state 
+                WHERE guest_code = :code AND topic = :topic AND level = :level
+            """), {'code': guest_code, 'topic': topic, 'level': level}).fetchone()
+        elif user_id:
+            state = db.session.execute(text("""
+                SELECT clock_available, clock_completed, attempts, best_time_remaining
+                FROM clock_challenge_state 
+                WHERE user_id = :uid AND topic = :topic AND level = :level
+            """), {'uid': user_id, 'topic': topic, 'level': level}).fetchone()
+        else:
+            return jsonify({'available': False, 'reason': 'Not authenticated'})
+        
+        if not state:
+            available, completed, attempts, best_time = True, False, 0, None
+        else:
+            available, completed, attempts, best_time = bool(state[0]), bool(state[1]), state[2] or 0, state[3]
+        
+        config = {
+            'time_allowed': CLOCK_CHALLENGE_CONFIG['time_allowed'].get(level, 180),
+            'wrong_penalty': CLOCK_CHALLENGE_CONFIG['wrong_penalty'].get(level, 15),
+            'bonus_tiers': CLOCK_CHALLENGE_CONFIG['bonus_tiers']
+        }
+        
+        return jsonify({
+            'available': available, 'completed': completed, 'attempts': attempts,
+            'best_time_remaining': best_time, 'config': config
+        })
+        
+    except Exception as e:
+        print(f"Error checking clock challenge: {e}")
+        return jsonify({'available': False, 'error': str(e)}), 500
+
+
+@app.route('/api/clock-challenge/start', methods=['POST'])
+@guest_or_login_required
+def start_clock_challenge():
+    """Start a clock challenge session"""
+    from sqlalchemy import text
+    import uuid
+    
+    data = request.get_json()
+    topic = data.get('topic')
+    level = int(data.get('level', 0))
+    
+    if not topic or level < 6 or level > 10:
+        return jsonify({'error': 'Invalid topic or level'}), 400
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    session_id = str(uuid.uuid4())[:8]
+    time_allowed = CLOCK_CHALLENGE_CONFIG['time_allowed'].get(level, 180)
+    
+    try:
+        if guest_code:
+            db.session.execute(text("""
+                INSERT INTO clock_challenge_timing (guest_code, topic, level, session_id, time_allowed, started_at)
+                VALUES (:code, :topic, :level, :sid, :time, :now)
+            """), {'code': guest_code, 'topic': topic, 'level': level, 'sid': session_id, 'time': time_allowed, 'now': datetime.utcnow()})
+            
+            db.session.execute(text("""
+                INSERT INTO clock_challenge_state (guest_code, topic, level, clock_available, attempts, last_attempt_at, updated_at)
+                VALUES (:code, :topic, :level, 0, 1, :now, :now)
+                ON CONFLICT(guest_code, topic, level) DO UPDATE SET clock_available = 0, attempts = attempts + 1, last_attempt_at = :now, updated_at = :now
+            """), {'code': guest_code, 'topic': topic, 'level': level, 'now': datetime.utcnow()})
+        elif user_id:
+            db.session.execute(text("""
+                INSERT INTO clock_challenge_timing (user_id, topic, level, session_id, time_allowed, started_at)
+                VALUES (:uid, :topic, :level, :sid, :time, :now)
+            """), {'uid': user_id, 'topic': topic, 'level': level, 'sid': session_id, 'time': time_allowed, 'now': datetime.utcnow()})
+            
+            db.session.execute(text("""
+                INSERT INTO clock_challenge_state (user_id, topic, level, clock_available, attempts, last_attempt_at, updated_at)
+                VALUES (:uid, :topic, :level, 0, 1, :now, :now)
+                ON CONFLICT(user_id, topic, level) DO UPDATE SET clock_available = 0, attempts = attempts + 1, last_attempt_at = :now, updated_at = :now
+            """), {'uid': user_id, 'topic': topic, 'level': level, 'now': datetime.utcnow()})
+        
+        db.session.commit()
+        print(f"⏱️ Clock challenge started: {topic} L{level} - Session {session_id}")
+        
+        return jsonify({
+            'success': True, 'session_id': session_id,
+            'time_allowed': time_allowed,
+            'wrong_penalty': CLOCK_CHALLENGE_CONFIG['wrong_penalty'].get(level, 15)
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error starting clock challenge: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/clock-challenge/complete', methods=['POST'])
+@guest_or_login_required
+def complete_clock_challenge():
+    """Complete (or timeout) a clock challenge, award bonus if successful"""
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    topic, level, session_id = data.get('topic'), int(data.get('level', 0)), data.get('session_id')
+    time_remaining = max(0, int(data.get('time_remaining', 0)))
+    questions_answered = data.get('questions_answered', 0)
+    questions_correct = data.get('questions_correct', 0)
+    penalties_applied = data.get('penalties_applied', 0)
+    completed = data.get('completed', False)
+    
+    time_allowed = CLOCK_CHALLENGE_CONFIG['time_allowed'].get(level, 180)
+    time_used = time_allowed - time_remaining
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    # Calculate bonus
+    bonus_tier, bonus_points = None, 0
+    if completed and time_remaining > 0:
+        time_percent = (time_remaining / time_allowed) * 100
+        if time_percent >= 40:
+            bonus_tier, bonus_points = 'lightning', 50
+        elif time_percent >= 20:
+            bonus_tier, bonus_points = 'fast', 35
+        elif time_percent >= 1:
+            bonus_tier, bonus_points = 'on_time', 20
+    
+    try:
+        # Update timing record
+        update_params = {
+            'qa': questions_answered, 'qc': questions_correct, 'used': time_used,
+            'remaining': time_remaining, 'penalties': penalties_applied,
+            'completed': 1 if completed else 0, 'tier': bonus_tier, 'bonus': bonus_points,
+            'now': datetime.utcnow(), 'sid': session_id
+        }
+        
+        if guest_code:
+            update_params['code'] = guest_code
+            db.session.execute(text("""
+                UPDATE clock_challenge_timing SET questions_answered = :qa, questions_correct = :qc,
+                time_used = :used, time_remaining = :remaining, wrong_answer_penalties = :penalties,
+                completed = :completed, bonus_tier = :tier, bonus_points = :bonus, ended_at = :now
+                WHERE guest_code = :code AND session_id = :sid
+            """), update_params)
+            
+            if completed:
+                db.session.execute(text("""
+                    UPDATE clock_challenge_state SET clock_completed = 1, clock_available = 1,
+                    best_time_remaining = CASE WHEN best_time_remaining IS NULL OR :remaining > best_time_remaining THEN :remaining ELSE best_time_remaining END,
+                    best_bonus_earned = CASE WHEN best_bonus_earned IS NULL OR :bonus > best_bonus_earned THEN :bonus ELSE best_bonus_earned END,
+                    first_completed_at = COALESCE(first_completed_at, :now), updated_at = :now
+                    WHERE guest_code = :code AND topic = :topic AND level = :level
+                """), {'remaining': time_remaining, 'bonus': bonus_points, 'now': datetime.utcnow(), 'code': guest_code, 'topic': topic, 'level': level})
+                
+                if bonus_points > 0:
+                    db.session.execute(text("UPDATE guest_users SET total_score = total_score + :bonus WHERE guest_code = :code"), {'bonus': bonus_points, 'code': guest_code})
+            else:
+                db.session.execute(text("UPDATE clock_challenge_state SET clock_available = 0, updated_at = :now WHERE guest_code = :code AND topic = :topic AND level = :level"), {'now': datetime.utcnow(), 'code': guest_code, 'topic': topic, 'level': level})
+                
+        elif user_id:
+            update_params['uid'] = user_id
+            db.session.execute(text("""
+                UPDATE clock_challenge_timing SET questions_answered = :qa, questions_correct = :qc,
+                time_used = :used, time_remaining = :remaining, wrong_answer_penalties = :penalties,
+                completed = :completed, bonus_tier = :tier, bonus_points = :bonus, ended_at = :now
+                WHERE user_id = :uid AND session_id = :sid
+            """), update_params)
+            
+            if completed:
+                db.session.execute(text("""
+                    UPDATE clock_challenge_state SET clock_completed = 1, clock_available = 1,
+                    best_time_remaining = CASE WHEN best_time_remaining IS NULL OR :remaining > best_time_remaining THEN :remaining ELSE best_time_remaining END,
+                    best_bonus_earned = CASE WHEN best_bonus_earned IS NULL OR :bonus > best_bonus_earned THEN :bonus ELSE best_bonus_earned END,
+                    first_completed_at = COALESCE(first_completed_at, :now), updated_at = :now
+                    WHERE user_id = :uid AND topic = :topic AND level = :level
+                """), {'remaining': time_remaining, 'bonus': bonus_points, 'now': datetime.utcnow(), 'uid': user_id, 'topic': topic, 'level': level})
+                
+                if bonus_points > 0:
+                    stats = UserStats.query.filter_by(user_id=user_id).first()
+                    if stats:
+                        stats.total_points += bonus_points
+            else:
+                db.session.execute(text("UPDATE clock_challenge_state SET clock_available = 0, updated_at = :now WHERE user_id = :uid AND topic = :topic AND level = :level"), {'now': datetime.utcnow(), 'uid': user_id, 'topic': topic, 'level': level})
+        
+        db.session.commit()
+        
+        result_msg = f"⏱️ Clock challenge {'COMPLETED' if completed else 'TIMEOUT'}: {topic} L{level}"
+        if bonus_points > 0:
+            result_msg += f" - {bonus_tier.upper()} +{bonus_points} bonus!"
+        print(result_msg)
+        
+        return jsonify({'success': True, 'completed': completed, 'bonus_tier': bonus_tier, 'bonus_points': bonus_points, 'time_remaining': time_remaining, 'time_used': time_used})
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error completing clock challenge: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/clock-challenge/unlock', methods=['POST'])
+@guest_or_login_required
+def unlock_clock_challenge():
+    """Re-enable clock challenge for a level after normal completion"""
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    topic, level = data.get('topic'), int(data.get('level', 0))
+    
+    if level < 6 or level > 10:
+        return jsonify({'success': True, 'message': 'Not a clock level'})
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    try:
+        if guest_code:
+            db.session.execute(text("""
+                INSERT INTO clock_challenge_state (guest_code, topic, level, clock_available, updated_at)
+                VALUES (:code, :topic, :level, 1, :now)
+                ON CONFLICT(guest_code, topic, level) DO UPDATE SET clock_available = 1, updated_at = :now
+            """), {'code': guest_code, 'topic': topic, 'level': level, 'now': datetime.utcnow()})
+        elif user_id:
+            db.session.execute(text("""
+                INSERT INTO clock_challenge_state (user_id, topic, level, clock_available, updated_at)
+                VALUES (:uid, :topic, :level, 1, :now)
+                ON CONFLICT(user_id, topic, level) DO UPDATE SET clock_available = 1, updated_at = :now
+            """), {'uid': user_id, 'topic': topic, 'level': level, 'now': datetime.utcnow()})
+        
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# =====================================================
+# END CLOCK CHALLENGE ROUTES
+# =====================================================
+
+@app.route('/api/create-quiz-attempt', methods=['POST'])
+@login_required
+@approved_required
+def create_quiz_attempt():
+    """
+    Create a quiz attempt and return the ID for Who Am I tracking.
+    Called when student starts a quiz in student_app.html.
+    """
+    data = request.json
+
+    try:
+        # Create new quiz attempt record
+        quiz_attempt = QuizAttempt(
+            user_id=session['user_id'],
+            topic=data.get('topic'),
+            difficulty=data.get('difficulty'),
+            score=0,  # Will be updated when quiz completes
+            total_questions=0,
+            percentage=0
+        )
+        db.session.add(quiz_attempt)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'quiz_attempt_id': quiz_attempt.id
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error creating quiz attempt: {e}")
+        print(f"Full traceback: {error_details}")
+        return jsonify({'error': str(e), 'details': error_details}), 500
+
+@app.route('/api/submit-quiz', methods=['POST'])
+@guest_or_login_required
+@approved_required
+def submit_quiz():
+    """Submit quiz - works for guests, repeat guests, and registered users"""
+    data = request.json
+
+    # Normalize topic and difficulty to lowercase
+    topic = data.get('topic', '').lower().strip()
+    difficulty = data.get('difficulty', '').lower().strip()
+    score = data.get('score', 0)
+    total = data.get('total_questions', 25)
+    percentage = data.get('percentage', 0)
+    time_taken = data.get('time_taken', 0)
+
+    # Validate topic and difficulty - reads from database
+    valid_topics = get_valid_topics_from_db()  # Database-driven!
+    valid_difficulties = VALID_DIFFICULTIES
+
+    if topic not in valid_topics:
+        return jsonify({'error': f'Invalid topic: {topic}'}), 400
+
+    if difficulty not in valid_difficulties:
+        return jsonify({'error': f'Invalid difficulty: {difficulty}'}), 400
+
+    # Handle repeat guests - save to guest tables
+    if 'guest_code' in session:
+        from sqlalchemy import text
+        guest_code = session['guest_code']
+
+        # Get all bonus points
+        who_am_i_bonus = data.get('who_am_i_bonus', 0)
+        milestone_points = data.get('milestone_points', 0)  # NEW: In-quiz milestone points
+        total_points = score + who_am_i_bonus + milestone_points  # Score + all bonuses!
+
+        # Save quiz attempt (try with bonus columns, fallback without them)
+        try:
+            db.session.execute(text("""
+                INSERT INTO guest_quiz_attempts (guest_code, topic, difficulty, score, total_questions, time_spent, who_am_i_bonus, milestone_points)
+                VALUES (:code, :topic, :diff, :score, :total, :time, :bonus, :milestone)
+            """), {
+                "code": guest_code,
+                "topic": topic,
+                "diff": difficulty,
+                "score": score,
+                "total": total,
+                "time": time_taken,
+                "bonus": who_am_i_bonus,
+                "milestone": milestone_points
+            })
+        except:
+            # Fallback: table doesn't have bonus columns
+            try:
+                db.session.execute(text("""
+                    INSERT INTO guest_quiz_attempts (guest_code, topic, difficulty, score, total_questions, time_spent, who_am_i_bonus)
+                    VALUES (:code, :topic, :diff, :score, :total, :time, :bonus)
+                """), {
+                    "code": guest_code,
+                    "topic": topic,
+                    "diff": difficulty,
+                    "score": score,
+                    "total": total,
+                    "time": time_taken,
+                    "bonus": who_am_i_bonus
+                })
+            except:
+                # Final fallback: no bonus columns at all
+                db.session.execute(text("""
+                    INSERT INTO guest_quiz_attempts (guest_code, topic, difficulty, score, total_questions, time_spent)
+                    VALUES (:code, :topic, :diff, :score, :total, :time)
+                """), {
+                    "code": guest_code,
+                    "topic": topic,
+                    "diff": difficulty,
+                    "score": score,
+                    "total": total,
+                    "time": time_taken
+                })
+
+        # Update guest stats (including ALL bonuses!)
+        db.session.execute(text("""
+            UPDATE guest_users
+            SET total_score = total_score + :total_points,
+                quizzes_completed = quizzes_completed + 1,
+                last_active = :now
+            WHERE guest_code = :code
+        """), {
+            "total_points": total_points,  # Score + who_am_i_bonus + milestone_points!
+            "now": datetime.utcnow(),
+            "code": guest_code
+        })
+
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Quiz completed!',
+            'score': score,
+            'total': total,
+            'percentage': percentage,
+            'who_am_i_bonus': who_am_i_bonus,
+            'milestone_points': milestone_points,
+            'total_points_earned': total_points,
+            'is_repeat_guest': True
+        }), 200
+
+    # For casual guests, save to UserStats so points persist during session
+    if 'is_guest' in session:
+        user_id = session.get('user_id')
+        if user_id:
+            # Get or create UserStats for guest user
+            stats = UserStats.query.filter_by(user_id=user_id).first()
+            if not stats:
+                stats = UserStats(user_id=user_id, total_points=0, level=1)
+                db.session.add(stats)
+                db.session.commit()
+            
+            # Update points
+            stats.total_points += score
+            stats.total_quizzes += 1
+            stats.total_questions_answered += total
+            stats.total_correct_answers += score
+            db.session.commit()
+        
+        return jsonify({
+            'message': 'Quiz completed!',
+            'score': score,
+            'total': total,
+            'percentage': percentage,
+            'total_points': score,
+            'is_guest': True,
+            'prompt_register': True
+        }), 200
+
+    # For registered users, save to database
+    # WHO AM I: Get quiz_attempt_id and bonus if provided
+    quiz_attempt_id = data.get('quiz_attempt_id')
+    who_am_i_bonus = data.get('who_am_i_bonus', 0)
+
+    # If quiz_attempt_id is provided, update that record instead of creating new
+    if quiz_attempt_id:
+        attempt = QuizAttempt.query.get(quiz_attempt_id)
+        if attempt and attempt.user_id == session['user_id']:
+            # Update existing quiz attempt
+            attempt.score = score
+            attempt.total_questions = total
+            attempt.percentage = percentage
+            attempt.time_taken = time_taken
+            attempt.who_am_i_bonus = who_am_i_bonus
+            attempt.completed_at = datetime.utcnow()
+        else:
+            # Quiz attempt not found or doesn't belong to user, create new
+            attempt = QuizAttempt(
+                user_id=session['user_id'],
+                topic=topic,
+                difficulty=difficulty,
+                score=score,
+                total_questions=total,
+                percentage=percentage,
+                time_taken=time_taken,
+                who_am_i_bonus=who_am_i_bonus
+            )
+            db.session.add(attempt)
+    else:
+        # Create new quiz attempt
+        attempt = QuizAttempt(
+            user_id=session['user_id'],
+            topic=topic,
+            difficulty=difficulty,
+            score=score,
+            total_questions=total,
+            percentage=percentage,
+            time_taken=time_taken,
+            who_am_i_bonus=who_am_i_bonus
+        )
+        db.session.add(attempt)
+
+    db.session.commit()
+
+    # Update stats and check for badges
+    stats, newly_earned_badges = update_user_stats_after_quiz(session['user_id'], attempt)
+
+    # Update Adaptive Learning System
+    adaptive_result = None
+    if ADAPTIVE_LEARNING_AVAILABLE:
+        try:
+            # Get question-level results if provided
+            question_results = data.get('question_results', None)
+            adaptive_result = update_adaptive_after_quiz(
+                user_id=session['user_id'],
+                topic=topic,
+                difficulty=difficulty,
+                score=score,
+                total_questions=total,
+                time_taken=time_taken,
+                question_results=question_results
+            )
+        except Exception as e:
+            print(f"Adaptive learning update error: {e}")
+            adaptive_result = None
+
+    return jsonify({
+        'message': 'Quiz submitted successfully',
+        'attempt': attempt.to_dict(),
+        'stats': stats.to_dict(),
+        'newly_earned_badges': newly_earned_badges,
+        'adaptive': adaptive_result
+    }), 201
+
+@app.route('/api/my-progress')
+@guest_or_login_required
+def my_progress():
+    from sqlalchemy import text
+    
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id')
+    
+    # Check if this is a guest user with data in guest_quiz_attempts
+    if guest_code:
+        try:
+            attempts = db.session.execute(text("""
+                SELECT id, topic, difficulty, score, total_questions, time_spent, completed_at
+                FROM guest_quiz_attempts
+                WHERE guest_code = :code
+                ORDER BY completed_at DESC
+                LIMIT 100
+            """), {'code': guest_code}).fetchall()
+            
+            if attempts:
+                return jsonify([{
+                    'id': a.id,
+                    'topic': a.topic,
+                    'difficulty': a.difficulty,
+                    'score': a.score,
+                    'total_questions': a.total_questions,
+                    'percentage': round((a.score / a.total_questions * 100), 1) if a.total_questions > 0 else 0,
+                    'time_taken': a.time_spent,
+                    'completed_at': a.completed_at if isinstance(a.completed_at, str) else (a.completed_at.isoformat() if a.completed_at else None)
+                } for a in attempts])
+        except Exception as e:
+            print(f"Error loading guest progress: {e}")
+    
+    # Fallback: check for registered user quiz attempts
+    if user_id and not session.get('is_guest'):
+        attempts = QuizAttempt.query.filter_by(user_id=user_id).order_by(QuizAttempt.completed_at.desc()).all()
+        return jsonify([a.to_dict() for a in attempts])
+    
+    return jsonify([]), 200
+
+# ==================== BADGES API ROUTES ====================
+
+@app.route('/api/student/badges')
+@login_required
+@approved_required
+def get_student_badges():
+    """Get all badges (earned and available) for the current student"""
+    from sqlalchemy import text
+
+    # =====================================================================
+    # CASUAL GUESTS - Quick Try users (now with session persistence!)
+    # =====================================================================
+    if 'is_guest' in session and 'guest_code' not in session:
+        user_id = session.get('user_id')
+        stats = UserStats.query.filter_by(user_id=user_id).first() if user_id else None
+        
+        return jsonify({
+            'earned': [],
+            'available': [],
+            'level': stats.level if stats else 1,
+            'total_points': stats.total_points if stats else 0,
+            'total_badges': 0,
+            'is_casual_guest': True
+        }), 200
+
+    # =====================================================================
+    # REPEAT GUESTS - Users with guest_code (persistent points & badges)
+    # =====================================================================
+    if 'guest_code' in session:
+        guest_code = session['guest_code']
+
+        # DEBUG: Print start
+        print(f"\n{'='*80}")
+        print(f"🔍 LOADING BADGES FOR GUEST: {guest_code}")
+        print(f"{'='*80}")
+
+        # Ensure guest_badges table exists
+        ensure_guest_badges_table()
+
+        # Get guest stats with error handling
+        try:
+            guest_stats = db.session.execute(text("""
+                SELECT total_score, quizzes_completed
+                FROM guest_users
+                WHERE guest_code = :code
+            """), {"code": guest_code}).fetchone()
+            print(f"📊 Guest stats: {guest_stats}")
+        except Exception as e:
+            # If query fails, return default values
+            print(f"❌ Error getting guest stats: {e}")
+            guest_stats = None
+
+        # Get guest badges (simplified query - only essential columns)
+        try:
+            guest_badges = db.session.execute(text("""
+                SELECT badge_name, earned_at
+                FROM guest_badges
+                WHERE guest_code = :code
+                ORDER BY earned_at DESC
+            """), {"code": guest_code}).fetchall()
+            print(f"🏆 Existing badges in DB: {len(guest_badges)} badges")
+            for b in guest_badges:
+                print(f"   - {b[0]}")
+        except Exception as e:
+            # If guest_badges table doesn't exist or has issues, just return empty
+            print(f"❌ Error getting guest badges: {e}")
+            guest_badges = []
+
+        # Calculate level (1 level per 100 points)
+        total_points = guest_stats[0] if guest_stats else 0
+        quizzes_completed = guest_stats[1] if guest_stats and len(guest_stats) > 1 else 0
+        level = (total_points // 100) + 1
+
+        # Format earned badges for frontend - need to look up full badge details!
+        earned_badges_list = []
+        earned_badge_names = set()
+        
+        # Create a lookup dict for badge details
+        badge_lookup = {}
+        try:
+            all_badge_records = Badge.query.all()
+            for b in all_badge_records:
+                badge_lookup[b.name] = b
+        except Exception as e:
+            print(f"Warning: Could not load badge details: {e}")
+        
+        for badge in guest_badges:
+            badge_name = badge[0]
+            badge_details = badge_lookup.get(badge_name)
+            
+            earned_badges_list.append({
+                'name': badge_name,
+                'description': badge_details.description if badge_details else 'Achievement unlocked!',
+                'points': badge_details.points if badge_details else 0,
+                'icon': badge_details.icon if badge_details else 'fa-trophy',
+                'category': badge_details.category if badge_details else 'achievement',
+                'earned_at': badge[1] if badge[1] else None
+            })
+            earned_badge_names.add(badge_name)
+
+        # GET ALL BADGES FROM DATABASE (same as registered users!)
+        try:
+            all_badges = Badge.query.all()
+            print(f"\n🎯 Total badges in system: {len(all_badges)}")
+        except Exception as e:
+            print(f"❌ Error loading badges: {e}")
+            all_badges = []
+
+        available_badges_list = []
+
+        print(f"\n🔄 Processing badges...")
+
+        # Calculate progress for each badge (same logic as registered users)
+        for badge in all_badges:
+            # Skip if already earned
+            if badge.name in earned_badge_names:
+                print(f"  ⏭️  {badge.name}: Already earned, skipping")
+                continue
+
+            progress = 0
+
+            print(f"\n  📍 Checking: {badge.name} ({badge.requirement_type})")
+
+            # Calculate progress based on badge requirement
+            if badge.requirement_type == 'quizzes_completed':
+                progress = min(100, int((quizzes_completed / badge.requirement_value) * 100))
+                print(f"     Progress: {quizzes_completed}/{badge.requirement_value} quizzes = {progress}%")
+            elif badge.requirement_type == 'perfect_scores':
+                # Count perfect scores from guest_quiz_attempts
+                try:
+                    perfect_count = db.session.execute(text("""
+                        SELECT COUNT(*) FROM guest_quiz_attempts
+                        WHERE guest_code = :code AND score = total_questions
+                    """), {"code": guest_code}).fetchone()[0]
+                    progress = min(100, int((perfect_count / badge.requirement_value) * 100))
+                except:
+                    progress = 0
+            elif badge.requirement_type == 'streak_days':
+                # Guests don't track daily streaks yet
+                progress = 0
+            elif badge.requirement_type == 'topics_mastered':
+                # Count distinct topics with 90%+ average
+                try:
+                    topics_result = db.session.execute(text("""
+                        SELECT topic, AVG(CAST(score AS FLOAT) / total_questions) as avg_score
+                        FROM guest_quiz_attempts
+                        WHERE guest_code = :code
+                        GROUP BY topic
+                        HAVING AVG(CAST(score AS FLOAT) / total_questions) >= 0.9
+                    """), {"code": guest_code}).fetchall()
+                    topics_mastered = len(topics_result)  # Count how many topics meet criteria
+                    progress = min(100, int((topics_mastered / badge.requirement_value) * 100))
+                except Exception as e:
+                    print(f"Error calculating topics_mastered: {e}")
+                    progress = 0
+            elif badge.requirement_type == 'high_scores':
+                # Count quizzes with 90%+ score
+                try:
+                    high_scores = db.session.execute(text("""
+                        SELECT COUNT(*) FROM guest_quiz_attempts
+                        WHERE guest_code = :code
+                        AND CAST(score AS FLOAT) / total_questions >= 0.9
+                    """), {"code": guest_code}).fetchone()[0]
+                    progress = min(100, int((high_scores / badge.requirement_value) * 100))
+                except:
+                    progress = 0
+            else:
+                progress = 0
+
+            # AUTO-AWARD: If progress is 100%, award the badge!
+            if progress >= 100:
+                print(f"     🎯 Badge at 100%! Attempting to award...")
+                try:
+                    # Check if badge already exists
+                    existing = db.session.execute(text("""
+                        SELECT COUNT(*) FROM guest_badges
+                        WHERE guest_code = :code AND badge_name = :badge_name
+                    """), {"code": guest_code, "badge_name": badge.name}).fetchone()[0]
+
+                    print(f"     Existing count in DB: {existing}")
+
+                    if existing == 0:
+                        print(f"     → Inserting into guest_badges...")
+                        # Award the badge!
+                        db.session.execute(text("""
+                            INSERT INTO guest_badges (guest_code, badge_name, earned_at)
+                            VALUES (:code, :badge_name, :earned_at)
+                        """), {
+                            "code": guest_code,
+                            "badge_name": badge.name,
+                            "earned_at": datetime.utcnow()
+                        })
+                        db.session.commit()
+                        print(f"     ✅ Committed to database!")
+
+                        # Add to earned badges instead of available
+                        earned_badges_list.append({
+                            'name': badge.name,
+                            'earned_at': datetime.utcnow().isoformat(),
+                            'icon': badge.icon
+                        })
+                        earned_badge_names.add(badge.name)
+
+                        print(f'     🎉 Auto-awarded badge: {badge.name} to guest {guest_code}')
+                        print(f'     📝 Added to earned_badges_list (now {len(earned_badges_list)} badges)')
+                        continue  # Skip adding to available badges
+                    else:
+                        print(f'     ⏭️  Badge {badge.name} already in DB, skipping')
+                        continue  # Skip adding to available if already earned
+                except Exception as e:
+                    # Log error but don't crash
+                    print(f'     ❌ Error auto-awarding badge {badge.name}: {str(e)}')
+                    import traceback
+                    traceback.print_exc()
+                    # Fall through to add to available badges
+
+            # Add to available badges
+            available_badges_list.append({
+                'id': badge.id,
+                'name': badge.name,
+                'description': badge.description,
+                'icon': badge.icon,
+                'category': badge.category,
+                'requirement_type': badge.requirement_type,
+                'requirement_value': badge.requirement_value,
+                'points': badge.points,
+                'color': badge.color,
+                'progress': progress,
+                'earned_at': None
+            })
+
+        print(f"\n{'='*80}")
+        print(f"📊 FINAL RESULTS:")
+        print(f"   Earned badges: {len(earned_badges_list)}")
+        for b in earned_badges_list:
+            print(f"      - {b['name']}")
+        print(f"   Available badges: {len(available_badges_list)}")
+        print(f"   Total points: {total_points}")
+        print(f"   Level: {level}")
+        print(f"{'='*80}\n")
+
+        return jsonify({
+            'earned': earned_badges_list,
+            'available': available_badges_list,  # ALL badges from database!
+            'level': level,
+            'total_points': total_points,
+            'total_badges': len(earned_badges_list) + len(available_badges_list),
+            'is_repeat_guest': True
+        }), 200
+
+    # =====================================================================
+    # REGISTERED USERS - Full badge system
+    # =====================================================================
+    user_id = session['user_id']
+
+    # Get all badges
+    all_badges = Badge.query.all()
+
+    # Get earned badges
+    earned_badges = UserBadge.query.filter_by(user_id=user_id).all()
+    earned_badge_ids = {ub.badge_id for ub in earned_badges}
+
+    # Get user stats for progress on unearned badges
+    stats = UserStats.query.filter_by(user_id=user_id).first()
+    if not stats:
+        stats = initialize_user_stats(user_id)
+
+    badges_data = {
+        'earned': [],
+        'available': [],
+        'total_points': stats.total_points,
+        'level': stats.level,
+        'is_registered_user': True
+    }
+
+    for badge in all_badges:
+        badge_dict = badge.to_dict()
+
+        if badge.id in earned_badge_ids:
+            # Badge is earned
+            user_badge = next(ub for ub in earned_badges if ub.badge_id == badge.id)
+            badge_dict['earned_at'] = user_badge.earned_at.isoformat()
+            badge_dict['progress'] = 100
+            badges_data['earned'].append(badge_dict)
+        else:
+            # Badge is available - calculate progress
+            progress = 0
+
+            if badge.requirement_type == 'quizzes_completed':
+                progress = min(100, int((stats.total_quizzes / badge.requirement_value) * 100))
+            elif badge.requirement_type == 'perfect_scores':
+                progress = min(100, int((stats.perfect_scores / badge.requirement_value) * 100))
+            elif badge.requirement_type == 'streak_days':
+                progress = min(100, int((stats.current_streak_days / badge.requirement_value) * 100))
+            elif badge.requirement_type == 'topics_mastered':
+                progress = min(100, int((stats.topics_mastered / badge.requirement_value) * 100))
+            elif badge.requirement_type == 'high_scores':
+                high_scores = QuizAttempt.query.filter(
+                    QuizAttempt.user_id == user_id,
+                    QuizAttempt.percentage >= 90
+                ).count()
+                progress = min(100, int((high_scores / badge.requirement_value) * 100))
+
+            badge_dict['progress'] = progress
+            badge_dict['earned_at'] = None
+            badges_data['available'].append(badge_dict)
+
+    return jsonify(badges_data)
+
+@app.route('/api/student/stats')
+@login_required
+@approved_required
+def get_student_stats():
+    """Get detailed statistics for the current student"""
+
+    # Handle repeat guests - fetch from guest tables
+    if 'guest_code' in session:
+        from sqlalchemy import text
+        guest_code = session['guest_code']
+
+        # Get guest stats
+        guest_stats = db.session.execute(text("""
+            SELECT total_score, quizzes_completed
+            FROM guest_users
+            WHERE guest_code = :code
+        """), {"code": guest_code}).fetchone()
+
+        # Get guest quiz attempts (recent 10 for display)
+        attempts = db.session.execute(text("""
+            SELECT topic, difficulty, score, total_questions, completed_at
+            FROM guest_quiz_attempts
+            WHERE guest_code = :code
+            ORDER BY completed_at DESC
+            LIMIT 10
+        """), {"code": guest_code}).fetchall()
+
+        # Calculate accuracy
+        total_correct = sum(a[2] for a in attempts) if attempts else 0
+        total_questions = sum(a[3] for a in attempts) if attempts else 0
+        accuracy = (total_correct / total_questions * 100) if total_questions > 0 else 0
+
+        # Get badge count
+        try:
+            badge_count = db.session.execute(text("""
+                SELECT COUNT(*) FROM guest_badges WHERE guest_code = :code
+            """), {"code": guest_code}).fetchone()[0]
+        except:
+            badge_count = 0
+
+        # =====================================================
+        # CALCULATE TOPIC PROGRESS FROM GUEST_QUIZ_ATTEMPTS
+        # =====================================================
+        # Try to include bonus columns if they exist, fallback to basic query
+        try:
+            topic_progress_data = db.session.execute(text("""
+                SELECT 
+                    topic,
+                    difficulty,
+                    COUNT(*) as attempts,
+                    MAX(score) as best_score,
+                    MAX(CAST(score AS FLOAT) / NULLIF(total_questions, 0) * 100) as best_percentage,
+                    SUM(total_questions) as total_questions_answered,
+                    SUM(score) as total_correct,
+                    MAX(completed_at) as last_attempt,
+                    MAX(score + COALESCE(who_am_i_bonus, 0) + COALESCE(milestone_points, 0)) as max_points
+                FROM guest_quiz_attempts
+                WHERE guest_code = :code
+                GROUP BY topic, difficulty
+                ORDER BY topic, 
+                    CASE difficulty 
+                        WHEN 'beginner' THEN 1 
+                        WHEN 'intermediate' THEN 2 
+                        WHEN 'advanced' THEN 3 
+                        ELSE 4 
+                    END
+            """), {"code": guest_code}).fetchall()
+        except:
+            # Fallback: bonus columns don't exist yet
+            topic_progress_data = db.session.execute(text("""
+                SELECT 
+                    topic,
+                    difficulty,
+                    COUNT(*) as attempts,
+                    MAX(score) as best_score,
+                    MAX(CAST(score AS FLOAT) / NULLIF(total_questions, 0) * 100) as best_percentage,
+                    SUM(total_questions) as total_questions_answered,
+                    SUM(score) as total_correct,
+                    MAX(completed_at) as last_attempt,
+                    MAX(score) as max_points
+                FROM guest_quiz_attempts
+                WHERE guest_code = :code
+                GROUP BY topic, difficulty
+                ORDER BY topic, 
+                    CASE difficulty 
+                        WHEN 'beginner' THEN 1 
+                        WHEN 'intermediate' THEN 2 
+                        WHEN 'advanced' THEN 3 
+                        ELSE 4 
+                    END
+            """), {"code": guest_code}).fetchall()
+        
+        # Format topic progress for frontend
+        topic_progress = []
+        for row in topic_progress_data:
+            topic, difficulty, attempt_count, best_score, best_pct, total_q, total_correct_topic, last_attempt, max_points = row
+            
+            # Calculate accuracy for this topic/difficulty
+            topic_accuracy = (total_correct_topic / total_q * 100) if total_q > 0 else 0
+            
+            # Check if mastered (90%+ accuracy with 5+ attempts)
+            is_mastered = (attempt_count >= 5 and topic_accuracy >= 90)
+            
+            # Format topic name for display
+            display_name = topic.replace('_', ' ').title()
+            
+            topic_progress.append({
+                'topic': display_name,
+                'topic_id': topic,
+                'difficulty': difficulty.title() if difficulty else 'Unknown',
+                'attempts': attempt_count,
+                'best_score': best_score or 0,
+                'best_percentage': round(best_pct, 1) if best_pct else 0,
+                'accuracy': round(topic_accuracy, 1),
+                'is_mastered': is_mastered,
+                'max_points': max_points or 0,
+                'last_attempt_at': last_attempt
+            })
+        
+        # Count perfect scores
+        try:
+            perfect_count = db.session.execute(text("""
+                SELECT COUNT(*) FROM guest_quiz_attempts
+                WHERE guest_code = :code AND score = total_questions AND total_questions > 0
+            """), {"code": guest_code}).fetchone()[0]
+        except:
+            perfect_count = 0
+        
+        # Count topics mastered
+        topics_mastered = sum(1 for tp in topic_progress if tp['is_mastered'])
+        
+        # Calculate level properly (1 level per 100 points)
+        total_points = guest_stats[0] if guest_stats else 0
+        level = (total_points // 100) + 1
+
+        return jsonify({
+            'stats': {
+                'total_quizzes': guest_stats[1] if guest_stats else 0,
+                'total_questions_answered': total_questions,
+                'total_correct_answers': total_correct,
+                'overall_accuracy': round(accuracy, 1),
+                'current_streak_days': 0,
+                'longest_streak_days': 0,
+                'total_points': total_points,
+                'level': level,
+                'topics_mastered': topics_mastered,
+                'perfect_scores': perfect_count,
+                'badges_earned': badge_count
+            },
+            'topic_progress': topic_progress,
+            'recent_attempts': [{
+                'topic': a[0],
+                'difficulty': a[1],
+                'score': a[2],
+                'total_questions': a[3],
+                'completed_at': a[4]
+            } for a in attempts]
+        }), 200
+
+    # Handle casual guests - no stats
+    if 'is_guest' in session:
+        return jsonify({
+            'stats': {
+                'total_quizzes': 0,
+                'total_questions_answered': 0,
+                'total_correct_answers': 0,
+                'overall_accuracy': 0,
+                'current_streak_days': 0,
+                'longest_streak_days': 0,
+                'total_points': 0,
+                'level': 1,
+                'topics_mastered': 0,
+                'perfect_scores': 0
+            },
+            'topic_progress': [],
+            'recent_attempts': []
+        }), 200
+
+    # Handle full accounts
+    user_id = session['user_id']
+
+    stats = UserStats.query.filter_by(user_id=user_id).first()
+    if not stats:
+        stats = initialize_user_stats(user_id)
+
+    # Get topic progress
+    topic_progress = TopicProgress.query.filter_by(user_id=user_id).all()
+
+    # Get recent quiz attempts
+    recent_attempts = QuizAttempt.query.filter_by(user_id=user_id).order_by(
+        QuizAttempt.completed_at.desc()
+    ).limit(10).all()
+
+    # Get streak info (if Irish calendar enabled)
+    streak_info = {}
+    if IRISH_CALENDAR_ENABLED:
+        next_milestone_days, next_milestone_info = get_next_milestone(stats.current_streak_days)
+        streak_info = {
+            'is_school_day_streak': True,
+            'next_milestone_days': next_milestone_days,
+            'next_milestone_name': next_milestone_info['name'] if next_milestone_info else None,
+            'next_milestone_points': next_milestone_info['points'] if next_milestone_info else None,
+            'days_until_next': (next_milestone_days - stats.current_streak_days) if next_milestone_days else None
+        }
+
+    stats_dict = stats.to_dict()
+    stats_dict['streak_info'] = streak_info
+
+    return jsonify({
+        'stats': stats_dict,
+        'topic_progress': [tp.to_dict() for tp in topic_progress],
+        'recent_attempts': [qa.to_dict() for qa in recent_attempts]
+    })
+
+@app.route('/api/student/progress/<topic>')
+@login_required
+@approved_required
+def get_topic_progress(topic):
+    """Get progress for a specific topic"""
+    user_id = session['user_id']
+
+    progress = TopicProgress.query.filter_by(user_id=user_id, topic=topic).all()
+
+    return jsonify({
+        'topic': topic,
+        'progress': [p.to_dict() for p in progress]
+    })
+
+@app.route('/api/student/mastery')
+@login_required
+@approved_required
+def get_student_mastery():
+    """
+    Get student's mastery status for all topics and difficulties.
+    Returns best score for each topic/difficulty combination.
+    Mastery threshold: >80%
+    OPTIMIZED: Single query instead of 36 separate queries
+    Now supports both registered users AND guest_code users
+    """
+    from sqlalchemy import text
+    
+    # Casual guest users (no guest_code) don't have mastery data
+    if 'is_guest' in session and 'guest_code' not in session:
+        return jsonify({}), 200
+
+    # Get all topics from database - automatically includes new topics
+    topics = get_valid_topics_from_db()  # Database-driven!
+    difficulties = VALID_DIFFICULTIES
+
+    # Check if this is a guest_code user or registered user
+    if 'guest_code' in session:
+        # Guest code user - query guest_quiz_attempts table
+        guest_code = session['guest_code']
+        query = text("""
+            SELECT topic, difficulty, MAX(CAST(score AS FLOAT) / total_questions * 100) as best_score
+            FROM guest_quiz_attempts
+            WHERE guest_code = :guest_code
+            GROUP BY topic, difficulty
+        """)
+        results = db.session.execute(query, {'guest_code': guest_code}).fetchall()
+    else:
+        # Registered user - query quiz_attempts table
+        user_id = session['user_id']
+        query = text("""
+            SELECT topic, difficulty, MAX(percentage) as best_score
+            FROM quiz_attempts
+            WHERE user_id = :user_id
+            GROUP BY topic, difficulty
+        """)
+        results = db.session.execute(query, {'user_id': user_id}).fetchall()
+
+    # Build lookup dictionary from query results
+    best_scores = {}
+    for row in results:
+        topic, difficulty, best_score = row
+        if topic not in best_scores:
+            best_scores[topic] = {}
+        best_scores[topic][difficulty] = best_score or 0
+
+    # Build mastery data structure
+    mastery_data = {}
+
+    for topic in topics:
+        mastery_data[topic] = {
+            'difficulties': {},
+            'topic_mastered': False
+        }
+
+        mastered_count = 0
+
+        for difficulty in difficulties:
+            best_score = best_scores.get(topic, {}).get(difficulty, 0)
+
+            if best_score > 80:
+                mastery_data[topic]['difficulties'][difficulty] = {
+                    'mastered': True,
+                    'best_score': round(best_score, 1)
+                }
+                mastered_count += 1
+            else:
+                mastery_data[topic]['difficulties'][difficulty] = {
+                    'mastered': False,
+                    'best_score': round(best_score, 1)
+                }
+
+        # Topic is mastered if all 3 difficulties are mastered
+        mastery_data[topic]['topic_mastered'] = (mastered_count == 3)
+
+    return jsonify(mastery_data)
+
+
+# ==================== MANUAL BADGE AWARD ROUTE ====================
+@app.route('/api/award-badges-now')
+@login_required
+def award_badges_now():
+    """
+    Manually trigger badge awarding for current guest code user
+    Useful for testing and fixing badges that should be earned
+    """
+    from sqlalchemy import text
+
+    if 'guest_code' not in session:
+        return jsonify({
+            'error': 'Only available for guest code users',
+            'message': 'Please log in with a guest code to use this feature'
+        }), 400
+
+    guest_code = session['guest_code']
+
+    try:
+        # Ensure guest_badges table exists
+        ensure_guest_badges_table()
+
+        # Get guest stats
+        guest_stats = db.session.execute(text("""
+            SELECT total_score, quizzes_completed
+            FROM guest_users
+            WHERE guest_code = :code
+        """), {"code": guest_code}).fetchone()
+
+        if not guest_stats:
+            return jsonify({'error': 'Guest not found'}), 404
+
+        quizzes = guest_stats[1]
+        points = guest_stats[0]
+
+        # Get all badges
+        all_badges = Badge.query.all()
+
+        awarded = []
+        skipped = []
+        errors = []
+
+        for badge in all_badges:
+            try:
+                # Calculate if badge is earned
+                earned = False
+                progress = 0
+
+                if badge.requirement_type == 'quizzes_completed':
+                    progress = (quizzes / badge.requirement_value) * 100 if badge.requirement_value > 0 else 0
+                    if quizzes >= badge.requirement_value:
+                        earned = True
+
+                elif badge.requirement_type == 'perfect_scores':
+                    perfect_count = db.session.execute(text("""
+                        SELECT COUNT(*) FROM guest_quiz_attempts
+                        WHERE guest_code = :code AND score = total_questions
+                    """), {"code": guest_code}).fetchone()[0]
+                    progress = (perfect_count / badge.requirement_value) * 100 if badge.requirement_value > 0 else 0
+                    if perfect_count >= badge.requirement_value:
+                        earned = True
+
+                elif badge.requirement_type == 'high_scores':
+                    high_scores = db.session.execute(text("""
+                        SELECT COUNT(*) FROM guest_quiz_attempts
+                        WHERE guest_code = :code
+                        AND CAST(score AS FLOAT) / total_questions >= 0.9
+                    """), {"code": guest_code}).fetchone()[0]
+                    progress = (high_scores / badge.requirement_value) * 100 if badge.requirement_value > 0 else 0
+                    if high_scores >= badge.requirement_value:
+                        earned = True
+
+                elif badge.requirement_type == 'topics_mastered':
+                    topics_result = db.session.execute(text("""
+                        SELECT topic, AVG(CAST(score AS FLOAT) / total_questions) as avg_score
+                        FROM guest_quiz_attempts
+                        WHERE guest_code = :code
+                        GROUP BY topic
+                        HAVING AVG(CAST(score AS FLOAT) / total_questions) >= 0.9
+                    """), {"code": guest_code}).fetchall()
+                    topics_mastered = len(topics_result)
+                    progress = (topics_mastered / badge.requirement_value) * 100 if badge.requirement_value > 0 else 0
+                    if topics_mastered >= badge.requirement_value:
+                        earned = True
+
+                if earned:
+                    # Check if already awarded
+                    existing = db.session.execute(text("""
+                        SELECT COUNT(*) FROM guest_badges
+                        WHERE guest_code = :code AND badge_name = :name
+                    """), {"code": guest_code, "name": badge.name}).fetchone()[0]
+
+                    if existing == 0:
+                        # Award it!
+                        db.session.execute(text("""
+                            INSERT INTO guest_badges (guest_code, badge_name, earned_at)
+                            VALUES (:code, :name, :now)
+                        """), {
+                            "code": guest_code,
+                            "name": badge.name,
+                            "now": datetime.utcnow()
+                        })
+                        db.session.commit()
+                        awarded.append({
+                            'name': badge.name,
+                            'progress': int(progress),
+                            'requirement': f"{badge.requirement_type}: {badge.requirement_value}"
+                        })
+                    else:
+                        skipped.append(f"{badge.name} (already earned)")
+
+            except Exception as e:
+                errors.append(f"{badge.name}: {str(e)}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Badge check complete!',
+            'guest_code': guest_code,
+            'quizzes_completed': quizzes,
+            'total_points': points,
+            'newly_awarded': awarded,
+            'already_earned': skipped,
+            'errors': errors if errors else None
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to check badges. See error for details.'
+        }), 500
+
+
+def ensure_guest_badges_table():
+    """
+    Ensure the guest_badges table exists with correct structure
+    Creates it if missing
+    """
+    from sqlalchemy import text
+
+    try:
+        # Check if table exists
+        result = db.session.execute(text("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='guest_badges'
+        """)).fetchone()
+
+        if not result:
+            print("⚠️  guest_badges table does NOT exist! Creating it now...")
+
+            # Create the table
+            db.session.execute(text("""
+                CREATE TABLE guest_badges (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guest_code TEXT NOT NULL,
+                    badge_name TEXT NOT NULL,
+                    earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(guest_code, badge_name)
+                )
+            """))
+            db.session.commit()
+            print("✅ guest_badges table created successfully!")
+        else:
+            print("✅ guest_badges table exists")
+
+    except Exception as e:
+        print(f"❌ Error checking/creating guest_badges table: {e}")
+        # Don't raise - just log the error
+
+
+# ==================== BONUS QUESTION ROUTES ====================
+
+@app.route('/api/bonus-question/random')
+@login_required
+def get_random_bonus_question():
+    """
+    Get a random bonus question for high-scoring students
+    Query params:
+        - category: optional category filter (e.g., 'dinosaurs', 'flags')
+        - exclude_id: optional ID to exclude (avoid repeats)
+    """
+    category = request.args.get('category', 'dinosaurs')  # Default to dinosaurs
+    exclude_id = request.args.get('exclude_id', type=int)
+    
+    # Build query
+    query = BonusQuestion.query.filter_by(category=category, is_active=True)
+    
+    if exclude_id:
+        query = query.filter(BonusQuestion.id != exclude_id)
+    
+    # Get all matching questions
+    questions = query.all()
+    
+    if not questions:
+        return jsonify({'error': 'No bonus questions available', 'category': category}), 404
+    
+    # Select random question
+    question = random.choice(questions)
+    
+    # Increment times shown
+    question.times_shown += 1
+    db.session.commit()
+    
+    return jsonify(question.to_dict())
+
+
+@app.route('/api/bonus-question/debug')
+@login_required
+def debug_bonus_questions():
+    """
+    Debug endpoint to check bonus question image URLs
+    Access: /api/bonus-question/debug
+    """
+    from sqlalchemy import text
+    
+    try:
+        # Get all bonus questions with their image URLs
+        questions = db.session.execute(text("""
+            SELECT id, category, correct_answer, image_url, is_active
+            FROM bonus_questions
+            ORDER BY category, id
+            LIMIT 50
+        """)).fetchall()
+        
+        results = []
+        for q in questions:
+            # Check if image_url looks valid
+            image_url = q.image_url or ''
+            
+            # Determine potential issues
+            issues = []
+            if not image_url:
+                issues.append('No image URL')
+            elif not image_url.startswith('/') and not image_url.startswith('http'):
+                issues.append('URL does not start with / or http')
+            elif 'static/' not in image_url and not image_url.startswith('http'):
+                issues.append('May be missing /static/ prefix')
+            
+            results.append({
+                'id': q.id,
+                'category': q.category,
+                'answer': q.correct_answer,
+                'image_url': image_url,
+                'is_active': q.is_active,
+                'issues': issues if issues else ['OK']
+            })
+        
+        return jsonify({
+            'total': len(results),
+            'questions': results
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/bonus-question/test')
+@login_required  
+def test_bonus_question():
+    """
+    Test endpoint to simulate bonus question popup without completing quiz
+    Access: /api/bonus-question/test
+    This returns a bonus question that you can test the image loading with
+    """
+    category = request.args.get('category', 'dinosaurs')
+    
+    question = BonusQuestion.query.filter_by(category=category, is_active=True).first()
+    
+    if not question:
+        return jsonify({'error': f'No bonus questions found for category: {category}'}), 404
+    
+    # Return in the same format as the random endpoint
+    result = question.to_dict()
+    
+    # Add debug info
+    result['_debug'] = {
+        'raw_image_url': question.image_url,
+        'category': question.category,
+        'id': question.id,
+        'test_image_tag': f'<img src="{question.image_url}" onerror="console.log(\'Image load failed:\', this.src)">'
+    }
+    
+    return jsonify(result)
+
+
+@app.route('/test-dino-image')
+@login_required
+def test_dino_image_page():
+    """
+    Visual test page for bonus question images
+    Access: /test-dino-image
+    """
+    from sqlalchemy import text
+    
+    # Get first few bonus questions
+    questions = db.session.execute(text("""
+        SELECT id, category, correct_answer, image_url
+        FROM bonus_questions
+        WHERE is_active = 1
+        LIMIT 5
+    """)).fetchall()
+    
+    html = '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Dino Image Test</title>
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+            .card { background: white; padding: 20px; margin: 20px 0; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            .card h3 { margin-top: 0; }
+            .image-container { 
+                width: 300px; height: 300px; 
+                background: #e0e0e0; 
+                display: flex; align-items: center; justify-content: center;
+                border-radius: 8px; overflow: hidden;
+                margin: 10px 0;
+            }
+            .image-container img { max-width: 100%; max-height: 100%; }
+            .url { font-family: monospace; background: #f0f0f0; padding: 5px 10px; border-radius: 4px; word-break: break-all; }
+            .status { padding: 5px 10px; border-radius: 4px; display: inline-block; margin-top: 10px; }
+            .status.loading { background: #fff3cd; color: #856404; }
+            .status.success { background: #d4edda; color: #155724; }
+            .status.error { background: #f8d7da; color: #721c24; }
+        </style>
+    </head>
+    <body>
+        <h1>🦕 Dino Image Test Page</h1>
+        <p>This page tests whether bonus question images load correctly.</p>
+    '''
+    
+    if not questions:
+        html += '<div class="card"><p>No bonus questions found in database!</p></div>'
+    else:
+        for q in questions:
+            html += f'''
+            <div class="card">
+                <h3>ID: {q.id} - {q.correct_answer}</h3>
+                <p>Category: {q.category}</p>
+                <p>Image URL: <span class="url">{q.image_url or 'NULL'}</span></p>
+                <div class="image-container" id="container-{q.id}">
+                    <img src="{q.image_url}" 
+                         onload="document.getElementById('status-{q.id}').className='status success'; document.getElementById('status-{q.id}').textContent='✓ Image loaded successfully'"
+                         onerror="document.getElementById('status-{q.id}').className='status error'; document.getElementById('status-{q.id}').textContent='✗ Image failed to load'; this.style.display='none'; document.getElementById('container-{q.id}').innerHTML='<span style=\\'color:red\\'>Image failed to load</span>'"
+                         alt="{q.correct_answer}">
+                </div>
+                <div id="status-{q.id}" class="status loading">Loading...</div>
+            </div>
+            '''
+    
+    html += '''
+        <div class="card">
+            <h3>🔍 Debug Info</h3>
+            <p>If images fail to load, check:</p>
+            <ul>
+                <li>Is the image URL correct? (should start with /static/ or be a full URL)</li>
+                <li>Does the file exist in the static folder?</li>
+                <li>Check browser Network tab (F12) for 404 errors</li>
+            </ul>
+            <p><a href="/api/bonus-question/debug">View all bonus question URLs (JSON)</a></p>
+        </div>
+    </body>
+    </html>
+    '''
+    
+    return html
+
+
+@app.route('/api/bonus-question/submit', methods=['POST'])
+@login_required
+def submit_bonus_answer():
+    """
+    Submit answer to bonus question
+    Awards +100 points if correct
+    """
+    from sqlalchemy import text
+    
+    data = request.get_json()
+    question_id = data.get('question_id')
+    selected_answer = data.get('selected_answer')
+    quiz_topic = data.get('quiz_topic')
+    quiz_score = data.get('quiz_score')
+    
+    if not question_id or not selected_answer:
+        return jsonify({'error': 'Missing question_id or selected_answer'}), 400
+    
+    # Get question
+    question = BonusQuestion.query.get(question_id)
+    if not question:
+        return jsonify({'error': 'Question not found'}), 404
+    
+    # Check if correct
+    is_correct = selected_answer.strip().lower() == question.correct_answer.strip().lower()
+    points_earned = 100 if is_correct else 0
+    
+    # Update question stats
+    if is_correct:
+        question.times_correct += 1
+    
+    # Get user info
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    # Record attempt
+    attempt = BonusQuestionAttempt(
+        question_id=question_id,
+        user_id=user_id,
+        guest_code=guest_code,
+        selected_answer=selected_answer,
+        is_correct=is_correct,
+        points_earned=points_earned,
+        quiz_topic=quiz_topic,
+        quiz_score=quiz_score
+    )
+    db.session.add(attempt)
+    
+    # Award points if correct
+    if is_correct and points_earned > 0:
+        if guest_code:
+            # Update guest user points
+            try:
+                db.session.execute(text("""
+                    UPDATE guest_users 
+                    SET total_score = total_score + :points
+                    WHERE guest_code = :code
+                """), {"points": points_earned, "code": guest_code})
+            except Exception as e:
+                print(f"Error updating guest points: {e}")
+        elif user_id:
+            # Update registered user points
+            stats = UserStats.query.filter_by(user_id=user_id).first()
+            if stats:
+                stats.total_points += points_earned
+    
+    db.session.commit()
+    
+    return jsonify({
+        'correct': is_correct,
+        'points_earned': points_earned,
+        'correct_answer': question.correct_answer,
+        'fun_fact': question.fun_fact,
+        'era_or_region': question.era_or_region
+    })
+
+
+@app.route('/api/bonus-question/categories')
+@login_required
+def get_bonus_categories():
+    """Get available bonus question categories with counts"""
+    from sqlalchemy import func
+    
+    categories = db.session.query(
+        BonusQuestion.category,
+        func.count(BonusQuestion.id).label('count')
+    ).filter_by(is_active=True).group_by(BonusQuestion.category).all()
+    
+    return jsonify([{
+        'category': cat,
+        'count': count,
+        'display_name': cat.title()
+    } for cat, count in categories])
+
+
+@app.route('/api/bonus-question/test-submit')
+@login_required
+def test_submit_bonus_question():
+    """
+    Test endpoint to create a fake bonus question attempt for testing the archive.
+    Access: /api/bonus-question/test-submit
+    This creates a test entry so you can verify the Dino Archive works.
+    """
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    if not user_id and not guest_code:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    # Get a random bonus question
+    question = BonusQuestion.query.filter_by(category='dinosaurs', is_active=True).first()
+    
+    if not question:
+        return jsonify({'error': 'No dinosaur questions found'}), 404
+    
+    # Create a test attempt (mark as correct for fun)
+    attempt = BonusQuestionAttempt(
+        question_id=question.id,
+        user_id=user_id,
+        guest_code=guest_code,
+        selected_answer=question.correct_answer,  # Auto-correct answer
+        is_correct=True,
+        points_earned=100,
+        quiz_topic='test',
+        quiz_score=25
+    )
+    db.session.add(attempt)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': 'Test bonus attempt created!',
+        'question': question.correct_answer,
+        'attempt_id': attempt.id,
+        'hint': 'Now check /api/bonus-question/archive or click the Dino Archive button'
+    })
+
+
+@app.route('/api/bonus-question/archive')
+@login_required
+def get_bonus_question_archive():
+    """Get user's bonus question history for the archive"""
+    from sqlalchemy import text
+    
+    # Check guest_code FIRST (repeat guests have both user_id and guest_code)
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id')
+    
+    # For repeat guests, always use guest_code
+    if guest_code:
+        user_id = None  # Force guest_code lookup
+    
+    if not user_id and not guest_code:
+        return jsonify({'error': 'Not authenticated', 'attempts': [], 'total': 0, 'correct': 0})
+    
+    try:
+        # Build query based on user type - guest_code takes priority
+        if guest_code:
+            query = text("""
+                SELECT 
+                    bqa.id,
+                    bqa.question_id,
+                    bqa.selected_answer,
+                    bqa.is_correct,
+                    bqa.points_earned,
+                    bqa.quiz_topic,
+                    bqa.quiz_score,
+                    bqa.attempted_at,
+                    bq.correct_answer,
+                    bq.image_url,
+                    bq.fun_fact,
+                    bq.era_or_region,
+                    bq.category
+                FROM bonus_question_attempts bqa
+                JOIN bonus_questions bq ON bqa.question_id = bq.id
+                WHERE bqa.guest_code = :guest_code
+                ORDER BY bqa.attempted_at DESC
+                LIMIT 100
+            """)
+            result = db.session.execute(query, {'guest_code': guest_code}).fetchall()
+        else:
+            query = text("""
+                SELECT 
+                    bqa.id,
+                    bqa.question_id,
+                    bqa.selected_answer,
+                    bqa.is_correct,
+                    bqa.points_earned,
+                    bqa.quiz_topic,
+                    bqa.quiz_score,
+                    bqa.attempted_at,
+                    bq.correct_answer,
+                    bq.image_url,
+                    bq.fun_fact,
+                    bq.era_or_region,
+                    bq.category
+                FROM bonus_question_attempts bqa
+                JOIN bonus_questions bq ON bqa.question_id = bq.id
+                WHERE bqa.guest_code = :guest_code
+                ORDER BY bqa.attempted_at DESC
+                LIMIT 100
+            """)
+            result = db.session.execute(query, {'guest_code': guest_code}).fetchall()
+        
+        attempts = []
+        total_correct = 0
+        
+        for row in result:
+            if row.is_correct:
+                total_correct += 1
+            
+            # Handle attempted_at - might be string from SQLite or datetime object
+            attempted_at_str = None
+            if row.attempted_at:
+                if isinstance(row.attempted_at, str):
+                    attempted_at_str = row.attempted_at
+                else:
+                    attempted_at_str = row.attempted_at.isoformat()
+            
+            attempts.append({
+                'id': row.id,
+                'question_id': row.question_id,
+                'selected_answer': row.selected_answer,
+                'is_correct': bool(row.is_correct),
+                'points_earned': row.points_earned,
+                'quiz_topic': row.quiz_topic,
+                'quiz_score': row.quiz_score,
+                'attempted_at': attempted_at_str,
+                'correct_answer': row.correct_answer,
+                'image_url': row.image_url,
+                'fun_fact': row.fun_fact,
+                'era_or_region': row.era_or_region,
+                'category': row.category
+            })
+        
+        return jsonify({
+            'attempts': attempts,
+            'total': len(attempts),
+            'correct': total_correct
+        })
+        
+    except Exception as e:
+        print(f"Error getting bonus question archive: {e}")
+        return jsonify({'error': str(e), 'attempts': [], 'total': 0, 'correct': 0})
+
+
+@app.route('/student/badges')
+@login_required
+@approved_required
+def student_badges_page():
+    """Student badges and progress dashboard page"""
+    return render_template('student_badges_dashboard.html')
+
+@app.route('/api/class/<int:class_id>/leaderboard')
+@login_required
+@approved_required
+def get_class_leaderboard(class_id):
+    """Get leaderboard for a class"""
+    # Verify user has access to this class
+    user = User.query.get(session['user_id'])
+
+    if user.role == 'teacher':
+        # Verify teacher owns this class
+        class_obj = Class.query.filter_by(id=class_id, teacher_id=user.id).first()
+        if not class_obj:
+            return jsonify({'error': 'Unauthorized'}), 403
+    elif user.role == 'student':
+        # Verify student is in this class
+        enrollment = ClassEnrollment.query.filter_by(class_id=class_id, student_id=user.id).first()
+        if not enrollment:
+            return jsonify({'error': 'Unauthorized'}), 403
+    else:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    # Get all students in class
+    enrollments = ClassEnrollment.query.filter_by(class_id=class_id).all()
+    student_ids = [e.student_id for e in enrollments]
+
+    # Get stats for all students
+    students_stats = []
+    for student_id in student_ids:
+        student = User.query.get(student_id)
+        stats = UserStats.query.filter_by(user_id=student_id).first()
+
+        if stats:
+            students_stats.append({
+                'student_name': student.full_name,
+                'student_id': student_id,
+                'total_points': stats.total_points,
+                'level': stats.level,
+                'total_quizzes': stats.total_quizzes,
+                'current_streak': stats.current_streak_days,
+                'badges_earned': UserBadge.query.filter_by(user_id=student_id).count()
+            })
+
+    # Sort by total points
+    students_stats.sort(key=lambda x: x['total_points'], reverse=True)
+
+    return jsonify({
+        'class_id': class_id,
+        'leaderboard': students_stats
+    })
+
+# ==================== TEACHER ROUTES ====================
+
+@app.route('/teacher')
+@login_required
+@role_required('teacher')
+@approved_required
+def teacher_dashboard():
+    """Redirect to the new visual class selector"""
+    return redirect(url_for('teacher_classes_page'))
+
+@app.route('/teacher/class-monitor')
+@login_required
+@role_required('teacher')
+@approved_required
+def class_monitor():
+    """
+    Class Monitor Dashboard - Live monitoring view for teachers
+    Shows performance matrix for all students in teacher's classes
+    """
+    return render_template('class_monitor.html')
+
+@app.route('/api/teacher/my-classes')
+@login_required
+@role_required('teacher')
+@approved_required
+def teacher_classes():
+    classes = Class.query.filter_by(teacher_id=session['user_id']).all()
+    return jsonify([c.to_dict() for c in classes])
+
+@app.route('/api/teacher/create-class', methods=['POST'])
+@login_required
+@role_required('teacher')
+@approved_required
+def create_class():
+    data = request.json
+    name = data.get('name', '').strip()
+
+    if not name:
+        return jsonify({'error': 'Class name is required'}), 400
+
+    new_class = Class(
+        name=name,
+        teacher_id=session['user_id']
+    )
+
+    db.session.add(new_class)
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Class created successfully',
+        'class': new_class.to_dict()
+    }), 201
+
+@app.route('/api/teacher/students/search')
+@login_required
+@role_required('teacher')
+@approved_required
+def search_students():
+    """Search for students (filtered by teacher's domain access)"""
+    query = request.args.get('q', '').strip()
+    teacher_id = session['user_id']
+    if len(query) < 2:
+        return jsonify([])
+    students_query = User.query.filter(
+        User.role == 'student',
+        (User.email.ilike(f'%{query}%')) | (User.full_name.ilike(f'%{query}%'))
+    )
+    accessible_domains = get_teacher_accessible_domains(teacher_id)
+    if accessible_domains is not None:
+        filtered_ids = []
+        for student in students_query.all():
+            student_domain = extract_domain(student.email)
+            if student_domain in accessible_domains:
+                filtered_ids.append(student.id)
+        students_query = students_query.filter(User.id.in_(filtered_ids)) if filtered_ids else students_query.filter(User.id == -1)
+    students = students_query.limit(20).all()
+    return jsonify([s.to_dict() for s in students])
+@app.route('/api/teacher/class/<int:class_id>/enroll', methods=['POST'])
+@login_required
+@role_required('teacher')
+@approved_required
+def enroll_student(class_id):
+    """Enroll a student in a class (with domain access check)"""
+    class_obj = Class.query.get_or_404(class_id)
+    teacher_id = session['user_id']
+    if class_obj.teacher_id != teacher_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    data = request.json
+    student_id = data.get('student_id')
+    if not student_id:
+        return jsonify({'error': 'Student ID required'}), 400
+    student = User.query.get(student_id)
+    if not student or student.role != 'student':
+        return jsonify({'error': 'Invalid student'}), 400
+    student_domain = extract_domain(student.email)
+    if not teacher_has_domain_access(teacher_id, student_domain):
+        return jsonify({'error': f'Access denied. You do not have permission to enroll students from the domain: {student_domain}. Please request access from an administrator.'}), 403
+    existing = ClassEnrollment.query.filter_by(class_id=class_id, student_id=student_id).first()
+    if existing:
+        return jsonify({'error': 'Student already enrolled'}), 400
+    enrollment = ClassEnrollment(class_id=class_id, student_id=student_id)
+    db.session.add(enrollment)
+    db.session.commit()
+    return jsonify({'message': 'Student enrolled successfully'}), 201
+
+@app.route('/api/teacher/class/<int:class_id>/students')
+@login_required
+@role_required('teacher')
+@approved_required
+def class_students(class_id):
+    """Get students in class - FILTERED BY DOMAIN ACCESS"""
+    class_obj = Class.query.get_or_404(class_id)
+    teacher_id = session['user_id']
+
+    if class_obj.teacher_id != teacher_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    enrollments = ClassEnrollment.query.filter_by(class_id=class_id).all()
+
+    # Filter by domain access
+    accessible_domains = get_teacher_accessible_domains(teacher_id)
+    if accessible_domains is not None:
+        filtered_enrollments = []
+        for enrollment in enrollments:
+            student = enrollment.student
+            if student:
+                student_domain = extract_domain(student.email)
+                if student_domain in accessible_domains:
+                    filtered_enrollments.append(enrollment)
+        enrollments = filtered_enrollments
+
+    students_data = []
+    for enrollment in enrollments:
+        student = enrollment.student
+        if not student:  # Safety check
+            continue
+        attempts = QuizAttempt.query.filter_by(user_id=student.id).all()
+
+        students_data.append({
+            'id': student.id,
+            'full_name': student.full_name,
+            'email': student.email,
+            'enrolled_at': enrollment.enrolled_at.isoformat(),
+            'total_quizzes': len(attempts),
+            'average_score': sum(a.percentage for a in attempts) / len(attempts) if attempts else 0,
+            'last_activity': max([a.completed_at for a in attempts]).isoformat() if attempts else None
+        })
+
+    return jsonify(students_data)
+
+@app.route('/api/teacher/class/<int:class_id>/progress')
+@login_required
+@role_required('teacher')
+@approved_required
+def class_progress(class_id):
+    class_obj = Class.query.get_or_404(class_id)
+
+    if class_obj.teacher_id != session['user_id']:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    enrollments = ClassEnrollment.query.filter_by(class_id=class_id).all()
+    student_ids = [e.student_id for e in enrollments]
+
+    # Get all attempts for students in this class
+    attempts = QuizAttempt.query.filter(QuizAttempt.user_id.in_(student_ids)).order_by(QuizAttempt.completed_at.desc()).all()
+
+    return jsonify([a.to_dict() for a in attempts])
+
+@app.route('/api/teacher/class/<int:class_id>/remove-student/<int:student_id>', methods=['DELETE'])
+@login_required
+@role_required('teacher')
+@approved_required
+def remove_student(class_id, student_id):
+    class_obj = Class.query.get_or_404(class_id)
+
+    if class_obj.teacher_id != session['user_id']:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    enrollment = ClassEnrollment.query.filter_by(class_id=class_id, student_id=student_id).first()
+    if not enrollment:
+        return jsonify({'error': 'Enrollment not found'}), 404
+
+    db.session.delete(enrollment)
+    db.session.commit()
+
+    return jsonify({'message': 'Student removed successfully'})
+
+# ==================== NEW ENHANCED TEACHER ROUTES ====================
+
+@app.route('/teacher/classes')
+@login_required
+@role_required('teacher')
+@approved_required
+def teacher_classes_page():
+    """Visual class selector page"""
+    return render_template('teacher_classes_selector.html')
+
+@app.route('/api/teacher/classes', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher')
+@approved_required
+def teacher_classes_api():
+    """Get all classes for teacher or create new class"""
+    teacher_id = session['user_id']
+
+    if request.method == 'GET':
+        # Get all classes for this teacher
+        classes = Class.query.filter_by(teacher_id=teacher_id).order_by(Class.created_at.desc()).all()
+        teacher = User.query.get(teacher_id)
+
+        return jsonify({
+            'classes': [c.to_dict() for c in classes],
+            'teacher': teacher.to_dict() if teacher else None
+        })
+
+    elif request.method == 'POST':
+        # Create new class
+        data = request.json
+        class_name = data.get('name', '').strip()
+
+        if not class_name:
+            return jsonify({'error': 'Class name is required'}), 400
+
+        new_class = Class(
+            name=class_name,
+            teacher_id=teacher_id
+        )
+
+        db.session.add(new_class)
+        db.session.commit()
+
+        return jsonify({
+            'message': 'Class created successfully',
+            'class': new_class.to_dict()
+        }), 201
+
+@app.route('/api/teacher/class/<int:class_id>')
+@login_required
+@role_required('teacher')
+@approved_required
+def get_class_info(class_id):
+    """Get basic class information"""
+    class_obj = Class.query.get_or_404(class_id)
+
+    # Verify teacher owns this class
+    if class_obj.teacher_id != session['user_id']:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    return jsonify(class_obj.to_dict())
+
+@app.route('/teacher/class-manage/<int:class_id>')
+@login_required
+@role_required('teacher')
+@approved_required
+def class_manage_page(class_id):
+    """Student management page for a class"""
+    class_obj = Class.query.get_or_404(class_id)
+
+    # Verify teacher owns this class
+    if class_obj.teacher_id != session['user_id']:
+        flash('Unauthorized access to class', 'error')
+        return redirect(url_for('teacher_classes_page'))
+
+    return render_template('teacher_class_manage_students.html',
+                         class_id=class_id,
+                         class_name=class_obj.name)
+
+@app.route('/api/teacher/available-students/<int:class_id>')
+@login_required
+@role_required('teacher')
+@approved_required
+def get_available_students(class_id):
+    """Get all students NOT enrolled in this class (filtered by domain access)"""
+    class_obj = Class.query.get_or_404(class_id)
+    teacher_id = session['user_id']
+    if class_obj.teacher_id != teacher_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    enrolled_ids = db.session.query(ClassEnrollment.student_id).filter_by(class_id=class_id).all()
+    enrolled_ids = [e[0] for e in enrolled_ids]
+    available_students_query = User.query.filter(User.role == 'student').filter(~User.id.in_(enrolled_ids))
+    accessible_domains = get_teacher_accessible_domains(teacher_id)
+    if accessible_domains is not None:
+        filtered_ids = []
+        for student in available_students_query.all():
+            student_domain = extract_domain(student.email)
+            if student_domain in accessible_domains:
+                filtered_ids.append(student.id)
+        available_students_query = available_students_query.filter(User.id.in_(filtered_ids)) if filtered_ids else available_students_query.filter(User.id == -1)
+    available_students = available_students_query.order_by(User.full_name).all()
+    return jsonify([{'id': s.id, 'full_name': s.full_name, 'email': s.email} for s in available_students])
+
+@app.route('/api/teacher/class/<int:class_id>/enroll-bulk', methods=['POST'])
+@login_required
+@role_required('teacher')
+@approved_required
+def enroll_students_bulk(class_id):
+    """Enroll multiple students at once (with domain access checks)"""
+    class_obj = Class.query.get_or_404(class_id)
+    teacher_id = session['user_id']
+    if class_obj.teacher_id != teacher_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    data = request.json
+    student_ids = data.get('student_ids', [])
+    if not student_ids:
+        return jsonify({'error': 'No students selected'}), 400
+    enrolled_count = 0
+    already_enrolled = 0
+    access_denied = []
+    for student_id in student_ids:
+        student = User.query.get(student_id)
+        if student:
+            student_domain = extract_domain(student.email)
+            if not teacher_has_domain_access(teacher_id, student_domain):
+                access_denied.append({'id': student_id, 'name': student.full_name, 'domain': student_domain})
+                continue
+        existing = ClassEnrollment.query.filter_by(class_id=class_id, student_id=student_id).first()
+        if existing:
+            already_enrolled += 1
+            continue
+        enrollment = ClassEnrollment(class_id=class_id, student_id=student_id)
+        db.session.add(enrollment)
+        enrolled_count += 1
+    db.session.commit()
+    response = {'message': f'Enrolled {enrolled_count} students', 'enrolled_count': enrolled_count, 'already_enrolled': already_enrolled}
+    if access_denied:
+        response['access_denied'] = access_denied
+        response['access_denied_count'] = len(access_denied)
+    return jsonify(response)
+
+@app.route('/api/teacher/class/<int:class_id>/students-list')
+@login_required
+@role_required('teacher')
+@approved_required
+def get_class_students_list(class_id):
+    """Get detailed list of students in a class with their progress (filtered by domain)"""
+    class_obj = Class.query.get_or_404(class_id)
+    teacher_id = session['user_id']
+    if class_obj.teacher_id != teacher_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    enrollments = ClassEnrollment.query.filter_by(class_id=class_id).all()
+    accessible_domains = get_teacher_accessible_domains(teacher_id)
+    if accessible_domains is not None:
+        filtered_enrollments = []
+        for enrollment in enrollments:
+            student = User.query.get(enrollment.student_id)
+            if student:
+                student_domain = extract_domain(student.email)
+                if student_domain in accessible_domains:
+                    filtered_enrollments.append(enrollment)
+        enrollments = filtered_enrollments
+    students_data = []
+    for enrollment in enrollments:
+        student = User.query.get(enrollment.student_id)
+        if not student:
+            continue
+        attempts = QuizAttempt.query.filter_by(user_id=student.id).all()
+        total_quizzes = len(attempts)
+        if attempts:
+            avg_score = sum(a.percentage for a in attempts) / len(attempts)
+            recent_attempts = sorted(attempts, key=lambda x: x.completed_at, reverse=True)[:5]
+        else:
+            avg_score = 0
+            recent_attempts = []
+        students_data.append({'id': student.id, 'full_name': student.full_name, 'email': student.email, 'total_quizzes': total_quizzes, 'avg_score': round(avg_score, 1), 'recent_attempts': [a.to_dict() for a in recent_attempts], 'enrolled_at': enrollment.enrolled_at.isoformat()})
+    return jsonify({'class': class_obj.to_dict(), 'students': students_data})
+
+@app.route('/api/teacher/class/<int:class_id>/performance-matrix')
+@login_required
+@role_required('teacher')
+@approved_required
+def get_class_performance_matrix(class_id):
+    """
+    Get performance matrix for all students in a class
+    Returns: percentage correct and attempts for each topic/difficulty combination
+    Used by: Class Monitor Dashboard for live performance tracking
+    """
+    # Verify teacher owns this class
+    class_obj = Class.query.filter_by(id=class_id, teacher_id=session['user_id']).first()
+    if not class_obj:
+        return jsonify({'error': 'Class not found or access denied'}), 403
+
+    # Get all students in class
+    enrollments = ClassEnrollment.query.filter_by(class_id=class_id).all()
+    student_ids = [e.student_id for e in enrollments]
+    students = User.query.filter(User.id.in_(student_ids)).all()
+
+    # Get all topics and difficulties
+    topics = get_valid_topics_from_db()  # Database-driven!
+    difficulties = VALID_DIFFICULTIES
+
+    students_data = []
+
+    for student in students:
+        performance = {}
+
+        for topic in topics:
+            for difficulty in difficulties:
+                key = f"{topic}_{difficulty}"
+
+                # Get all attempts for this topic/difficulty
+                attempts = QuizAttempt.query.filter_by(
+                    user_id=student.id,
+                    topic=topic,
+                    difficulty=difficulty
+                ).all()
+
+                if attempts:
+                    # Calculate average percentage
+                    avg_percentage = sum(a.percentage for a in attempts) / len(attempts)
+                    performance[key] = {
+                        'percentage': round(avg_percentage, 1),
+                        'attempts': len(attempts)
+                    }
+                else:
+                    performance[key] = {
+                        'percentage': None,
+                        'attempts': 0
+                    }
+
+        students_data.append({
+            'student_id': student.id,
+            'student_name': student.full_name,
+            'performance': performance
+        })
+
+    return jsonify({
+        'class_name': class_obj.name,
+        'total_students': len(students_data),
+        'students': students_data,
+        'topics': topics,
+        'difficulties': difficulties
+    })
+
+# ==================== ADMIN ROUTES ====================
+
+@app.route('/admin')
+@login_required
+@role_required('admin')
+def admin_dashboard():
+    return render_template('admin_dashboard.html')
+
+@app.route('/api/admin/pending-teachers')
+@login_required
+@role_required('admin')
+def pending_teachers():
+    teachers = User.query.filter_by(role='teacher', is_approved=False).all()
+    return jsonify([t.to_dict() for t in teachers])
+
+@app.route('/api/admin/approve-teacher/<int:teacher_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def approve_teacher(teacher_id):
+    teacher = User.query.get_or_404(teacher_id)
+
+    if teacher.role != 'teacher':
+        return jsonify({'error': 'User is not a teacher'}), 400
+
+    teacher.is_approved = True
+    db.session.commit()
+
+    return jsonify({'message': 'Teacher approved successfully'})
+
+@app.route('/api/admin/all-users')
+@login_required
+@role_required('admin')
+def all_users():
+    role_filter = request.args.get('role')
+
+    query = User.query
+    if role_filter:
+        query = query.filter_by(role=role_filter)
+
+    users = query.all()
+    return jsonify([u.to_dict() for u in users])
+
+@app.route('/api/admin/all-classes')
+@login_required
+@role_required('admin')
+def all_classes():
+    classes = Class.query.all()
+    return jsonify([c.to_dict() for c in classes])
+
+@app.route('/api/admin/rename-class/<int:class_id>', methods=['PUT'])
+@login_required
+@role_required('admin')
+def rename_class(class_id):
+    class_obj = Class.query.get_or_404(class_id)
+    data = request.json
+    new_name = data.get('name', '').strip()
+
+    if not new_name:
+        return jsonify({'error': 'Class name required'}), 400
+
+    class_obj.name = new_name
+    db.session.commit()
+
+    return jsonify({'message': 'Class renamed successfully', 'class': class_obj.to_dict()})
+
+@app.route('/api/admin/reassign-student', methods=['POST'])
+@login_required
+@role_required('admin')
+def reassign_student():
+    data = request.json
+    student_id = data.get('student_id')
+    from_class_id = data.get('from_class_id')
+    to_class_id = data.get('to_class_id')
+
+    if not all([student_id, from_class_id, to_class_id]):
+        return jsonify({'error': 'Missing required parameters'}), 400
+
+    # Remove from old class
+    old_enrollment = ClassEnrollment.query.filter_by(class_id=from_class_id, student_id=student_id).first()
+    if old_enrollment:
+        db.session.delete(old_enrollment)
+
+    # Add to new class
+    new_enrollment = ClassEnrollment(class_id=to_class_id, student_id=student_id)
+    db.session.add(new_enrollment)
+    db.session.commit()
+
+    return jsonify({'message': 'Student reassigned successfully'})
+
+@app.route('/api/admin/class-comparison')
+@login_required
+@role_required('admin')
+def class_comparison():
+    classes = Class.query.all()
+    comparison_data = []
+
+    for class_obj in classes:
+        enrollments = ClassEnrollment.query.filter_by(class_id=class_obj.id).all()
+        student_ids = [e.student_id for e in enrollments]
+
+        attempts = QuizAttempt.query.filter(QuizAttempt.user_id.in_(student_ids)).all()
+
+        avg_score = sum(a.percentage for a in attempts) / len(attempts) if attempts else 0
+
+        comparison_data.append({
+            'class_id': class_obj.id,
+            'class_name': class_obj.name,
+            'teacher_name': class_obj.teacher.full_name,
+            'student_count': len(enrollments),
+            'total_quizzes': len(attempts),
+            'average_score': round(avg_score, 2)
+        })
+
+    return jsonify(comparison_data)
+
+
+# ==================== USER MANAGEMENT ADMIN ROUTES ====================
+
+@app.route('/admin/users')
+@login_required
+@role_required('admin')
+def admin_user_management():
+    """Admin page for managing all users"""
+    return render_template('admin_user_management.html')
+
+@app.route('/api/admin/user/<int:user_id>', methods=['GET'])
+@login_required
+@role_required('admin')
+def get_user_details(user_id):
+    """Get detailed user information"""
+    user = User.query.get_or_404(user_id)
+
+    # Get additional stats
+    stats = UserStats.query.filter_by(user_id=user_id).first()
+    quiz_count = QuizAttempt.query.filter_by(user_id=user_id).count()
+
+    # Get class enrollments if student
+    classes = []
+    if user.role == 'student':
+        enrollments = ClassEnrollment.query.filter_by(student_id=user_id).all()
+        classes = [{'id': e.class_obj.id, 'name': e.class_obj.name,
+                   'teacher': e.class_obj.teacher.full_name} for e in enrollments]
+
+    # Get classes teaching if teacher
+    elif user.role == 'teacher':
+        teaching_classes = Class.query.filter_by(teacher_id=user_id).all()
+        classes = [{'id': c.id, 'name': c.name,
+                   'student_count': len(c.enrollments)} for c in teaching_classes]
+
+    return jsonify({
+        'user': user.to_dict(),
+        'stats': {
+            'total_points': stats.total_points if stats else 0,
+            'level': stats.level if stats else 1,
+            'quiz_count': quiz_count
+        },
+        'classes': classes
+    })
+
+@app.route('/api/admin/user/<int:user_id>', methods=['PUT'])
+@login_required
+@role_required('admin')
+def update_user(user_id):
+    """Update user details (name, email)"""
+    user = User.query.get_or_404(user_id)
+    data = request.json
+
+    # Update name
+    if 'full_name' in data:
+        new_name = data['full_name'].strip()
+        if new_name:
+            user.full_name = new_name
+
+    # Update email (check for duplicates)
+    if 'email' in data:
+        new_email = data['email'].strip().lower()
+        if new_email and new_email != user.email:
+            existing = User.query.filter_by(email=new_email).first()
+            if existing:
+                return jsonify({'error': 'Email already in use'}), 400
+            user.email = new_email
+
+    # Update approval status
+    if 'is_approved' in data:
+        user.is_approved = data['is_approved']
+
+    db.session.commit()
+
+    return jsonify({
+        'message': 'User updated successfully',
+        'user': user.to_dict()
+    })
+
+@app.route('/api/admin/user/<int:user_id>', methods=['DELETE'])
+@login_required
+@role_required('admin')
+def delete_user(user_id):
+    """Delete a user and all associated data"""
+    try:
+        user = User.query.get_or_404(user_id)
+
+        # Don't allow deleting yourself
+        if user.id == session['user_id']:
+            return jsonify({'error': 'Cannot delete your own account'}), 400
+
+        # Don't allow deleting other admins
+        if user.role == 'admin':
+            return jsonify({'error': 'Cannot delete admin accounts'}), 403
+
+        # Delete associated data in proper order to avoid foreign key violations
+
+        # 1. Quiz attempts
+        QuizAttempt.query.filter_by(user_id=user_id).delete()
+
+        # 2. User stats
+        UserStats.query.filter_by(user_id=user_id).delete()
+
+        # 3. Topic progress
+        TopicProgress.query.filter_by(user_id=user_id).delete()
+
+        # 4. User badges
+        UserBadge.query.filter_by(user_id=user_id).delete()
+
+        # 5. Question flags - BOTH as reporter AND as resolver
+        QuestionFlag.query.filter_by(user_id=user_id).delete()
+        # Set resolved_by to NULL for flags this user resolved
+        QuestionFlag.query.filter_by(resolved_by=user_id).update({'resolved_by': None})
+
+        # 6. Question edits - Set editor to NULL (keep edit history but anonymize)
+        QuestionEdit.query.filter_by(edited_by=user_id).update({'edited_by': None})
+
+        # 7. Domain access records (for teachers)
+        TeacherDomainAccess.query.filter_by(teacher_id=user_id).delete()
+        # Set granted_by to NULL for domain access this admin granted
+        TeacherDomainAccess.query.filter_by(granted_by=user_id).update({'granted_by': None})
+
+        # 8. Domain access requests
+        DomainAccessRequest.query.filter_by(teacher_id=user_id).delete()
+        # Set reviewed_by to NULL for requests this admin reviewed
+        DomainAccessRequest.query.filter_by(reviewed_by=user_id).update({'reviewed_by': None})
+
+        # 9. Class enrollments (if student)
+        ClassEnrollment.query.filter_by(student_id=user_id).delete()
+
+        # 10. Classes (if teacher) - also delete all enrollments
+        if user.role == 'teacher':
+            classes = Class.query.filter_by(teacher_id=user_id).all()
+            for class_obj in classes:
+                ClassEnrollment.query.filter_by(class_id=class_obj.id).delete()
+                db.session.delete(class_obj)
+
+        # Finally, delete the user
+        db.session.delete(user)
+        db.session.commit()
+
+        return jsonify({
+            'message': f'User {user.full_name} deleted successfully'
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error deleting user {user_id}: {str(e)}")  # Log the error
+        return jsonify({
+            'error': f'Failed to delete user: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/users/bulk-delete', methods=['POST'])
+@login_required
+@role_required('admin')
+def bulk_delete_users():
+    """Delete multiple users at once"""
+    try:
+        data = request.json
+        user_ids = data.get('user_ids', [])
+
+        if not user_ids:
+            return jsonify({'error': 'No users selected'}), 400
+
+        deleted_count = 0
+        errors = []
+
+        for user_id in user_ids:
+            try:
+                user = User.query.get(user_id)
+
+                if not user:
+                    errors.append(f"User {user_id} not found")
+                    continue
+
+                # Don't allow deleting yourself
+                if user.id == session['user_id']:
+                    errors.append(f"Cannot delete your own account")
+                    continue
+
+                # Don't allow deleting other admins
+                if user.role == 'admin':
+                    errors.append(f"Cannot delete admin account: {user.full_name}")
+                    continue
+
+                # Delete associated data (same as single delete)
+                QuizAttempt.query.filter_by(user_id=user_id).delete()
+                UserStats.query.filter_by(user_id=user_id).delete()
+                TopicProgress.query.filter_by(user_id=user_id).delete()
+                UserBadge.query.filter_by(user_id=user_id).delete()
+
+                QuestionFlag.query.filter_by(user_id=user_id).delete()
+                QuestionFlag.query.filter_by(resolved_by=user_id).update({'resolved_by': None})
+
+                QuestionEdit.query.filter_by(edited_by=user_id).update({'edited_by': None})
+
+                TeacherDomainAccess.query.filter_by(teacher_id=user_id).delete()
+                TeacherDomainAccess.query.filter_by(granted_by=user_id).update({'granted_by': None})
+
+                DomainAccessRequest.query.filter_by(teacher_id=user_id).delete()
+                DomainAccessRequest.query.filter_by(reviewed_by=user_id).update({'reviewed_by': None})
+
+                ClassEnrollment.query.filter_by(student_id=user_id).delete()
+
+                if user.role == 'teacher':
+                    classes = Class.query.filter_by(teacher_id=user_id).all()
+                    for class_obj in classes:
+                        ClassEnrollment.query.filter_by(class_id=class_obj.id).delete()
+                        db.session.delete(class_obj)
+
+                # Delete the user
+                db.session.delete(user)
+                deleted_count += 1
+
+            except Exception as e:
+                errors.append(f"Error deleting user {user_id}: {str(e)}")
+                continue
+
+        # Commit all deletions
+        db.session.commit()
+
+        response_data = {
+            'deleted_count': deleted_count,
+            'total_requested': len(user_ids)
+        }
+
+        if errors:
+            response_data['errors'] = errors
+
+        return jsonify(response_data)
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error in bulk delete: {str(e)}")
+        return jsonify({
+            'error': f'Failed to delete users: {str(e)}'
+        }), 500
+
+@app.route('/api/admin/user/<int:user_id>/toggle-approval', methods=['POST'])
+@login_required
+@role_required('admin')
+def toggle_user_approval(user_id):
+    """Toggle user approval status"""
+    user = User.query.get_or_404(user_id)
+
+    user.is_approved = not user.is_approved
+    db.session.commit()
+
+    status = 'approved' if user.is_approved else 'unapproved'
+
+    return jsonify({
+        'message': f'User {status} successfully',
+        'is_approved': user.is_approved
+    })
+
+
+
+# ==================== DOMAIN MANAGEMENT ADMIN ROUTES ====================
+
+@app.route('/api/admin/domains')
+@login_required
+@role_required('admin')
+def get_all_domains():
+    """Get all email domains in the system with statistics"""
+    domains = get_all_domains_in_system()
+    domains.sort(key=lambda x: x['student_count'], reverse=True)
+    return jsonify({
+        'domains': domains,
+        'total_domains': len(domains)
+    })
+
+
+@app.route('/api/admin/teacher/<int:teacher_id>/domains')
+@login_required
+@role_required('admin')
+def get_teacher_domains(teacher_id):
+    """Get all domains assigned to a specific teacher"""
+    teacher = User.query.get_or_404(teacher_id)
+    if teacher.role != 'teacher':
+        return jsonify({'error': 'User is not a teacher'}), 400
+    access_records = TeacherDomainAccess.query.filter_by(teacher_id=teacher_id).all()
+    stats = get_teacher_domain_statistics(teacher_id)
+    all_domains = get_all_domains_in_system()
+    return jsonify({
+        'teacher': teacher.to_dict(),
+        'assigned_domains': [r.to_dict() for r in access_records],
+        'statistics': stats,
+        'available_domains': all_domains
+    })
+
+
+@app.route('/api/admin/teacher/<int:teacher_id>/domains', methods=['POST'])
+@login_required
+@role_required('admin')
+def assign_domain_to_teacher(teacher_id):
+    """Assign a domain to a teacher"""
+    teacher = User.query.get_or_404(teacher_id)
+    if teacher.role != 'teacher':
+        return jsonify({'error': 'User is not a teacher'}), 400
+    data = request.json
+    domain = data.get('domain', '').strip().lower()
+    notes = data.get('notes', '').strip()
+    if not domain:
+        return jsonify({'error': 'Domain is required'}), 400
+    if '.' not in domain or '@' in domain:
+        return jsonify({'error': 'Invalid domain format. Use format like: school.edu'}), 400
+    existing = TeacherDomainAccess.query.filter_by(teacher_id=teacher_id, email_domain=domain).first()
+    if existing:
+        return jsonify({'error': 'Domain already assigned to this teacher'}), 400
+    access = TeacherDomainAccess(teacher_id=teacher_id, email_domain=domain, granted_by=session['user_id'], notes=notes)
+    db.session.add(access)
+    pending_request = DomainAccessRequest.query.filter_by(teacher_id=teacher_id, email_domain=domain, status='pending').first()
+    if pending_request:
+        pending_request.status = 'approved'
+        pending_request.reviewed_by = session['user_id']
+        pending_request.reviewed_at = datetime.utcnow()
+        pending_request.admin_notes = 'Automatically approved when domain was granted'
+    db.session.commit()
+    return jsonify({'message': 'Domain access granted successfully', 'access': access.to_dict()}), 201
+
+
+@app.route('/api/admin/teacher/<int:teacher_id>/domains/<domain>', methods=['DELETE'])
+@login_required
+@role_required('admin')
+def revoke_domain_from_teacher(teacher_id, domain):
+    """Revoke a domain from a teacher"""
+    domain = domain.lower()
+    access = TeacherDomainAccess.query.filter_by(teacher_id=teacher_id, email_domain=domain).first()
+    if not access:
+        return jsonify({'error': 'Domain access not found'}), 404
+    db.session.delete(access)
+    db.session.commit()
+    return jsonify({'message': 'Domain access revoked successfully'})
+
+
+@app.route('/api/admin/teacher/<int:teacher_id>/domains/bulk', methods=['POST'])
+@login_required
+@role_required('admin')
+def assign_domains_bulk(teacher_id):
+    """Assign multiple domains to a teacher at once"""
+    teacher = User.query.get_or_404(teacher_id)
+    if teacher.role != 'teacher':
+        return jsonify({'error': 'User is not a teacher'}), 400
+    data = request.json
+    domains = data.get('domains', [])
+    notes = data.get('notes', '').strip()
+    if not domains:
+        return jsonify({'error': 'No domains provided'}), 400
+    added, already_assigned, invalid = [], [], []
+    for domain in domains:
+        domain = domain.strip().lower()
+        if '.' not in domain or '@' in domain:
+            invalid.append(domain)
+            continue
+        existing = TeacherDomainAccess.query.filter_by(teacher_id=teacher_id, email_domain=domain).first()
+        if existing:
+            already_assigned.append(domain)
+            continue
+        access = TeacherDomainAccess(teacher_id=teacher_id, email_domain=domain, granted_by=session['user_id'], notes=notes)
+        db.session.add(access)
+        added.append(domain)
+        pending_request = DomainAccessRequest.query.filter_by(teacher_id=teacher_id, email_domain=domain, status='pending').first()
+        if pending_request:
+            pending_request.status = 'approved'
+            pending_request.reviewed_by = session['user_id']
+            pending_request.reviewed_at = datetime.utcnow()
+            pending_request.admin_notes = 'Automatically approved in bulk assignment'
+    db.session.commit()
+    return jsonify({'message': f'Processed {len(domains)} domains', 'added': added, 'already_assigned': already_assigned, 'invalid': invalid, 'added_count': len(added)})
+
+
+@app.route('/api/admin/domain-requests')
+@login_required
+@role_required('admin')
+def get_domain_requests():
+    """Get all domain access requests"""
+    status_filter = request.args.get('status', 'pending')
+    query = DomainAccessRequest.query
+    if status_filter and status_filter != 'all':
+        query = query.filter_by(status=status_filter)
+    requests = query.order_by(DomainAccessRequest.requested_at.desc()).all()
+    return jsonify({'requests': [r.to_dict() for r in requests], 'total': len(requests)})
+
+
+@app.route('/api/admin/domain-requests/<int:request_id>/approve', methods=['POST'])
+@login_required
+@role_required('admin')
+def approve_domain_request(request_id):
+    """Approve a domain access request"""
+    access_request = DomainAccessRequest.query.get_or_404(request_id)
+    if access_request.status != 'pending':
+        return jsonify({'error': 'Request is not pending'}), 400
+    data = request.json
+    admin_notes = data.get('admin_notes', '').strip()
+    access = TeacherDomainAccess(teacher_id=access_request.teacher_id, email_domain=access_request.email_domain, granted_by=session['user_id'], notes=f"Requested: {access_request.reason}")
+    access_request.status = 'approved'
+    access_request.reviewed_by = session['user_id']
+    access_request.reviewed_at = datetime.utcnow()
+    access_request.admin_notes = admin_notes
+    db.session.add(access)
+    db.session.commit()
+    return jsonify({'message': 'Domain access request approved', 'access': access.to_dict(), 'request': access_request.to_dict()})
+
+
+@app.route('/api/admin/domain-requests/<int:request_id>/deny', methods=['POST'])
+@login_required
+@role_required('admin')
+def deny_domain_request(request_id):
+    """Deny a domain access request"""
+    access_request = DomainAccessRequest.query.get_or_404(request_id)
+    if access_request.status != 'pending':
+        return jsonify({'error': 'Request is not pending'}), 400
+    data = request.json
+    admin_notes = data.get('admin_notes', '').strip()
+    if not admin_notes:
+        return jsonify({'error': 'Please provide a reason for denial'}), 400
+    access_request.status = 'denied'
+    access_request.reviewed_by = session['user_id']
+    access_request.reviewed_at = datetime.utcnow()
+    access_request.admin_notes = admin_notes
+    db.session.commit()
+    return jsonify({'message': 'Domain access request denied', 'request': access_request.to_dict()})
+
+
+@app.route('/api/admin/teacher/<int:teacher_id>/remove-all-restrictions', methods=['POST'])
+@login_required
+@role_required('admin')
+def remove_all_teacher_restrictions(teacher_id):
+    """Remove all domain restrictions from a teacher (grant full access)"""
+    teacher = User.query.get_or_404(teacher_id)
+    if teacher.role != 'teacher':
+        return jsonify({'error': 'User is not a teacher'}), 400
+    TeacherDomainAccess.query.filter_by(teacher_id=teacher_id).delete()
+    db.session.commit()
+    return jsonify({'message': 'All domain restrictions removed. Teacher now has full access to all students.'})
+
+
+# ==================== TEACHER DOMAIN ACCESS ROUTES ====================
+
+@app.route('/api/teacher/my-domain-access')
+@login_required
+@role_required('teacher')
+@approved_required
+def get_my_domain_access():
+    """Get current teacher's domain access information"""
+    teacher_id = session['user_id']
+    access_records = TeacherDomainAccess.query.filter_by(teacher_id=teacher_id).all()
+    stats = get_teacher_domain_statistics(teacher_id)
+    pending_requests = DomainAccessRequest.query.filter_by(teacher_id=teacher_id, status='pending').all()
+    all_domains = get_all_domains_in_system()
+    assigned_domains = [r.email_domain for r in access_records]
+    requested_domains = [r.email_domain for r in pending_requests]
+    available_to_request = [d for d in all_domains if d['domain'] not in assigned_domains and d['domain'] not in requested_domains]
+    return jsonify({
+        'has_restrictions': stats['has_restrictions'],
+        'assigned_domains': [r.to_dict() for r in access_records],
+        'accessible_student_count': stats['accessible_student_count'],
+        'restricted_domains': stats['restricted_domains'],
+        'pending_requests': [r.to_dict() for r in pending_requests],
+        'available_to_request': available_to_request
+    })
+
+
+@app.route('/api/teacher/request-domain-access', methods=['POST'])
+@login_required
+@role_required('teacher')
+@approved_required
+def request_domain_access():
+    """Request access to a specific email domain"""
+    teacher_id = session['user_id']
+    data = request.json
+    domain = data.get('domain', '').strip().lower()
+    reason = data.get('reason', '').strip()
+    if not domain:
+        return jsonify({'error': 'Domain is required'}), 400
+    if not reason:
+        return jsonify({'error': 'Please provide a reason for this request'}), 400
+    if '.' not in domain or '@' in domain:
+        return jsonify({'error': 'Invalid domain format. Use format like: school.edu'}), 400
+    existing_access = TeacherDomainAccess.query.filter_by(teacher_id=teacher_id, email_domain=domain).first()
+    if existing_access:
+        return jsonify({'error': 'You already have access to this domain'}), 400
+    existing_request = DomainAccessRequest.query.filter_by(teacher_id=teacher_id, email_domain=domain, status='pending').first()
+    if existing_request:
+        return jsonify({'error': 'You already have a pending request for this domain'}), 400
+    access_request = DomainAccessRequest(teacher_id=teacher_id, email_domain=domain, reason=reason)
+    db.session.add(access_request)
+    db.session.commit()
+    return jsonify({'message': 'Domain access request submitted successfully', 'request': access_request.to_dict()}), 201
+
+
+@app.route('/api/teacher/domain-requests')
+@login_required
+@role_required('teacher')
+@approved_required
+def get_my_domain_requests():
+    """Get all domain access requests by the current teacher"""
+    teacher_id = session['user_id']
+    requests = DomainAccessRequest.query.filter_by(teacher_id=teacher_id).order_by(DomainAccessRequest.requested_at.desc()).all()
+    return jsonify({'requests': [r.to_dict() for r in requests]})
+
+
+@app.route('/api/teacher/domain-requests/<int:request_id>', methods=['DELETE'])
+@login_required
+@role_required('teacher')
+@approved_required
+def cancel_domain_request(request_id):
+    """Cancel a pending domain access request"""
+    teacher_id = session['user_id']
+    access_request = DomainAccessRequest.query.get_or_404(request_id)
+    if access_request.teacher_id != teacher_id:
+        return jsonify({'error': 'Unauthorized'}), 403
+    if access_request.status != 'pending':
+        return jsonify({'error': 'Can only cancel pending requests'}), 400
+    db.session.delete(access_request)
+    db.session.commit()
+    return jsonify({'message': 'Request cancelled successfully'})
+
+
+@app.route('/api/admin/statistics')
+@login_required
+@role_required('admin')
+def admin_statistics():
+    stats = {
+        'total_students': User.query.filter_by(role='student').count(),
+        'total_teachers': User.query.filter_by(role='teacher', is_approved=True).count(),
+        'pending_teachers': User.query.filter_by(role='teacher', is_approved=False).count(),
+        'total_classes': Class.query.count(),
+        'total_quizzes': QuizAttempt.query.count(),
+        'total_questions': Question.query.count()
+    }
+
+    # Add prize system statistics if enabled
+    if FEATURE_FLAGS.get('PRIZE_SYSTEM_ENABLED', False):
+        try:
+            stats['prize_stats'] = {
+                'active_prizes': Prize.query.filter_by(is_active=True).count(),
+                'total_schools': PrizeSchool.query.filter_by(status='approved').count(),  # Use status column
+                'pending_redemptions': PrizeRedemption.query.filter_by(status='pending').count(),
+                'total_redemptions': PrizeRedemption.query.count()
+            }
+        except Exception as e:
+            print(f"Error getting prize stats: {e}")
+            stats['prize_stats'] = {
+                'active_prizes': 0,
+                'total_schools': 0,
+                'pending_redemptions': 0,
+                'total_redemptions': 0
+            }
+
+    return jsonify(stats)
+
+
+@app.route('/api/admin/topics-list')
+@login_required
+@role_required('admin')
+def admin_topics_list():
+    """
+    Get all topics for dropdown - combines topics from:
+    1. The topics table (admin-managed, authoritative)
+    2. The questions table (for topics with questions but not yet in topics table)
+    
+    This ensures new topics added via Admin Dashboard appear immediately.
+    """
+    from sqlalchemy import func, text
+    
+    topics_dict = {}  # Use dict to avoid duplicates
+    
+    # First, get all topics from the topics table (admin-managed)
+    try:
+        db_topics = db.session.execute(text("""
+            SELECT t.topic_id, t.display_name, 
+                   (SELECT COUNT(*) FROM questions q WHERE q.topic = t.topic_id) as question_count
+            FROM topics t
+            WHERE t.is_visible = 1
+            ORDER BY t.sort_order, t.display_name
+        """)).fetchall()
+        
+        for topic_id, display_name, count in db_topics:
+            topics_dict[topic_id] = {
+                'value': topic_id,
+                'name': display_name,
+                'count': count or 0
+            }
+    except Exception as e:
+        print(f"Warning: Could not load from topics table: {e}")
+    
+    # Also get topics from questions table (for any topics not yet in topics table)
+    try:
+        questions_topics = db.session.query(
+            Question.topic,
+            func.count(Question.id).label('count')
+        ).group_by(Question.topic).all()
+        
+        for topic, count in questions_topics:
+            if topic not in topics_dict:
+                # Topic exists in questions but not in topics table
+                topics_dict[topic] = {
+                    'value': topic,
+                    'name': topic.replace('_', ' ').title(),
+                    'count': count
+                }
+            else:
+                # Update count if questions table has more (shouldn't happen, but safety)
+                if count > topics_dict[topic]['count']:
+                    topics_dict[topic]['count'] = count
+    except Exception as e:
+        print(f"Warning: Could not load from questions table: {e}")
+    
+    # Convert to list and sort
+    topics = sorted(topics_dict.values(), key=lambda x: x['name'])
+    
+    return jsonify({'topics': topics})
+
+
+@app.route('/api/admin/question-counts/<topic>')
+@login_required
+@role_required('admin')
+def admin_question_counts(topic):
+    """Get question counts by difficulty for a specific topic"""
+    from sqlalchemy import text
+    
+    counts = {}
+    for difficulty in ['beginner', 'intermediate', 'advanced']:
+        result = db.session.execute(text(
+            "SELECT COUNT(*) FROM questions WHERE topic = :topic AND difficulty = :difficulty"
+        ), {'topic': topic, 'difficulty': difficulty}).fetchone()
+        counts[difficulty] = result[0] if result else 0
+    
+    return jsonify(counts)
+
+
+# ==================== REAL-TIME CLASS DASHBOARD ROUTES ====================
+
+@app.route('/teacher/class-dashboard/<int:class_id>')
+@login_required
+@role_required('teacher')
+@approved_required
+def class_dashboard(class_id):
+    """
+    Enhanced Class Performance Dashboard
+    - Shows ALL students by default
+    - Smart search and filtering
+    - Student selection for export
+    - Hover tooltips with recommendations
+    """
+    class_obj = Class.query.get_or_404(class_id)
+
+    # Verify teacher owns this class
+    if class_obj.teacher_id != session['user_id']:
+        flash('Unauthorized access to class', 'error')
+        return redirect(url_for('teacher_classes_page'))
+
+    return render_template('teacher_class_dashboard_v2.html',
+                         class_id=class_id,
+                         class_name=class_obj.name)
+
+@app.route('/api/teacher/class/<int:class_id>/matrix-data')
+@login_required
+@role_required('teacher')
+@approved_required
+def get_class_matrix_data(class_id):
+    """Get matrix data for class dashboard with Junior Cycle strands"""
+    class_obj = Class.query.get_or_404(class_id)
+
+    # Verify teacher owns this class
+    if class_obj.teacher_id != session['user_id']:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    # Get all students in class
+    enrollments = ClassEnrollment.query.filter_by(class_id=class_id).all()
+
+    # NEW: Get topics grouped by strand from database
+    try:
+        from sqlalchemy import text
+        topics_query = db.session.execute(text("""
+            SELECT DISTINCT strand, topic
+            FROM questions
+            WHERE strand IS NOT NULL
+            ORDER BY
+                CASE strand
+                    WHEN 'Number' THEN 1
+                    WHEN 'Algebra and Functions' THEN 2
+                    WHEN 'Statistics and Probability' THEN 3
+                    WHEN 'Senior Cycle - Algebra' THEN 4
+                    WHEN 'Geometry and Trigonometry' THEN 5
+                    ELSE 6
+                END,
+                CASE topic
+                    -- Order for Number strand
+                    WHEN 'arithmetic' THEN 1
+                    WHEN 'multiplication_division' THEN 2
+                    WHEN 'number_systems' THEN 3
+                    WHEN 'bodmas' THEN 4
+                    WHEN 'fractions' THEN 5
+                    WHEN 'decimals' THEN 6
+                    WHEN 'sets' THEN 7
+                    -- Order for Algebra and Functions strand (Junior Cycle)
+                    WHEN 'introductory_algebra' THEN 1
+                    WHEN 'functions' THEN 2
+                    WHEN 'patterns' THEN 3
+                    WHEN 'solving_equations' THEN 4
+                    WHEN 'simplifying_expressions' THEN 5
+                    WHEN 'expanding_factorising' THEN 6
+                    -- Order for Statistics and Probability strand
+                    WHEN 'probability' THEN 1
+                    WHEN 'descriptive_statistics' THEN 2
+                    -- Order for Senior Cycle - Algebra strand
+                    WHEN 'surds' THEN 1
+                    WHEN 'complex_numbers_intro' THEN 2
+                    WHEN 'complex_numbers_expanded' THEN 3
+                    -- Default order for other topics
+                    ELSE 10
+                END,
+                topic
+        """)).fetchall()
+    except Exception as e:
+        print(f"Warning: Could not query strand column in matrix-data: {e}")
+        topics_query = []
+
+    # Build strands structure
+    strands = {}
+    all_topics = []
+
+    for strand, topic in topics_query:
+        if strand not in strands:
+            strands[strand] = []
+        strands[strand].append(topic)
+        all_topics.append(topic)
+
+    # If no strands found (strands not yet added), fall back to hardcoded list
+    if not all_topics:
+        all_topics = get_valid_topics_from_db()  # Database-driven fallback!
+        # Default strands for fallback
+        strands = {
+            'Number': [t for t in all_topics if t in ['arithmetic', 'fractions', 'decimals', 
+                      'multiplication_division', 'number_systems', 'bodmas', 'sets', 'surds']],
+            'Algebra and Functions': [t for t in all_topics if t in ['introductory_algebra', 
+                      'functions', 'patterns', 'solving_equations', 'simplifying_expressions', 
+                      'expanding_factorising', 'complex_numbers_intro', 'complex_numbers_expanded', 
+                      'simultaneous_equations']],
+            'Geometry and Trigonometry': [t for t in all_topics if t in ['coordinate_geometry', 'trigonometry']],
+            'Statistics and Probability': [t for t in all_topics if t in ['probability', 'descriptive_statistics']],
+        }
+
+    difficulties = ['beginner', 'intermediate', 'advanced']
+
+    # Build matrix data
+    matrix_data = []
+
+    for enrollment in enrollments:
+        student = enrollment.student
+
+        # Get student stats
+        stats = UserStats.query.filter_by(user_id=student.id).first()
+
+        student_data = {
+            'student_id': student.id,
+            'student_name': student.full_name,
+            'total_points': stats.total_points if stats else 0,
+            'level': stats.level if stats else 1,
+            'modules': {}
+        }
+
+        # For each topic/difficulty combination
+        for topic in all_topics:
+            for difficulty in difficulties:
+                module_key = f"{topic}_{difficulty}"
+
+                # Get all attempts for this module
+                attempts = QuizAttempt.query.filter_by(
+                    user_id=student.id,
+                    topic=topic,
+                    difficulty=difficulty
+                ).all()
+
+                if attempts:
+                    # Calculate average percentage
+                    avg_percentage = sum(a.percentage for a in attempts) / len(attempts)
+                    total_attempts = len(attempts)
+
+                    # Determine color based on performance
+                    if avg_percentage < 20:
+                        color = 'grey'
+                    elif avg_percentage <= 80:
+                        color = 'yellow'
+                    else:
+                        color = 'green'
+
+                    student_data['modules'][module_key] = {
+                        'percentage': round(avg_percentage, 1),
+                        'attempts': total_attempts,
+                        'color': color,
+                        'completed': True
+                    }
+                else:
+                    # Not attempted yet
+                    student_data['modules'][module_key] = {
+                        'percentage': 0,
+                        'attempts': 0,
+                        'color': 'grey',
+                        'completed': False
+                    }
+
+        matrix_data.append(student_data)
+
+    return jsonify({
+        'students': matrix_data,
+        'topics': all_topics,
+        'difficulties': difficulties,
+        'strands': strands,  # NEW: Include strand grouping
+        'class_name': class_obj.name,
+        'total_students': len(matrix_data)
+    })
+
+@app.route('/api/teacher/class/<int:class_id>/dashboard-settings', methods=['GET', 'POST'])
+@login_required
+@role_required('teacher')
+@approved_required
+def dashboard_settings(class_id):
+    """Save/load dashboard display settings"""
+    class_obj = Class.query.get_or_404(class_id)
+
+    # Verify teacher owns this class
+    if class_obj.teacher_id != session['user_id']:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    if request.method == 'POST':
+        settings = request.json
+        return jsonify({'message': 'Settings saved', 'settings': settings})
+    else:
+        # Return default settings
+        return jsonify({
+            'visible_modules': {
+                'arithmetic': True,
+                'fractions': True,
+                'decimals': True,
+                'bodmas': True,
+                'functions': True,
+                'sets': True
+            },
+            'visible_difficulties': {
+                'beginner': True,
+                'intermediate': True,
+                'advanced': True
+            },
+            'refresh_rate': 10,
+            'students_per_page': 12
+        })
+
+# ==================== QUESTION FLAGGING ROUTES ====================
+
+@app.route('/api/student/flag-question', methods=['POST'])
+def flag_question():
+    """Flag a question - works for both registered and guest users"""
+    data = request.json
+
+    question_id = data.get('question_id')
+    flag_type = data.get('flag_type')
+    description = data.get('description', '').strip()
+    guest_email = data.get('guest_email', '').strip()  # Optional for guests
+
+    if not all([question_id, flag_type, description]):
+        return jsonify({'error': 'Question ID, flag type, and description are required'}), 400
+
+    if flag_type not in ['incorrect', 'ambiguous', 'typo', 'other']:
+        return jsonify({'error': 'Invalid flag type'}), 400
+
+    question = Question.query.get(question_id)
+    if not question:
+        return jsonify({'error': 'Question not found'}), 404
+
+    # Check if user is logged in
+    if 'user_id' in session:
+        # Registered user
+        flag = QuestionFlag(
+            question_id=question_id,
+            user_id=session['user_id'],
+            flag_type=flag_type,
+            description=description
+        )
+    else:
+        # Guest user - use IP address or session ID as identifier
+        import hashlib
+        guest_id = request.remote_addr or 'unknown'
+        # Create a hash of IP + user agent for better privacy
+        user_agent = request.headers.get('User-Agent', '')
+        guest_identifier = hashlib.md5(f"{guest_id}{user_agent}".encode()).hexdigest()[:16]
+
+        flag = QuestionFlag(
+            question_id=question_id,
+            user_id=None,
+            guest_identifier=guest_identifier,
+            guest_email=guest_email if guest_email else None,
+            flag_type=flag_type,
+            description=description
+        )
+
+    db.session.add(flag)
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Question flagged successfully. An administrator will review it.',
+        'flag': flag.to_dict()
+    }), 201
+
+
+@app.route('/api/student/flag-adaptive-question', methods=['POST'])
+def flag_adaptive_question():
+    """Flag an adaptive quiz question - works for both registered and guest users"""
+    from sqlalchemy import text
+    
+    data = request.json
+
+    question_id = data.get('question_id')
+    topic = data.get('topic', '')
+    flag_type = data.get('flag_type')
+    description = data.get('description', '').strip()
+    question_text = data.get('question_text', '')
+
+    if not all([question_id, flag_type, description]):
+        return jsonify({'error': 'Question ID, flag type, and description are required'}), 400
+
+    if flag_type not in ['incorrect', 'ambiguous', 'typo', 'other']:
+        return jsonify({'error': 'Invalid flag type'}), 400
+
+    # Verify the adaptive question exists
+    result = db.session.execute(text(
+        "SELECT id, question_text FROM questions_adaptive WHERE id = :qid"
+    ), {'qid': question_id}).fetchone()
+    
+    if not result:
+        return jsonify({'error': 'Adaptive question not found'}), 404
+    
+    # Use stored question text if not provided
+    if not question_text:
+        question_text = result[1]
+
+    # Check if user is logged in
+    if 'user_id' in session:
+        # Registered user
+        flag = AdaptiveQuestionFlag(
+            question_id=question_id,
+            topic=topic,
+            user_id=session['user_id'],
+            flag_type=flag_type,
+            description=description,
+            question_text=question_text
+        )
+    else:
+        # Guest user
+        import hashlib
+        guest_id = request.remote_addr or 'unknown'
+        user_agent = request.headers.get('User-Agent', '')
+        guest_identifier = hashlib.md5(f"{guest_id}{user_agent}".encode()).hexdigest()[:16]
+
+        flag = AdaptiveQuestionFlag(
+            question_id=question_id,
+            topic=topic,
+            user_id=None,
+            guest_identifier=guest_identifier,
+            flag_type=flag_type,
+            description=description,
+            question_text=question_text
+        )
+
+    db.session.add(flag)
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Question flagged successfully. An administrator will review it.',
+        'flag': flag.to_dict()
+    }), 201
+
+
+@app.route('/api/student/my-flags')
+def get_my_flags():
+    """Get all flags submitted by current user or guest"""
+    if 'user_id' in session:
+        # Registered user
+        flags = QuestionFlag.query.filter_by(user_id=session['user_id']).order_by(QuestionFlag.created_at.desc()).all()
+    else:
+        # Guest user - use their identifier
+        import hashlib
+        guest_id = request.remote_addr or 'unknown'
+        user_agent = request.headers.get('User-Agent', '')
+        guest_identifier = hashlib.md5(f"{guest_id}{user_agent}".encode()).hexdigest()[:16]
+
+        flags = QuestionFlag.query.filter_by(guest_identifier=guest_identifier).order_by(QuestionFlag.created_at.desc()).all()
+    return jsonify([f.to_dict() for f in flags])
+
+@app.route('/api/admin/flags/pending')
+@login_required
+@role_required('admin')
+def get_pending_flags():
+    """Get all pending question flags (both standard and adaptive)"""
+    # Standard question flags
+    standard_flags = QuestionFlag.query.filter_by(status='pending').order_by(QuestionFlag.created_at.desc()).all()
+
+    flags_with_questions = []
+    for flag in standard_flags:
+        flag_dict = flag.to_dict()
+        flag_dict['question'] = flag.question.to_dict()
+        flag_dict['is_adaptive'] = False
+        flags_with_questions.append(flag_dict)
+    
+    # Adaptive question flags
+    adaptive_flags = AdaptiveQuestionFlag.query.filter_by(status='pending').order_by(AdaptiveQuestionFlag.created_at.desc()).all()
+    
+    for flag in adaptive_flags:
+        flag_dict = flag.to_dict()
+        flag_dict['is_adaptive'] = True
+        flags_with_questions.append(flag_dict)
+    
+    # Sort combined list by created_at
+    flags_with_questions.sort(key=lambda x: x['created_at'], reverse=True)
+
+    return jsonify(flags_with_questions)
+
+@app.route('/api/admin/flags/all')
+@login_required
+@role_required('admin')
+def get_all_flags():
+    """Get all question flags (both standard and adaptive) with mode info for SEC questions"""
+    from sqlalchemy import text
+    
+    status_filter = request.args.get('status')
+
+    # Standard question flags
+    query = QuestionFlag.query
+    if status_filter:
+        query = query.filter_by(status=status_filter)
+
+    flags = query.order_by(QuestionFlag.created_at.desc()).all()
+
+    flags_with_questions = []
+    for flag in flags:
+        flag_dict = flag.to_dict()
+        question_data = flag.question.to_dict()
+        question_data['mode'] = None  # Legacy questions don't have mode
+        question_data['is_adaptive'] = False
+        flag_dict['question'] = question_data
+        flag_dict['is_adaptive'] = False
+        flags_with_questions.append(flag_dict)
+    
+    # Adaptive question flags - fetch full question details including mode
+    adaptive_query = AdaptiveQuestionFlag.query
+    if status_filter:
+        adaptive_query = adaptive_query.filter_by(status=status_filter)
+    
+    adaptive_flags = adaptive_query.order_by(AdaptiveQuestionFlag.created_at.desc()).all()
+    
+    for flag in adaptive_flags:
+        flag_dict = flag.to_dict()
+        
+        # Fetch full question details from questions_adaptive including mode
+        try:
+            result = db.session.execute(text("""
+                SELECT question_text, option_a, option_b, option_c, option_d, 
+                       correct_answer, topic, COALESCE(mode, 'practice') as mode,
+                       difficulty_level, difficulty_band
+                FROM questions_adaptive WHERE id = :qid
+            """), {'qid': flag.question_id}).fetchone()
+            
+            if result:
+                # Handle correct answer format
+                correct_raw = result[5]
+                if isinstance(correct_raw, int) and 0 <= correct_raw <= 3:
+                    correct_index = correct_raw
+                elif str(correct_raw).upper() in ['A', 'B', 'C', 'D']:
+                    correct_index = ['A', 'B', 'C', 'D'].index(str(correct_raw).upper())
+                else:
+                    correct_index = 0
+                
+                flag_dict['question'] = {
+                    'id': flag.question_id,
+                    'question': result[0] or 'Adaptive Question',
+                    'topic': result[6],
+                    'options': [result[1] or '', result[2] or '', result[3] or '', result[4] or ''],
+                    'correct': correct_index,
+                    'mode': result[7],  # 'practice' or 'jc_exam'
+                    'difficulty_level': result[8],
+                    'difficulty_band': result[9],
+                    'is_adaptive': True
+                }
+            else:
+                flag_dict['question'] = {
+                    'id': flag.question_id,
+                    'question': flag.question_text or '[Question deleted]',
+                    'topic': flag.topic,
+                    'options': [],
+                    'correct': None,
+                    'mode': 'practice',
+                    'is_adaptive': True
+                }
+        except Exception as e:
+            print(f"Error fetching adaptive question {flag.question_id}: {e}")
+            flag_dict['question'] = {
+                'id': flag.question_id,
+                'question': flag.question_text or 'Adaptive Question',
+                'topic': flag.topic,
+                'options': [],
+                'correct': None,
+                'mode': 'practice',
+                'is_adaptive': True
+            }
+        
+        flag_dict['is_adaptive'] = True
+        flags_with_questions.append(flag_dict)
+    
+    # Sort combined list by created_at
+    flags_with_questions.sort(key=lambda x: x['created_at'], reverse=True)
+
+    return jsonify(flags_with_questions)
+
+@app.route('/api/admin/flag/<int:flag_id>/dismiss', methods=['POST'])
+@login_required
+@role_required('admin')
+def dismiss_flag(flag_id):
+    """Dismiss a flag without making changes"""
+    data = request.json
+    is_adaptive = data.get('is_adaptive', False)
+    
+    if is_adaptive:
+        flag = AdaptiveQuestionFlag.query.get_or_404(flag_id)
+    else:
+        flag = QuestionFlag.query.get_or_404(flag_id)
+
+    flag.status = 'dismissed'
+    flag.admin_notes = data.get('notes', '')
+    flag.resolved_at = datetime.utcnow()
+    flag.resolved_by = session['user_id']
+
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Flag dismissed',
+        'flag': flag.to_dict()
+    })
+
+@app.route('/api/admin/question/<int:question_id>')
+@login_required
+@role_required('admin')
+def get_question_for_edit(question_id):
+    """Get question details for editing"""
+    question = Question.query.get_or_404(question_id)
+    flags = QuestionFlag.query.filter_by(question_id=question_id).order_by(QuestionFlag.created_at.desc()).all()
+    edits = QuestionEdit.query.filter_by(question_id=question_id).order_by(QuestionEdit.edited_at.desc()).all()
+
+    return jsonify({
+        'question': question.to_dict(),
+        'flags': [f.to_dict() for f in flags],
+        'edit_history': [e.to_dict() for e in edits]
+    })
+
+@app.route('/api/admin/all-questions')
+@login_required
+@role_required('admin')
+def get_all_questions():
+    """Get all questions with optional filters for management"""
+    topic = request.args.get('topic', '')
+    difficulty = request.args.get('difficulty', '')
+
+    query = Question.query
+
+    if topic:
+        query = query.filter_by(topic=topic)
+    if difficulty:
+        query = query.filter_by(difficulty=difficulty)
+
+    questions = query.order_by(Question.topic, Question.difficulty, Question.id).all()
+    return jsonify([q.to_dict() for q in questions])
+
+
+@app.route('/api/admin/adaptive-questions')
+@login_required
+@role_required('admin')
+def get_all_adaptive_questions():
+    """Get all adaptive questions with optional filters for management including mode (practice/jc_exam)"""
+    from sqlalchemy import text
+    
+    topic = request.args.get('topic', '')
+    level_band = request.args.get('level_band', '')  # This maps to difficulty_band in DB
+    difficulty_band = request.args.get('difficulty_band', '')  # For SEC: foundation, ordinary, higher
+    mode = request.args.get('mode', '')  # 'practice' or 'jc_exam'
+    count_only = request.args.get('count_only', '')  # If set, return topic counts only
+    
+    try:
+        # If count_only, return topic counts for the specified mode
+        if count_only:
+            count_query = """
+                SELECT topic, COUNT(*) as count 
+                FROM questions_adaptive 
+                WHERE is_active = 1
+            """
+            params = {}
+            
+            if mode:
+                count_query += " AND COALESCE(mode, 'practice') = :mode"
+                params['mode'] = mode
+            
+            count_query += " GROUP BY topic ORDER BY topic"
+            
+            result = db.session.execute(text(count_query), params).fetchall()
+            topics = [{'topic': row[0], 'count': row[1]} for row in result]
+            return jsonify({'topics': topics})
+        
+        # Build query using correct column names from schema
+        query = """SELECT id, topic, difficulty_band, difficulty_level, question_text, question_type, 
+                          option_a, option_b, option_c, option_d, correct_answer,
+                          image_svg, explanation, COALESCE(mode, 'practice') as mode
+                   FROM questions_adaptive WHERE is_active = 1"""
+        params = {}
+        
+        # Filter by mode (practice or jc_exam)
+        if mode:
+            query += " AND COALESCE(mode, 'practice') = :mode"
+            params['mode'] = mode
+        
+        if topic:
+            query += " AND topic = :topic"
+            params['topic'] = topic
+        
+        # Filter by level_band (for adaptive practice questions)
+        if level_band:
+            query += " AND difficulty_band = :difficulty_band"
+            params['difficulty_band'] = level_band
+        
+        # Filter by difficulty_band (for SEC questions - foundation, ordinary, higher)
+        if difficulty_band:
+            query += " AND difficulty_band = :difficulty_band"
+            params['difficulty_band'] = difficulty_band
+        
+        query += " ORDER BY topic, difficulty_level, id LIMIT 500"
+        
+        result = db.session.execute(text(query), params).fetchall()
+        
+        questions = []
+        for row in result:
+            try:
+                # Handle correct answer - stored as 0/1/2/3 in DB
+                correct_answer_raw = row[10]
+                if correct_answer_raw is not None:
+                    if isinstance(correct_answer_raw, int):
+                        correct_index = correct_answer_raw
+                        correct_letter = ['A', 'B', 'C', 'D'][correct_index] if 0 <= correct_index <= 3 else 'A'
+                    else:
+                        correct_str = str(correct_answer_raw).upper().strip()
+                        if correct_str in ['A', 'B', 'C', 'D']:
+                            correct_index = ['A', 'B', 'C', 'D'].index(correct_str)
+                            correct_letter = correct_str
+                        elif correct_str in ['0', '1', '2', '3']:
+                            correct_index = int(correct_str)
+                            correct_letter = ['A', 'B', 'C', 'D'][correct_index]
+                        else:
+                            correct_index = 0
+                            correct_letter = 'A'
+                else:
+                    correct_index = 0
+                    correct_letter = 'A'
+                
+                questions.append({
+                    'id': row[0],
+                    'topic': str(row[1]) if row[1] else 'unknown',
+                    'level_band': str(row[2]) if row[2] else 'beginner',  # difficulty_band -> level_band for frontend
+                    'difficulty_band': str(row[2]) if row[2] else 'beginner',  # Also include as difficulty_band
+                    'level': int(row[3]) if row[3] else 1,  # difficulty_level -> level for frontend
+                    'question': str(row[4]) if row[4] else '',
+                    'question_text': str(row[4]) if row[4] else '',
+                    'question_type': str(row[5]) if row[5] else 'multiple_choice',
+                    'options': [
+                        str(row[6]) if row[6] else '',
+                        str(row[7]) if row[7] else '',
+                        str(row[8]) if row[8] else '',
+                        str(row[9]) if row[9] else ''
+                    ],
+                    'option_a': str(row[6]) if row[6] else '',
+                    'option_b': str(row[7]) if row[7] else '',
+                    'option_c': str(row[8]) if row[8] else '',
+                    'option_d': str(row[9]) if row[9] else '',
+                    'correct': correct_index,
+                    'correct_answer': correct_letter,
+                    'has_svg': bool(row[11]),
+                    'image_svg': row[11] if row[11] else None,
+                    'explanation': str(row[12]) if row[12] else '',
+                    'mode': str(row[13]) if row[13] else 'practice',  # 'practice' or 'jc_exam'
+                    'is_adaptive': True,
+                    'difficulty': str(row[2]) if row[2] else 'beginner'
+                })
+            except Exception as row_error:
+                print(f"Error processing row {row[0]}: {row_error}")
+                continue
+        
+        return jsonify(questions)
+    except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"Error loading adaptive questions: {error_detail}")
+        return jsonify({'error': str(e), 'detail': error_detail}), 500
+
+
+@app.route('/api/admin/adaptive-topics-list')
+@login_required
+@role_required('admin')
+def get_adaptive_topics_list():
+    """Get list of adaptive quiz topics with question counts"""
+    from sqlalchemy import text
+    
+    try:
+        result = db.session.execute(text("""
+            SELECT topic, COUNT(*) as count 
+            FROM questions_adaptive 
+            WHERE is_active = 1
+            GROUP BY topic 
+            ORDER BY topic
+        """)).fetchall()
+        
+        topics = [{'topic': row[0], 'count': row[1]} for row in result]
+        return jsonify(topics)
+    except Exception as e:
+        print(f"Error loading adaptive topics: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/question/<int:question_id>/edit', methods=['PUT'])
+@login_required
+@role_required('admin')
+def edit_question(question_id):
+    """Edit a question and track the changes"""
+    question = Question.query.get_or_404(question_id)
+    data = request.json
+
+    edit_record = QuestionEdit(
+        question_id=question_id,
+        edited_by=session['user_id'],
+        edit_type=data.get('edit_type', 'correction'),
+        old_question_text=question.question_text,
+        old_option_a=question.option_a,
+        old_option_b=question.option_b,
+        old_option_c=question.option_c,
+        old_option_d=question.option_d,
+        old_correct_answer=question.correct_answer,
+        old_explanation=question.explanation,
+        edit_notes=data.get('notes', '')
+    )
+
+    # Update topic if provided
+    if 'topic' in data:
+        question.topic = data['topic']
+
+    # Update difficulty if provided
+    if 'difficulty' in data:
+        question.difficulty = data['difficulty']
+
+    if 'question_text' in data:
+        question.question_text = data['question_text']
+        edit_record.new_question_text = data['question_text']
+    else:
+        edit_record.new_question_text = question.question_text
+
+    if 'option_a' in data:
+        question.option_a = data['option_a']
+        edit_record.new_option_a = data['option_a']
+    else:
+        edit_record.new_option_a = question.option_a
+
+    if 'option_b' in data:
+        question.option_b = data['option_b']
+        edit_record.new_option_b = data['option_b']
+    else:
+        edit_record.new_option_b = question.option_b
+
+    if 'option_c' in data:
+        question.option_c = data['option_c']
+        edit_record.new_option_c = data['option_c']
+    else:
+        edit_record.new_option_c = question.option_c
+
+    if 'option_d' in data:
+        question.option_d = data['option_d']
+        edit_record.new_option_d = data['option_d']
+    else:
+        edit_record.new_option_d = question.option_d
+
+    if 'correct_answer' in data:
+        question.correct_answer = data['correct_answer']
+        edit_record.new_correct_answer = data['correct_answer']
+    else:
+        edit_record.new_correct_answer = question.correct_answer
+
+    if 'explanation' in data:
+        question.explanation = data['explanation']
+        edit_record.new_explanation = data['explanation']
+    else:
+        edit_record.new_explanation = question.explanation
+
+    # Phase 1: Image and hint support
+    if 'image_url' in data:
+        question.image_url = data['image_url'] if data['image_url'] else None
+    if 'image_caption' in data:
+        question.image_caption = data['image_caption'] if data['image_caption'] else None
+    if 'hint_text' in data:
+        question.hint_text = data['hint_text'] if data['hint_text'] else None
+    if 'hint_penalty' in data:
+        question.hint_penalty = int(data['hint_penalty']) if data['hint_penalty'] else 50
+
+    db.session.add(edit_record)
+    db.session.commit()
+
+    if 'resolve_flag_ids' in data:
+        for flag_id in data['resolve_flag_ids']:
+            flag = QuestionFlag.query.get(flag_id)
+            if flag and flag.question_id == question_id:
+                flag.status = 'resolved'
+                flag.resolved_at = datetime.utcnow()
+                flag.resolved_by = session['user_id']
+                flag.admin_notes = f"Question edited: {edit_record.edit_notes}"
+        db.session.commit()
+
+    return jsonify({
+        'message': 'Question updated successfully',
+        'question': question.to_dict(),
+        'edit': edit_record.to_dict()
+    })
+
+@app.route('/api/admin/question/<int:question_id>/history')
+@login_required
+@role_required('admin')
+def get_question_history(question_id):
+    """Get complete edit history for a question"""
+    question = Question.query.get_or_404(question_id)
+    edits = QuestionEdit.query.filter_by(question_id=question_id).order_by(QuestionEdit.edited_at.desc()).all()
+
+    return jsonify({
+        'question': question.to_dict(),
+        'edit_history': [e.to_dict() for e in edits]
+    })
+
+
+@app.route('/api/admin/adaptive-flag/<int:flag_id>/resolve', methods=['POST'])
+@login_required
+@role_required('admin')
+def resolve_adaptive_flag(flag_id):
+    """Resolve an adaptive question flag"""
+    flag = AdaptiveQuestionFlag.query.get_or_404(flag_id)
+    
+    data = request.json or {}
+    admin_notes = data.get('admin_notes', 'Resolved by admin')
+    
+    flag.status = 'resolved'
+    flag.resolved_at = datetime.utcnow()
+    flag.resolved_by = session['user_id']
+    flag.admin_notes = admin_notes
+    
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Flag resolved successfully',
+        'flag': flag.to_dict()
+    })
+
+
+@app.route('/api/admin/adaptive-question/<int:question_id>', methods=['GET'])
+@login_required
+@role_required('admin')
+def get_adaptive_question_admin(question_id):
+    """Get adaptive question details for admin"""
+    from sqlalchemy import text
+    
+    try:
+        result = db.session.execute(text("""
+            SELECT id, topic, difficulty_band, difficulty_level, question_text, question_type,
+                   option_a, option_b, option_c, option_d, correct_answer
+            FROM questions_adaptive WHERE id = :qid
+        """), {'qid': question_id}).fetchone()
+        
+        if not result:
+            return jsonify({'error': 'Question not found'}), 404
+        
+        # Get flags for this question
+        flags = AdaptiveQuestionFlag.query.filter_by(question_id=question_id).order_by(AdaptiveQuestionFlag.created_at.desc()).all()
+        
+        # Handle correct answer conversion
+        correct_raw = result[10]
+        if isinstance(correct_raw, int) and 0 <= correct_raw <= 3:
+            correct_letter = ['A', 'B', 'C', 'D'][correct_raw]
+        else:
+            correct_letter = str(correct_raw).upper() if correct_raw else 'A'
+        
+        return jsonify({
+            'question': {
+                'id': result[0],
+                'topic': result[1],
+                'level_band': result[2],  # difficulty_band -> level_band for frontend
+                'level': result[3],  # difficulty_level -> level for frontend
+                'question_text': result[4],
+                'question_type': result[5],
+                'option_a': result[6],
+                'option_b': result[7],
+                'option_c': result[8],
+                'option_d': result[9],
+                'correct_answer': correct_letter,
+                'image_svg': None  # Not fetching SVG for now
+            },
+            'flags': [f.to_dict() for f in flags]
+        })
+    except Exception as e:
+        print(f"Error fetching adaptive question {question_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/adaptive-question/<int:question_id>', methods=['PUT'])
+@login_required
+@role_required('admin')
+def update_adaptive_question_admin(question_id):
+    """Update an adaptive question and optionally resolve flags"""
+    from sqlalchemy import text
+    
+    data = request.json
+    
+    try:
+        # Build update query
+        updates = ["updated_at = CURRENT_TIMESTAMP"]
+        params = {'qid': question_id}
+        
+        if 'question_text' in data:
+            updates.append("question_text = :question_text")
+            params['question_text'] = data['question_text']
+        if 'option_a' in data:
+            updates.append("option_a = :option_a")
+            params['option_a'] = data['option_a']
+        if 'option_b' in data:
+            updates.append("option_b = :option_b")
+            params['option_b'] = data['option_b']
+        if 'option_c' in data:
+            updates.append("option_c = :option_c")
+            params['option_c'] = data['option_c']
+        if 'option_d' in data:
+            updates.append("option_d = :option_d")
+            params['option_d'] = data['option_d']
+        if 'correct_answer' in data:
+            # Convert A/B/C/D to 0/1/2/3 for DB storage
+            correct_letter = data['correct_answer'].upper()
+            if correct_letter in ['A', 'B', 'C', 'D']:
+                correct_index = ['A', 'B', 'C', 'D'].index(correct_letter)
+            else:
+                correct_index = 0
+            updates.append("correct_answer = :correct_answer")
+            params['correct_answer'] = correct_index
+        
+        query = f"UPDATE questions_adaptive SET {', '.join(updates)} WHERE id = :qid"
+        db.session.execute(text(query), params)
+        
+        # Resolve specified flags
+        if 'resolve_flag_ids' in data:
+            for flag_id in data['resolve_flag_ids']:
+                flag = AdaptiveQuestionFlag.query.get(flag_id)
+                if flag and flag.question_id == question_id:
+                    flag.status = 'resolved'
+                    flag.resolved_at = datetime.utcnow()
+                    flag.resolved_by = session['user_id']
+                    flag.admin_notes = data.get('admin_notes', 'Question edited')
+        
+        db.session.commit()
+        
+        return jsonify({'message': 'Adaptive question updated successfully'})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating adaptive question {question_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/question/<int:question_id>/delete', methods=['DELETE'])
+@login_required
+@role_required('admin')
+def delete_question(question_id):
+    """Permanently delete a question"""
+    from sqlalchemy import text
+    
+    question = Question.query.get_or_404(question_id)
+    
+    # Store question info for logging
+    question_text = question.question_text[:100]
+    topic = question.topic
+    difficulty = question.difficulty
+    
+    try:
+        # Delete related records first (flags, edits, responses)
+        db.session.execute(text("DELETE FROM question_flags WHERE question_id = :qid"), {'qid': question_id})
+        db.session.execute(text("DELETE FROM question_edits WHERE question_id = :qid"), {'qid': question_id})
+        
+        # Try to delete responses if table exists
+        try:
+            db.session.execute(text("DELETE FROM quiz_responses WHERE question_id = :qid"), {'qid': question_id})
+        except:
+            pass  # Table may not exist
+        
+        # Delete the question itself
+        db.session.delete(question)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Question deleted successfully',
+            'deleted': {
+                'id': question_id,
+                'topic': topic,
+                'difficulty': difficulty,
+                'question_preview': question_text
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/admin/questions/bulk-delete', methods=['POST'])
+@login_required
+@role_required('admin')
+def bulk_delete_questions():
+    """Bulk delete multiple questions"""
+    from sqlalchemy import text
+    
+    data = request.json
+    question_ids = data.get('question_ids', [])
+    
+    if not question_ids:
+        return jsonify({'success': False, 'error': 'No question IDs provided'}), 400
+    
+    if len(question_ids) > 100:
+        return jsonify({'success': False, 'error': 'Maximum 100 questions can be deleted at once'}), 400
+    
+    deleted_count = 0
+    failed_count = 0
+    deleted_info = []
+    
+    for question_id in question_ids:
+        try:
+            question = Question.query.get(question_id)
+            if not question:
+                failed_count += 1
+                continue
+            
+            # Store info before deletion
+            question_text = question.question_text[:50]
+            topic = question.topic
+            
+            # Delete related records
+            db.session.execute(text("DELETE FROM question_flags WHERE question_id = :qid"), {'qid': question_id})
+            db.session.execute(text("DELETE FROM question_edits WHERE question_id = :qid"), {'qid': question_id})
+            
+            try:
+                db.session.execute(text("DELETE FROM quiz_responses WHERE question_id = :qid"), {'qid': question_id})
+            except:
+                pass
+            
+            # Delete the question
+            db.session.delete(question)
+            deleted_count += 1
+            deleted_info.append({'id': question_id, 'topic': topic, 'preview': question_text})
+            
+        except Exception as e:
+            failed_count += 1
+            continue
+    
+    # Commit all deletions
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'Database error: {str(e)}'
+        }), 500
+    
+    return jsonify({
+        'success': True,
+        'message': f'Deleted {deleted_count} question(s)',
+        'deleted': deleted_count,
+        'failed': failed_count,
+        'deleted_questions': deleted_info
+    })
+
+@app.route('/api/admin/questions/find-duplicates')
+@login_required
+@role_required('admin')
+def find_duplicate_questions():
+    """Find duplicate questions based on question text"""
+    topic_filter = request.args.get('topic', '')
+    
+    # Build query
+    query = Question.query
+    if topic_filter:
+        query = query.filter_by(topic=topic_filter)
+    
+    # Get all questions
+    questions = query.order_by(Question.id.asc()).all()
+    total_scanned = len(questions)
+    
+    # Group by normalized question text (lowercase, stripped whitespace)
+    text_groups = {}
+    for q in questions:
+        # Normalize the question text for comparison
+        normalized = q.question_text.lower().strip()
+        # Remove extra whitespace
+        normalized = ' '.join(normalized.split())
+        
+        key = (q.topic, normalized)
+        if key not in text_groups:
+            text_groups[key] = []
+        text_groups[key].append(q)
+    
+    # Find groups with more than one question (duplicates)
+    duplicate_groups = []
+    for (topic, text), questions_list in text_groups.items():
+        if len(questions_list) > 1:
+            # Sort by ID to show oldest first
+            questions_list.sort(key=lambda x: x.id)
+            
+            duplicate_groups.append({
+                'topic': topic,
+                'question_text': questions_list[0].question_text,
+                'count': len(questions_list),
+                'questions': [{
+                    'id': q.id,
+                    'difficulty': q.difficulty,
+                    'image_url': q.image_url,
+                    'created_at': q.id  # Using ID as proxy for creation order
+                } for q in questions_list]
+            })
+    
+    # Sort by number of duplicates (most first)
+    duplicate_groups.sort(key=lambda x: x['count'], reverse=True)
+    
+    return jsonify({
+        'success': True,
+        'total_scanned': total_scanned,
+        'duplicate_groups': duplicate_groups,
+        'total_duplicate_groups': len(duplicate_groups),
+        'total_duplicate_questions': sum(g['count'] for g in duplicate_groups)
+    })
+
+@app.route('/api/admin/questions/flagged')
+@login_required
+@role_required('admin')
+def get_flagged_questions():
+    """Get all questions that have pending flags"""
+    flagged_question_ids = db.session.query(QuestionFlag.question_id).filter_by(status='pending').distinct().all()
+    question_ids = [q[0] for q in flagged_question_ids]
+
+    questions_with_flags = []
+    for qid in question_ids:
+        question = Question.query.get(qid)
+        flags = QuestionFlag.query.filter_by(question_id=qid, status='pending').all()
+
+        questions_with_flags.append({
+            'question': question.to_dict(),
+            'flag_count': len(flags),
+            'flags': [f.to_dict() for f in flags]
+        })
+
+    return jsonify(questions_with_flags)
+
+@app.route('/api/admin/flags/statistics')
+@login_required
+@role_required('admin')
+def flag_statistics():
+    """Get statistics about question flags (both standard and adaptive)"""
+    # Standard flags
+    standard_total = QuestionFlag.query.count()
+    standard_pending = QuestionFlag.query.filter_by(status='pending').count()
+    standard_resolved = QuestionFlag.query.filter_by(status='resolved').count()
+    standard_dismissed = QuestionFlag.query.filter_by(status='dismissed').count()
+    
+    # Adaptive flags
+    adaptive_total = AdaptiveQuestionFlag.query.count()
+    adaptive_pending = AdaptiveQuestionFlag.query.filter_by(status='pending').count()
+    adaptive_resolved = AdaptiveQuestionFlag.query.filter_by(status='resolved').count()
+    adaptive_dismissed = AdaptiveQuestionFlag.query.filter_by(status='dismissed').count()
+    
+    stats = {
+        'total_flags': standard_total + adaptive_total,
+        'pending_flags': standard_pending + adaptive_pending,
+        'resolved_flags': standard_resolved + adaptive_resolved,
+        'dismissed_flags': standard_dismissed + adaptive_dismissed,
+        'flagged_questions': db.session.query(QuestionFlag.question_id).filter_by(status='pending').distinct().count(),
+        'flagged_adaptive_questions': db.session.query(AdaptiveQuestionFlag.question_id).filter_by(status='pending').distinct().count(),
+        'total_edits': QuestionEdit.query.count(),
+        'by_flag_type': {},
+        # Breakdown for display
+        'standard_pending': standard_pending,
+        'adaptive_pending': adaptive_pending
+    }
+
+    for flag_type in ['incorrect', 'ambiguous', 'typo', 'other']:
+        standard_count = QuestionFlag.query.filter_by(flag_type=flag_type, status='pending').count()
+        adaptive_count = AdaptiveQuestionFlag.query.filter_by(flag_type=flag_type, status='pending').count()
+        stats['by_flag_type'][flag_type] = standard_count + adaptive_count
+
+    return jsonify(stats)
+
+
+
+# GET all users endpoint (frontend expects /api/admin/users plural)
+@app.route('/api/admin/users', methods=['GET'])
+@login_required
+@role_required('admin')
+def admin_get_all_users():
+    """Get all users for admin management"""
+    users = User.query.order_by(User.created_at.desc()).all()
+
+    users_data = []
+    for user in users:
+        stats = UserStats.query.filter_by(user_id=user.id).first()
+        quiz_count = QuizAttempt.query.filter_by(user_id=user.id).count()
+
+        users_data.append({
+            'id': user.id,
+            'username': user.full_name,  # FIXED: Use full_name instead of username
+            'email': user.email,
+            'role': user.role,
+            'is_approved': user.is_approved,
+            'created_at': user.created_at.isoformat() if user.created_at else None,
+            'total_quizzes': quiz_count,
+            'total_points': stats.total_points if stats else 0,
+            'level': stats.level if stats else 1
+        })
+
+    return jsonify(users_data), 200
+
+
+
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+
+        # Create default admin if doesn't exist
+        admin = User.query.filter_by(email='admin@agentmath.app').first()
+        if not admin:
+            admin = User(
+                email='admin@agentmath.app',
+                full_name='System Administrator',
+                role='admin',
+                is_approved=True
+            )
+            admin.set_password('admin123')
+            db.session.add(admin)
+            db.session.commit()
+            print("Default admin created: admin@agentmath.app / admin123")
+
+        # Create default badges if they don't exist
+        if Badge.query.count() == 0:
+            default_badges = [
+                # Beginner badges
+                Badge(name='First Steps', description='Complete your first quiz', icon='fa-star',
+                      category='beginner', requirement_type='quizzes_completed', requirement_value=1,
+                      points=10, color='yellow'),
+                Badge(name='Curious Learner', description='Complete 5 quizzes', icon='fa-book',
+                      category='progress', requirement_type='quizzes_completed', requirement_value=5,
+                      points=20, color='blue'),
+                Badge(name='Dedicated Student', description='Complete 10 quizzes', icon='fa-graduation-cap',
+                      category='progress', requirement_type='quizzes_completed', requirement_value=10,
+                      points=30, color='purple'),
+                Badge(name='Math Enthusiast', description='Complete 25 quizzes', icon='fa-heart',
+                      category='progress', requirement_type='quizzes_completed', requirement_value=25,
+                      points=50, color='red'),
+                Badge(name='Quiz Master', description='Complete 50 quizzes', icon='fa-trophy',
+                      category='progress', requirement_type='quizzes_completed', requirement_value=50,
+                      points=100, color='gold'),
+
+                # Streak badges
+                Badge(name='Week Warrior', description='Practice 7 days in a row', icon='fa-bolt',
+                      category='streak', requirement_type='streak_days', requirement_value=7,
+                      points=40, color='orange'),
+                Badge(name='Unstoppable', description='Practice 14 days in a row', icon='fa-rocket',
+                      category='streak', requirement_type='streak_days', requirement_value=14,
+                      points=75, color='red'),
+
+                # Mastery badges
+                Badge(name='Topic Master', description='Master any topic (all 3 difficulties)', icon='fa-certificate',
+                      category='mastery', requirement_type='topics_mastered', requirement_value=1,
+                      points=30, color='green'),
+                Badge(name='Subject Expert', description='Master 3 different topics', icon='fa-brain',
+                      category='mastery', requirement_type='topics_mastered', requirement_value=3,
+                      points=75, color='purple'),
+                Badge(name='Mathematics Genius', description='Master 5 different topics', icon='fa-infinity',
+                      category='mastery', requirement_type='topics_mastered', requirement_value=5,
+                      points=150, color='gold'),
+
+                # Accuracy badges
+                Badge(name='Perfect Score', description='Get 100% on a quiz', icon='fa-gem',
+                      category='accuracy', requirement_type='perfect_scores', requirement_value=1,
+                      points=15, color='cyan'),
+                Badge(name='Perfectionist', description='Get 5 perfect scores', icon='fa-star',
+                      category='accuracy', requirement_type='perfect_scores', requirement_value=5,
+                      points=50, color='gold'),
+                Badge(name='High Achiever', description='Score 90%+ on 10 quizzes', icon='fa-bullseye',
+                      category='accuracy', requirement_type='high_scores', requirement_value=10,
+                      points=40, color='green'),
+                Badge(name='Excellence Personified', description='Score 90%+ on 25 quizzes', icon='fa-crown',
+                      category='accuracy', requirement_type='high_scores', requirement_value=25,
+                      points=100, color='gold'),
+            ]
+
+            for badge in default_badges:
+                db.session.add(badge)
+
+            db.session.commit()
+            print(f"✅ Created {len(default_badges)} default badges")
+
+    app.run(debug=True)
+
+
+# ============================================================
+# Minimal class actions via simple HTML forms (stable)
+# ============================================================
+
+@app.route('/logout', methods=['GET'])
+def logout_simple():
+    """Simple logout route with proper session invalidation"""
+    session.clear()
+    try:
+        response = redirect(url_for('index') + '?logged_out=1')
+    except Exception:
+        response = redirect('/?logged_out=1')
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    response.delete_cookie('session')
+    return response
+
+@app.route('/teacher/class/<int:class_id>/rename', methods=['POST'], endpoint='teacher_simple_rename_class')
+@login_required
+@role_required('teacher')
+@approved_required
+def teacher_simple_rename_class(class_id):
+    class_obj = Class.query.get_or_404(class_id)
+    if class_obj.teacher_id != session.get('user_id'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    new_name = (request.form.get('new_name') or '').strip()
+    if not new_name:
+        flash('Class name cannot be empty.', 'error')
+        return redirect('/teacher/classes')
+
+    existing = Class.query.filter(
+        Class.teacher_id == session['user_id'],
+        Class.name == new_name,
+        Class.id != class_id
+    ).first()
+    if existing:
+        flash('You already have a class with that name.', 'error')
+        return redirect('/teacher/classes')
+
+    class_obj.name = new_name
+    db.session.commit()
+    flash('Class renamed successfully.', 'success')
+    return redirect('/teacher/classes')
+
+@app.route('/teacher/class/<int:class_id>/delete', methods=['POST'], endpoint='teacher_simple_delete_class')
+@login_required
+@role_required('teacher')
+@approved_required
+def teacher_simple_delete_class(class_id):
+    class_obj = Class.query.get_or_404(class_id)
+    if class_obj.teacher_id != session.get('user_id'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    ClassEnrollment.query.filter_by(class_id=class_id).delete()
+    db.session.delete(class_obj)
+    db.session.commit()
+    flash('Class deleted.', 'success')
+    return redirect('/teacher/classes')
+
+# ==================== DUAL GUEST SYSTEM ====================
+# Supports both casual guests and repeat guests with codes
+
+# Animal codes for repeat guests
+# Curated list of avatar-friendly animals for guest codes
+# These all have matching avatar images in the shop
+AVATAR_ANIMALS = [
+    'panda', 'fox', 'cat', 'owl', 'lion', 'bear', 'wolf', 'rabbit', 'tiger', 'penguin',
+    'koala', 'elephant', 'monkey', 'dog', 'dolphin', 'horse', 'deer', 'eagle', 'parrot', 'turtle'
+]
+
+# Legacy list for reference - DO NOT USE for new codes
+# These were the old animals, some of which don't make good avatars
+LEGACY_ANIMALS = [
+    'ant', 'ape', 'bat', 'bear', 'bee', 'bird', 'cat', 'clam', 'cod', 'cow',
+    'crab', 'crow', 'deer', 'dog', 'dove', 'duck', 'eagle', 'eel', 'elk', 'fish',
+    'fly', 'fox', 'frog', 'gnat', 'goat', 'goose', 'hawk', 'hog', 'horse', 'jay',
+    'lark', 'lion', 'loon', 'lynx', 'mink', 'mole', 'moth', 'mouse', 'mule', 'newt',
+    'orca', 'owl', 'ox', 'panda', 'pig', 'puma', 'rat', 'ray', 'seal', 'shark',
+    'sheep', 'shrew', 'sloth', 'slug', 'snail', 'snake', 'swan', 'tiger', 'toad', 'trout',
+    'viper', 'vole', 'wasp', 'whale', 'wolf', 'worm', 'yak', 'zebra', 'bison', 'boar',
+    'bunny', 'camel', 'cobra', 'coral', 'crane', 'dingo', 'drake', 'gecko', 'hippo', 'hyena',
+    'koala', 'lemur', 'llama', 'moose', 'otter', 'pony', 'quail', 'raven', 'rhino', 'robin',
+    'skunk', 'squid', 'stork', 'tapir', 'tern', 'tuna', 'weasel', 'betta', 'finch', 'guppy'
+]
+
+# Use AVATAR_ANIMALS for new guest codes
+ANIMALS = AVATAR_ANIMALS
+
+def generate_guest_code():
+    """Generate unique animal code (e.g., panda42)"""
+    max_attempts = 100
+
+    for _ in range(max_attempts):
+        animal = random.choice(ANIMALS)
+        number = random.randint(0, 99)
+        code = f"{animal}{number:02d}"
+
+        # Check if code is already taken
+        from sqlalchemy import text
+        existing = db.session.execute(
+            text("SELECT 1 FROM guest_users WHERE guest_code = :code"),
+            {"code": code}
+        ).fetchone()
+
+        if not existing:
+            return code
+
+    raise Exception("Could not generate unique guest code. Please try again.")
+
+
+def get_current_user_info():
+    """
+    Get user info for either full account, repeat guest, or casual guest
+    Returns dict with user data or None
+    """
+    # Check full account
+    if 'user_id' in session and 'guest_code' not in session and not session.get('is_guest'):
+        user = User.query.get(session['user_id'])
+        if user and user.email != 'guest@agentmath.app':
+            return {
+                'type': 'full',
+                'id': user.id,
+                'name': user.full_name,
+                'email': user.email,
+                'role': user.role,
+                'total_score': getattr(user, 'total_score', 0),
+                'quizzes_completed': getattr(user, 'quizzes_completed', 0)
+            }
+
+    # Check repeat guest
+    if 'guest_code' in session:
+        from sqlalchemy import text
+        result = db.session.execute(
+            text("""SELECT guest_code, total_score, quizzes_completed, created_at, last_active
+               FROM guest_users WHERE guest_code = :code AND is_active = 1"""),
+            {"code": session['guest_code']}
+        ).fetchone()
+
+        if result:
+            return {
+                'type': 'repeat_guest',
+                'guest_code': result[0],
+                'name': f"Guest {result[0].title()}",
+                'total_score': result[1] or 0,
+                'quizzes_completed': result[2] or 0,
+                'created_at': result[3],
+                'last_active': result[4]
+            }
+
+    # Check casual guest (shared guest@agentmath.app user)
+    if session.get('is_guest') and 'user_id' in session:
+        user = User.query.get(session['user_id'])
+        if user and user.email == 'guest@agentmath.app':
+            return {
+                'type': 'casual_guest',
+                'name': 'Guest User',
+                'session_id': session.get('guest_session_id', 'unknown')
+            }
+
+    return None
+
+
+def update_guest_last_active(guest_code):
+    """Update last_active timestamp for repeat guest"""
+    from sqlalchemy import text
+    db.session.execute(
+        text("UPDATE guest_users SET last_active = :now WHERE guest_code = :code"),
+        {"now": datetime.utcnow(), "code": guest_code}
+    )
+    db.session.commit()
+
+
+# ==================== CASUAL GUEST ROUTES ====================
+
+@app.route('/api/casual-guest-start', methods=['POST'])
+def casual_guest_start():
+    """Initialize casual guest session (temporary, no code)"""
+    try:
+        session.clear()
+
+        # Get or create the shared casual guest user
+        guest_user = User.query.filter_by(email='guest@agentmath.app').first()
+
+        if not guest_user:
+            guest_user = User(
+                email='guest@agentmath.app',
+                password_hash='no_password_required',
+                full_name='Guest User',
+                role='student',
+                is_approved=True
+            )
+            db.session.add(guest_user)
+            db.session.commit()
+
+        # Set up casual guest session
+        session['is_guest'] = True
+        session['guest_session_id'] = str(uuid.uuid4())
+        session['user_id'] = guest_user.id
+        session['role'] = 'student'
+        session['guest_type'] = 'casual'
+
+        return jsonify({
+            'success': True,
+            'message': 'Casual guest session started',
+            'redirect': '/student'
+        }), 200
+
+    except Exception as e:
+        print(f"Error starting casual guest session: {e}")
+        db.session.rollback()
+        return jsonify({'error': f'Failed to start guest session: {str(e)}'}), 500
+
+
+# ==================== REPEAT GUEST ROUTES ====================
+
+@app.route('/api/repeat-guest/generate', methods=['POST'])
+def generate_repeat_guest():
+    """Generate new repeat guest code"""
+    try:
+        from sqlalchemy import text
+
+        # Generate unique code
+        code = generate_guest_code()
+
+        # Create guest user in database
+        db.session.execute(text("""
+            INSERT INTO guest_users (guest_code, created_at, last_active)
+            VALUES (:code, :now, :now)
+        """), {"code": code, "now": datetime.utcnow()})
+        db.session.commit()
+
+        # AVATAR: Auto-setup avatar for new guest
+        animal = get_animal_from_guest_code(code)
+        avatar_animal = animal if animal else 'panda'
+
+        if FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False):
+            try:
+                # Grant default items to new guest
+                grant_default_avatar_items(guest_code=code)
+
+                # Create equipped avatar with their animal
+                equipped = UserAvatarEquipped(
+                    guest_code=code,
+                    animal_key=avatar_animal,
+                    hat_key='none',
+                    glasses_key='none',
+                    background_key='none',
+                    accessory_key='none'
+                )
+                db.session.add(equipped)
+                db.session.commit()
+            except Exception as avatar_error:
+                print(f"Avatar setup error (non-fatal): {avatar_error}")
+                # Don't fail the guest creation if avatar setup fails
+
+        return jsonify({
+            'success': True,
+            'guest_code': code,
+            'message': f'Your code is: {code}',
+            'animal': avatar_animal  # Return animal for frontend display
+        }), 200
+
+    except Exception as e:
+        print(f"Error generating guest code: {e}")
+        db.session.rollback()
+        return jsonify({'error': 'Failed to generate code. Please try again.'}), 500
+
+
+@app.route('/api/repeat-guest/login', methods=['POST'])
+def repeat_guest_login():
+    """Login with repeat guest code"""
+    try:
+        from sqlalchemy import text
+        data = request.json
+        code = data.get('guest_code', '').strip().lower()
+
+        if not code:
+            return jsonify({'error': 'Please enter your guest code'}), 400
+
+        # Check if code exists and is active
+        result = db.session.execute(
+            text("SELECT guest_code FROM guest_users WHERE guest_code = :code AND is_active = 1"),
+            {"code": code}
+        ).fetchone()
+
+        if not result:
+            return jsonify({'error': 'Code not found. Please check and try again.'}), 404
+
+        # Get or create the shared guest user for repeat guests
+        guest_user = User.query.filter_by(email='guest@agentmath.app').first()
+
+        if not guest_user:
+            guest_user = User(
+                email='guest@agentmath.app',
+                password_hash='no_password_required',
+                full_name='Guest User',
+                role='student',
+                is_approved=True
+            )
+            db.session.add(guest_user)
+            db.session.commit()
+
+        # Set up repeat guest session
+        session.clear()
+        session['is_guest'] = True  # CRITICAL: Must be True for adaptive progress to save correctly
+        session['guest_code'] = code
+        session['user_id'] = guest_user.id  # CRITICAL: Set user_id for @login_required
+        session['role'] = 'student'
+        session['guest_type'] = 'repeat'
+
+        # Update last active
+        update_guest_last_active(code)
+
+        # AVATAR: Ensure returning guest has avatar setup
+        animal = get_animal_from_guest_code(code)
+        if FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False):
+            try:
+                # Check if guest has equipped avatar
+                existing_equipped = UserAvatarEquipped.query.filter_by(guest_code=code).first()
+
+                if not existing_equipped:
+                    # First time with avatar system - set up defaults
+                    grant_default_avatar_items(guest_code=code)
+
+                    equipped = UserAvatarEquipped(
+                        guest_code=code,
+                        animal_key=animal if animal else 'panda',
+                        hat_key='none',
+                        glasses_key='none',
+                        background_key='none',
+                        accessory_key='none'
+                    )
+                    db.session.add(equipped)
+                    db.session.commit()
+            except Exception as avatar_error:
+                print(f"Avatar setup error (non-fatal): {avatar_error}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Welcome back!',
+            'redirect': '/student',
+            'animal': animal  # Return animal for frontend display
+        }), 200
+
+    except Exception as e:
+        print(f"Error logging in guest: {e}")
+        db.session.rollback()
+        return jsonify({'error': 'Login failed. Please try again.'}), 500
+
+
+@app.route('/api/repeat-guest/stats')
+def repeat_guest_stats():
+    """Get stats for current repeat guest"""
+    if 'guest_code' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    try:
+        from sqlalchemy import text
+        code = session['guest_code']
+
+        # Get stats
+        result = db.session.execute(text("""
+            SELECT
+                total_score,
+                quizzes_completed,
+                (SELECT COUNT(*) FROM guest_badges WHERE guest_code = :code) as badges_earned
+            FROM guest_users
+            WHERE guest_code = :code
+        """), {"code": code}).fetchone()
+
+        if result:
+            return jsonify({
+                'total_score': result[0] or 0,
+                'quizzes_completed': result[1] or 0,
+                'badges_earned': result[2] or 0
+            }), 200
+
+        return jsonify({'error': 'Stats not found'}), 404
+
+    except Exception as e:
+        print(f"Error getting guest stats: {e}")
+        return jsonify({'error': 'Failed to load stats'}), 500
+
+
+@app.route('/api/repeat-guest/convert', methods=['POST'])
+def convert_guest_to_full():
+    """Convert repeat guest to full account"""
+    if 'guest_code' not in session:
+        return jsonify({'error': 'Not logged in as guest'}), 401
+
+    try:
+        from sqlalchemy import text
+        data = request.json
+
+        email = data.get('email', '').strip()
+        password = data.get('password', '').strip()
+        full_name = data.get('full_name', '').strip()
+
+        # Validation
+        if not email or not password or not full_name:
+            return jsonify({'error': 'All fields required'}), 400
+
+        if len(password) < 6:
+            return jsonify({'error': 'Password must be at least 6 characters'}), 400
+
+        # Check if email already exists
+        existing = User.query.filter_by(email=email).first()
+        if existing:
+            return jsonify({'error': 'Email already registered'}), 400
+
+        guest_code = session['guest_code']
+
+        # Get guest data
+        guest_data = db.session.execute(text("""
+            SELECT total_score, quizzes_completed
+            FROM guest_users
+            WHERE guest_code = :code
+        """), {"code": guest_code}).fetchone()
+
+        # Create new full user account
+        new_user = User(
+            email=email,
+            full_name=full_name,
+            role='student',
+            is_approved=True
+        )
+        new_user.set_password(password)
+        db.session.add(new_user)
+        db.session.flush()
+
+        # Migrate quiz attempts
+        db.session.execute(text("""
+            INSERT INTO quiz_attempts (user_id, topic, difficulty, score, total_questions, completed_at)
+            SELECT :user_id, topic, difficulty, score, total_questions, completed_at
+            FROM guest_quiz_attempts
+            WHERE guest_code = :code
+        """), {"user_id": new_user.id, "code": guest_code})
+
+        # Migrate badges
+        db.session.execute(text("""
+            INSERT INTO user_badges (user_id, badge_id, earned_at)
+            SELECT :user_id, badge_id, earned_at
+            FROM guest_badges
+            WHERE guest_code = :code
+        """), {"user_id": new_user.id, "code": guest_code})
+
+        # Deactivate guest account
+        db.session.execute(
+            text("UPDATE guest_users SET is_active = 0 WHERE guest_code = :code"),
+            {"code": guest_code}
+        )
+
+        db.session.commit()
+
+        # Switch session to full account
+        session.clear()
+        session['user_id'] = new_user.id
+        session['role'] = 'student'
+
+        return jsonify({
+            'success': True,
+            'message': 'Account upgraded successfully!',
+            'redirect': '/student'
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error converting guest account: {e}")
+        return jsonify({'error': 'Upgrade failed. Please try again.'}), 500
+
+
+@app.route('/api/guest-leaderboard')
+def guest_leaderboard():
+    """
+    Universal leaderboard showing top 20 guest users across all codes.
+    Ranked by total score (sum of all correct answers).
+    Public endpoint - no authentication required.
+    """
+    try:
+        from sqlalchemy import text
+
+        # Query to get aggregated stats for each guest_code
+        query = text("""
+            SELECT
+                guest_code,
+                COUNT(*) as total_quizzes,
+                SUM(score) as total_score,
+                SUM(total_questions) as total_questions_attempted,
+                ROUND(AVG(CAST(score AS FLOAT) / CAST(total_questions AS FLOAT) * 100), 1) as avg_percentage,
+                MIN(completed_at) as first_quiz_date,
+                MAX(completed_at) as last_quiz_date
+            FROM guest_quiz_attempts
+            WHERE guest_code IS NOT NULL
+            GROUP BY guest_code
+            HAVING COUNT(*) > 0
+            ORDER BY total_score DESC
+            LIMIT 20
+        """)
+
+        results = db.session.execute(query).fetchall()
+
+        leaderboard = []
+        for rank, row in enumerate(results, start=1):
+            # Generate guest display name from code
+            # Uses first 6 characters of code for anonymity
+            guest_display = f"Guest-{row.guest_code[:6]}" if len(row.guest_code) > 6 else f"Guest-{row.guest_code}"
+
+            leaderboard.append({
+                'rank': rank,
+                'guest_code': row.guest_code,  # Full code (not displayed to others)
+                'display_name': guest_display,  # Public display name
+                'total_quizzes': row.total_quizzes,
+                'total_score': row.total_score,
+                'total_questions': row.total_questions_attempted,
+                'avg_percentage': float(row.avg_percentage) if row.avg_percentage else 0.0,
+                'first_quiz': row.first_quiz_date[:10] if row.first_quiz_date else None,  # Extract date part from string
+                'last_quiz': row.last_quiz_date[:10] if row.last_quiz_date else None  # Extract date part from string
+            })
+
+        return jsonify({
+            'success': True,
+            'leaderboard': leaderboard,
+            'total_guests': len(leaderboard)
+        })
+
+    except Exception as e:
+        print(f"❌ Error fetching guest leaderboard: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': 'Unable to load leaderboard',
+            'leaderboard': []
+        }), 500
+
+
+def cleanup_inactive_guests(days=30):
+    """
+    Delete guest accounts that haven't been used in X days
+    Returns number of deleted accounts
+    """
+    from sqlalchemy import text
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+    result = db.session.execute(text("""
+        DELETE FROM guest_users
+        WHERE last_active < :cutoff AND is_active = 1
+    """), {"cutoff": cutoff_date})
+
+    db.session.commit()
+    return result.rowcount
+
+
+# ==================== PRIZE SYSTEM ADMIN ROUTES ====================
+# Admin interface for managing prizes, schools, and redemptions
+
+@app.route('/admin/prizes')
+@login_required
+@role_required('admin')
+def admin_prizes():
+    """Prize system admin dashboard"""
+    if not FEATURE_FLAGS.get('PRIZE_SYSTEM_ENABLED', False):
+        flash('Prize system is not enabled.', 'warning')
+        return redirect(url_for('admin_dashboard'))
+
+    return render_template('admin_prizes.html')
+
+
+@app.route('/api/admin/prizes/settings', methods=['GET'])
+@login_required
+@role_required('admin')
+def get_prize_settings():
+    """Get global prize system settings"""
+    settings = {
+        'global_points_multiplier': float(SystemSetting.get('global_points_multiplier', 5.0)),
+        'prize_expiry_days': int(SystemSetting.get('prize_expiry_days', 30)),
+        'raffle_enabled': SystemSetting.get('raffle_enabled', 'true') == 'true',
+        'level_lock_enabled': SystemSetting.get('prize_level_lock_enabled', 'false') == 'true'
+    }
+    return jsonify(settings)
+
+
+@app.route('/api/admin/prizes/settings', methods=['POST'])
+@login_required
+@role_required('admin')
+def update_prize_settings():
+    """Update global prize system settings"""
+    data = request.get_json()
+    user_id = session.get('user_id')
+
+    if 'global_points_multiplier' in data:
+        SystemSetting.set('global_points_multiplier', float(data['global_points_multiplier']),
+                          'Global multiplier for prize point costs', user_id)
+
+    if 'prize_expiry_days' in data:
+        SystemSetting.set('prize_expiry_days', int(data['prize_expiry_days']),
+                          'Days before unclaimed prizes expire', user_id)
+
+    if 'raffle_enabled' in data:
+        SystemSetting.set('raffle_enabled', 'true' if data['raffle_enabled'] else 'false',
+                          'Whether raffle system is enabled', user_id)
+
+    if 'level_lock_enabled' in data:
+        SystemSetting.set('prize_level_lock_enabled', 'true' if data['level_lock_enabled'] else 'false',
+                          'Whether prizes require minimum level to redeem', user_id)
+
+    return jsonify({'success': True, 'message': 'Settings updated'})
+
+
+# ----- Global Prize Catalogue -----
+
+@app.route('/api/admin/prizes/catalogue', methods=['GET'])
+@login_required
+@role_required('admin')
+def get_prize_catalogue():
+    """Get all prizes in the global catalogue"""
+    prizes = Prize.query.order_by(Prize.tier, Prize.sort_order, Prize.name).all()
+    global_multiplier = float(SystemSetting.get('global_points_multiplier', 5.0))
+
+    result = []
+    for prize in prizes:
+        p = prize.to_dict()
+        p['effective_cost'] = int(prize.base_point_cost * global_multiplier)
+        result.append(p)
+
+    return jsonify({
+        'prizes': result,
+        'global_multiplier': global_multiplier
+    })
+
+
+@app.route('/api/admin/prizes/catalogue', methods=['POST'])
+@login_required
+@role_required('admin')
+def create_prize():
+    """Create a new prize in the global catalogue"""
+    data = request.get_json()
+
+    prize = Prize(
+        name=data['name'],
+        description=data.get('description', ''),
+        base_point_cost=int(data['base_point_cost']),
+        tier=data.get('tier', 'bronze'),
+        prize_type=data.get('prize_type', 'physical'),
+        minimum_level=int(data.get('minimum_level', 0)),
+        emoji=data.get('emoji', '🎁'),
+        sort_order=data.get('sort_order', 0),
+        is_active=data.get('is_active', True)
+    )
+
+    db.session.add(prize)
+    db.session.commit()
+
+    return jsonify({'success': True, 'prize': prize.to_dict()})
+
+
+@app.route('/api/admin/prizes/catalogue/<int:prize_id>', methods=['PUT'])
+@login_required
+@role_required('admin')
+def update_prize(prize_id):
+    """Update a prize in the global catalogue"""
+    prize = Prize.query.get_or_404(prize_id)
+    data = request.get_json()
+
+    if 'name' in data:
+        prize.name = data['name']
+    if 'description' in data:
+        prize.description = data['description']
+    if 'base_point_cost' in data:
+        prize.base_point_cost = int(data['base_point_cost'])
+    if 'tier' in data:
+        prize.tier = data['tier']
+    if 'prize_type' in data:
+        prize.prize_type = data['prize_type']
+    if 'minimum_level' in data:
+        prize.minimum_level = int(data['minimum_level'])
+    if 'emoji' in data:
+        prize.emoji = data['emoji']
+    if 'sort_order' in data:
+        prize.sort_order = int(data['sort_order'])
+    if 'is_active' in data:
+        prize.is_active = data['is_active']
+
+    db.session.commit()
+
+    return jsonify({'success': True, 'prize': prize.to_dict()})
+
+
+@app.route('/api/admin/prizes/catalogue/<int:prize_id>', methods=['DELETE'])
+@login_required
+@role_required('admin')
+def delete_prize(prize_id):
+    """Delete a prize from the global catalogue (if no redemptions)"""
+    prize = Prize.query.get_or_404(prize_id)
+
+    # Check for redemptions
+    redemption_count = PrizeRedemption.query.filter_by(prize_id=prize_id).count()
+    if redemption_count > 0:
+        return jsonify({
+            'success': False,
+            'error': f'Cannot delete: {redemption_count} redemptions exist for this prize. Deactivate instead.'
+        }), 400
+
+    # Delete school overrides first
+    SchoolPrize.query.filter_by(prize_id=prize_id).delete()
+
+    db.session.delete(prize)
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': 'Prize deleted'})
+
+
+# ----- Schools Management -----
+
+@app.route('/api/admin/prizes/schools', methods=['GET'])
+@login_required
+@role_required('admin')
+def get_prize_schools():
+    """Get all schools in the prize programme"""
+    schools = PrizeSchool.query.order_by(PrizeSchool.name).all()
+    return jsonify({'schools': [s.to_dict() for s in schools]})
+
+
+@app.route('/api/admin/prizes/schools', methods=['POST'])
+@login_required
+@role_required('admin')
+def create_prize_school():
+    """Add a new school to the prize programme"""
+    data = request.get_json()
+
+    school = PrizeSchool(
+        name=data['name'],
+        roll_number=data.get('roll_number'),
+        county=data.get('county'),
+        address=data.get('address'),
+        status='approved',  # Admin-created schools are auto-approved
+        points_multiplier=float(data.get('points_multiplier', 1.0)),
+        rep_name=data.get('rep_name'),
+        rep_email=data.get('rep_email'),
+        approved_at=datetime.utcnow(),
+        approved_by=session.get('user_id')
+    )
+
+    db.session.add(school)
+    db.session.commit()
+
+    return jsonify({'success': True, 'school': school.to_dict()})
+
+
+@app.route('/api/admin/prizes/schools/<int:school_id>', methods=['PUT'])
+@login_required
+@role_required('admin')
+def update_prize_school(school_id):
+    """Update a school in the prize programme"""
+    school = PrizeSchool.query.get_or_404(school_id)
+    data = request.get_json()
+
+    if 'name' in data:
+        school.name = data['name']
+    if 'roll_number' in data:
+        school.roll_number = data['roll_number']
+    if 'county' in data:
+        school.county = data['county']
+    if 'address' in data:
+        school.address = data['address']
+    if 'status' in data:
+        old_status = school.status
+        school.status = data['status']
+        if old_status != 'approved' and data['status'] == 'approved':
+            school.approved_at = datetime.utcnow()
+            school.approved_by = session.get('user_id')
+    if 'points_multiplier' in data:
+        school.points_multiplier = float(data['points_multiplier'])
+    if 'rep_name' in data:
+        school.rep_name = data['rep_name']
+    if 'rep_email' in data:
+        school.rep_email = data['rep_email']
+    if 'notes' in data:
+        school.notes = data['notes']
+
+    db.session.commit()
+
+    return jsonify({'success': True, 'school': school.to_dict()})
+
+
+@app.route('/api/admin/prizes/schools/<int:school_id>', methods=['DELETE'])
+@login_required
+@role_required('admin')
+def delete_prize_school(school_id):
+    """Delete a school from the prize programme"""
+    school = PrizeSchool.query.get_or_404(school_id)
+
+    # Check for redemptions
+    redemption_count = PrizeRedemption.query.filter_by(school_id=school_id).count()
+    if redemption_count > 0:
+        return jsonify({
+            'success': False,
+            'error': f'Cannot delete: {redemption_count} redemptions exist for this school. Suspend instead.'
+        }), 400
+
+    # Delete school prizes
+    SchoolPrize.query.filter_by(school_id=school_id).delete()
+
+    db.session.delete(school)
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': 'School deleted'})
+
+
+@app.route('/api/admin/prizes/schools/<int:school_id>/prizes', methods=['GET'])
+@login_required
+@role_required('admin')
+def get_school_prizes(school_id):
+    """Get all prizes available at a specific school (with overrides)"""
+    school = PrizeSchool.query.get_or_404(school_id)
+
+    # Get all global prizes
+    global_prizes = Prize.query.filter_by(is_active=True).order_by(Prize.tier, Prize.sort_order).all()
+
+    # Get school overrides
+    overrides = {sp.prize_id: sp for sp in SchoolPrize.query.filter_by(school_id=school_id).all()}
+
+    # Get school-specific prizes (where prize_id is NULL)
+    school_specific = SchoolPrize.query.filter_by(school_id=school_id, prize_id=None).all()
+
+    result = []
+
+    # Add global prizes with override info
+    for prize in global_prizes:
+        override = overrides.get(prize.id)
+        item = prize.to_dict(school=school)
+        item['override'] = override.to_dict() if override else None
+        item['is_enabled'] = override.is_enabled if override else True
+        item['stock_available'] = override.stock_available if override else None
+        result.append(item)
+
+    # Add school-specific prizes
+    for sp in school_specific:
+        result.append({
+            'id': None,
+            'school_prize_id': sp.id,
+            'name': sp.custom_name,
+            'description': sp.custom_description,
+            'emoji': sp.custom_emoji,
+            'point_cost': sp.point_cost_override,
+            'is_school_specific': True,
+            'is_enabled': sp.is_enabled,
+            'stock_available': sp.stock_available
+        })
+
+    return jsonify({
+        'school': school.to_dict(),
+        'prizes': result
+    })
+
+
+@app.route('/api/admin/prizes/schools/<int:school_id>/prizes', methods=['POST'])
+@login_required
+@role_required('admin')
+def create_school_prize(school_id):
+    """Create a school-specific prize or override"""
+    school = PrizeSchool.query.get_or_404(school_id)
+    data = request.get_json()
+
+    school_prize = SchoolPrize(
+        school_id=school_id,
+        prize_id=data.get('prize_id'),  # NULL for school-specific
+        custom_name=data.get('custom_name'),
+        custom_description=data.get('custom_description'),
+        custom_emoji=data.get('custom_emoji', '🎁'),
+        point_cost_override=data.get('point_cost_override'),
+        stock_available=data.get('stock_available'),
+        is_enabled=data.get('is_enabled', True)
+    )
+
+    db.session.add(school_prize)
+    db.session.commit()
+
+    return jsonify({'success': True, 'school_prize': school_prize.to_dict()})
+
+
+@app.route('/api/admin/prizes/schools/<int:school_id>/prizes/<int:school_prize_id>', methods=['PUT'])
+@login_required
+@role_required('admin')
+def update_school_prize(school_id, school_prize_id):
+    """Update a school-specific prize or override"""
+    school_prize = SchoolPrize.query.get_or_404(school_prize_id)
+
+    if school_prize.school_id != school_id:
+        return jsonify({'error': 'Prize does not belong to this school'}), 400
+
+    data = request.get_json()
+
+    if 'custom_name' in data:
+        school_prize.custom_name = data['custom_name']
+    if 'custom_description' in data:
+        school_prize.custom_description = data['custom_description']
+    if 'custom_emoji' in data:
+        school_prize.custom_emoji = data['custom_emoji']
+    if 'point_cost_override' in data:
+        school_prize.point_cost_override = data['point_cost_override']
+    if 'stock_available' in data:
+        school_prize.stock_available = data['stock_available']
+    if 'is_enabled' in data:
+        school_prize.is_enabled = data['is_enabled']
+
+    db.session.commit()
+
+    return jsonify({'success': True, 'school_prize': school_prize.to_dict()})
+
+
+# ----- School Requests -----
+
+@app.route('/api/admin/prizes/school-requests', methods=['GET'])
+@login_required
+@role_required('admin')
+def get_school_requests():
+    """Get all pending school requests"""
+    requests = SchoolRequest.query.order_by(SchoolRequest.created_at.desc()).all()
+    return jsonify({'requests': [r.to_dict() for r in requests]})
+
+
+@app.route('/api/admin/prizes/school-requests/<int:request_id>/approve', methods=['POST'])
+@login_required
+@role_required('admin')
+def approve_school_request(request_id):
+    """Approve a school request and create the school"""
+    school_request = SchoolRequest.query.get_or_404(request_id)
+    data = request.get_json() or {}
+
+    # Create the school
+    school = PrizeSchool(
+        name=data.get('name', school_request.school_name),
+        county=data.get('county', school_request.county),
+        status='approved',
+        rep_email=data.get('rep_email', school_request.suggested_rep_email),
+        rep_name=data.get('rep_name'),
+        approved_at=datetime.utcnow(),
+        approved_by=session.get('user_id')
+    )
+
+    db.session.add(school)
+    db.session.flush()  # Get the school ID
+
+    # Update the request
+    school_request.status = 'approved'
+    school_request.processed_at = datetime.utcnow()
+    school_request.processed_by = session.get('user_id')
+    school_request.created_school_id = school.id
+    school_request.admin_notes = data.get('admin_notes')
+
+    db.session.commit()
+
+    return jsonify({'success': True, 'school': school.to_dict()})
+
+
+@app.route('/api/admin/prizes/school-requests/<int:request_id>/reject', methods=['POST'])
+@login_required
+@role_required('admin')
+def reject_school_request(request_id):
+    """Reject a school request"""
+    school_request = SchoolRequest.query.get_or_404(request_id)
+    data = request.get_json() or {}
+
+    school_request.status = 'rejected'
+    school_request.processed_at = datetime.utcnow()
+    school_request.processed_by = session.get('user_id')
+    school_request.admin_notes = data.get('admin_notes', 'Request rejected')
+
+    db.session.commit()
+
+    return jsonify({'success': True})
+
+
+# ----- Redemption Analytics -----
+
+@app.route('/api/admin/prizes/stats', methods=['GET'])
+@login_required
+@role_required('admin')
+def get_prize_stats():
+    """Get prize system statistics"""
+    from sqlalchemy import func
+
+    total_schools = PrizeSchool.query.filter_by(status='approved').count()
+    pending_schools = PrizeSchool.query.filter_by(status='pending').count()
+    total_prizes = Prize.query.filter_by(is_active=True).count()
+
+    total_redemptions = PrizeRedemption.query.count()
+    pending_redemptions = PrizeRedemption.query.filter_by(status='pending').count()
+    fulfilled_redemptions = PrizeRedemption.query.filter_by(status='fulfilled').count()
+
+    total_points_spent = db.session.query(func.sum(PrizeRedemption.points_spent)).scalar() or 0
+
+    # Recent redemptions
+    recent = PrizeRedemption.query.order_by(PrizeRedemption.redeemed_at.desc()).limit(10).all()
+
+    return jsonify({
+        'schools': {
+            'approved': total_schools,
+            'pending': pending_schools
+        },
+        'prizes': {
+            'active': total_prizes
+        },
+        'redemptions': {
+            'total': total_redemptions,
+            'pending': pending_redemptions,
+            'fulfilled': fulfilled_redemptions,
+            'total_points_spent': total_points_spent
+        },
+        'recent_redemptions': [r.to_dict() for r in recent]
+    })
+
+
+# ==================== STUDENT PRIZE SHOP ROUTES ====================
+# Student-facing prize shop and redemption
+
+@app.route('/prizes')
+@login_required
+@approved_required
+def student_prize_shop():
+    """Student prize shop page"""
+    if not FEATURE_FLAGS.get('PRIZE_SYSTEM_ENABLED', False):
+        flash('Prize shop is not available yet.', 'info')
+        return redirect(url_for('student_app'))
+    
+    # Check if PIN verification is required
+    from sqlalchemy import text
+    threshold = int(SystemSetting.get('prize_pin_threshold', '2000'))
+    
+    # Get user's points and PIN status
+    requires_pin = False
+    has_pin = False
+    pin_hint = ''
+    points = 0
+    
+    if 'guest_code' in session:
+        # Guest code user
+        guest_code = session['guest_code']
+        result = db.session.execute(
+            text("SELECT total_score, prize_pin, prize_pin_hint FROM guest_users WHERE guest_code = :code"),
+            {'code': guest_code}
+        ).fetchone()
+        
+        if result:
+            points = result[0] or 0
+            has_pin = bool(result[1])
+            pin_hint = result[2] or ''
+    
+    elif 'user_id' in session and 'is_guest' not in session:
+        # Registered user
+        user_id = session['user_id']
+        stats = UserStats.query.filter_by(user_id=user_id).first()
+        
+        if stats:
+            points = stats.total_points or 0
+            has_pin = bool(stats.prize_pin)
+            pin_hint = stats.prize_pin_hint or ''
+    
+    # Check if PIN is required
+    if points >= threshold:
+        requires_pin = True
+        
+        # Check if already verified in this session
+        if not session.get('prize_pin_verified'):
+            # Redirect to PIN verification page
+            return render_template('prize_pin_required.html', 
+                                   needs_setup=not has_pin,
+                                   hint=pin_hint,
+                                   points=points,
+                                   threshold=threshold)
+
+    return render_template('prize_shop.html')
+
+
+@app.route('/api/prizes/available')
+@login_required
+@approved_required
+def get_available_prizes():
+    """Get prizes available to the current student"""
+    if not FEATURE_FLAGS.get('PRIZE_SYSTEM_ENABLED', False):
+        return jsonify({'error': 'Prize system not enabled'}), 403
+
+    user_id = session.get('user_id')
+
+    # Get student's school (if set)
+    user = User.query.get(user_id)
+    school_id = session.get('prize_school_id')
+    
+    # If not in session, try to load from user's default
+    if not school_id and user and not user.email.startswith('guest_'):
+        try:
+            from sqlalchemy import text
+            result = db.session.execute(text("""
+                SELECT default_school_id FROM users WHERE id = :user_id
+            """), {'user_id': user_id}).fetchone()
+            if result and result.default_school_id:
+                school_id = result.default_school_id
+                session['prize_school_id'] = school_id
+        except:
+            pass
+    
+    school = PrizeSchool.query.get(school_id) if school_id else None
+
+    # Get student's points and level
+    # Check if this is a repeat guest first
+    if 'guest_code' in session:
+        from sqlalchemy import text
+        guest_code = session['guest_code']
+        guest_stats = db.session.execute(text("""
+            SELECT total_score, quizzes_completed
+            FROM guest_users
+            WHERE guest_code = :code
+        """), {"code": guest_code}).fetchone()
+        
+        student_points = guest_stats.total_score if guest_stats else 0
+        student_level = (student_points // 100) + 1 if guest_stats else 1
+    else:
+        # Regular users and casual guests use UserStats
+        stats = UserStats.query.filter_by(user_id=user_id).first()
+        
+        # Create UserStats if it doesn't exist (e.g., for guest users)
+        if not stats:
+            stats = UserStats(user_id=user_id, total_points=0, level=1)
+            db.session.add(stats)
+            try:
+                db.session.commit()
+            except:
+                db.session.rollback()
+                # Try to fetch again in case of race condition
+                stats = UserStats.query.filter_by(user_id=user_id).first()
+        
+        student_points = stats.total_points if stats else 0
+        student_level = stats.level if stats else 1
+
+    # Get global multiplier and level lock setting
+    global_multiplier = float(SystemSetting.get('global_points_multiplier', 5.0))
+    level_lock_enabled = SystemSetting.get('prize_level_lock_enabled', 'false') == 'true'
+
+    # Get all active prizes
+    prizes = Prize.query.filter_by(is_active=True).order_by(Prize.tier, Prize.sort_order).all()
+
+    result = []
+    for prize in prizes:
+        if school:
+            # Check if disabled for this school
+            override = SchoolPrize.query.filter_by(school_id=school.id, prize_id=prize.id).first()
+            if override and not override.is_enabled:
+                continue
+            point_cost = prize.get_cost_for_school(school)
+            stock = override.stock_available if override else None
+        else:
+            # No school selected - use global multiplier only
+            point_cost = int(prize.base_point_cost * global_multiplier)
+            stock = None
+
+        # Check level requirement
+        min_level = prize.minimum_level or 0
+        meets_level = student_level >= min_level if level_lock_enabled else True
+
+        result.append({
+            'id': prize.id,
+            'name': prize.name,
+            'description': prize.description,
+            'emoji': prize.emoji,
+            'tier': prize.tier,
+            'prize_type': prize.prize_type,
+            'point_cost': point_cost,
+            'can_afford': student_points >= point_cost,
+            'minimum_level': min_level,
+            'meets_level': meets_level,
+            'level_lock_enabled': level_lock_enabled,
+            'stock_available': stock
+        })
+
+    # Get school-specific prizes if school is selected
+    school_specific = []
+    if school:
+        custom_prizes = SchoolPrize.query.filter_by(
+            school_id=school.id,
+            prize_id=None,
+            is_enabled=True
+        ).all()
+
+        for sp in custom_prizes:
+            school_specific.append({
+                'id': None,
+                'school_prize_id': sp.id,
+                'name': sp.custom_name,
+                'description': sp.custom_description,
+                'emoji': sp.custom_emoji or '🎁',
+                'tier': 'school',
+                'prize_type': 'physical',
+                'point_cost': sp.point_cost_override,
+                'can_afford': student_points >= (sp.point_cost_override or 0),
+                'stock_available': sp.stock_available,
+                'is_school_specific': True
+            })
+
+    return jsonify({
+        'prizes': result,
+        'school_prizes': school_specific,
+        'student_points': student_points,
+        'student_level': student_level,
+        'level_lock_enabled': level_lock_enabled,
+        'school': school.to_dict() if school else None,
+        'has_school': school is not None
+    })
+
+
+@app.route('/api/prizes/schools')
+@login_required
+@approved_required
+def get_prize_schools_for_student():
+    """Get list of approved schools for student to select"""
+    schools = PrizeSchool.query.filter_by(status='approved').order_by(PrizeSchool.county, PrizeSchool.name).all()
+
+    return jsonify({
+        'schools': [{'id': s.id, 'name': s.name, 'county': s.county} for s in schools]
+    })
+
+
+@app.route('/api/prizes/select-school', methods=['POST'])
+@login_required
+@approved_required
+def select_prize_school():
+    """Student selects their school for prize redemption"""
+    data = request.get_json()
+    school_id = data.get('school_id')
+
+    if school_id:
+        school = PrizeSchool.query.get(school_id)
+        if not school or school.status != 'approved':
+            return jsonify({'error': 'Invalid school'}), 400
+
+        # Save to session for immediate use
+        session['prize_school_id'] = school_id
+        
+        # Save to user profile for persistence (registered users only)
+        user_id = session.get('user_id')
+        user = User.query.get(user_id)
+        if user and not user.email.startswith('guest_'):
+            try:
+                from sqlalchemy import text
+                db.session.execute(text("""
+                    UPDATE users 
+                    SET default_school_id = :school_id 
+                    WHERE id = :user_id
+                """), {'school_id': school_id, 'user_id': user_id})
+                db.session.commit()
+            except:
+                # Column might not exist yet, ignore
+                pass
+        
+        return jsonify({'success': True, 'school': school.to_dict()})
+    else:
+        session.pop('prize_school_id', None)
+        return jsonify({'success': True, 'school': None})
+
+
+@app.route('/api/prizes/request-school', methods=['POST'])
+@login_required
+@approved_required
+def request_new_school():
+    """Student requests to add their school to the programme"""
+    data = request.get_json()
+    user_id = session.get('user_id')
+
+    # Check for existing pending request from this user
+    existing = SchoolRequest.query.filter_by(
+        requested_by=user_id,
+        status='pending'
+    ).first()
+
+    if existing:
+        return jsonify({
+            'error': 'You already have a pending school request',
+            'existing_request': existing.to_dict()
+        }), 400
+
+    school_request = SchoolRequest(
+        school_name=data['school_name'],
+        county=data.get('county'),
+        suggested_rep_email=data.get('suggested_rep_email'),
+        requested_by=user_id
+    )
+
+    db.session.add(school_request)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message': 'School request submitted! An admin will review it soon.',
+        'request': school_request.to_dict()
+    })
+
+
+@app.route('/api/prizes/redeem', methods=['POST'])
+@login_required
+@approved_required
+def redeem_prize():
+    """Student redeems points for a prize"""
+    if not FEATURE_FLAGS.get('PRIZE_SYSTEM_ENABLED', False):
+        return jsonify({'error': 'Prize system not enabled'}), 403
+
+    data = request.get_json()
+    user_id = session.get('user_id')
+    school_id = session.get('prize_school_id')
+
+    # Must have school selected
+    if not school_id:
+        return jsonify({'error': 'Please select your school first'}), 400
+
+    school = PrizeSchool.query.get(school_id)
+    if not school or school.status != 'approved':
+        return jsonify({'error': 'Invalid school'}), 400
+
+    # Get prize
+    prize_id = data.get('prize_id')
+    school_prize_id = data.get('school_prize_id')
+
+    if prize_id:
+        prize = Prize.query.get(prize_id)
+        if not prize or not prize.is_active:
+            return jsonify({'error': 'Prize not available'}), 400
+        point_cost = prize.get_cost_for_school(school)
+        prize_name = prize.name
+    elif school_prize_id:
+        school_prize = SchoolPrize.query.get(school_prize_id)
+        if not school_prize or school_prize.school_id != school_id or not school_prize.is_enabled:
+            return jsonify({'error': 'Prize not available'}), 400
+        point_cost = school_prize.point_cost_override
+        prize_name = school_prize.custom_name
+        prize = None
+    else:
+        return jsonify({'error': 'No prize specified'}), 400
+
+    # Check student has enough points and level
+    stats = UserStats.query.filter_by(user_id=user_id).first()
+    if not stats or stats.total_points < point_cost:
+        return jsonify({'error': 'Not enough points'}), 400
+
+    # Check level requirement (only for global prizes)
+    level_lock_enabled = SystemSetting.get('prize_level_lock_enabled', 'false') == 'true'
+    if prize_id and level_lock_enabled and prize:
+        min_level = prize.minimum_level or 0
+        student_level = stats.level if stats else 1
+        if student_level < min_level:
+            return jsonify({'error': f'You need to reach Level {min_level} to redeem this prize'}), 400
+
+    # Check stock if applicable
+    if school_prize_id:
+        sp = SchoolPrize.query.get(school_prize_id)
+        if sp.stock_available is not None and sp.stock_available <= 0:
+            return jsonify({'error': 'Prize out of stock'}), 400
+    elif prize_id:
+        override = SchoolPrize.query.filter_by(school_id=school_id, prize_id=prize_id).first()
+        if override and override.stock_available is not None and override.stock_available <= 0:
+            return jsonify({'error': 'Prize out of stock at your school'}), 400
+
+    # Generate token
+    token = generate_prize_token()
+
+    # Calculate expiry
+    expiry_days = int(SystemSetting.get('prize_expiry_days', 30))
+    expires_at = datetime.utcnow() + timedelta(days=expiry_days)
+
+    # Create redemption
+    redemption = PrizeRedemption(
+        user_id=user_id,
+        school_id=school_id,
+        prize_id=prize_id,
+        school_prize_id=school_prize_id if not prize_id else None,
+        token=token,
+        points_spent=point_cost,
+        status='pending',
+        expires_at=expires_at
+    )
+
+    # Deduct points
+    stats.total_points -= point_cost
+
+    # Decrease stock if applicable
+    if school_prize_id:
+        sp = SchoolPrize.query.get(school_prize_id)
+        if sp.stock_available is not None:
+            sp.stock_available -= 1
+    elif prize_id:
+        override = SchoolPrize.query.filter_by(school_id=school_id, prize_id=prize_id).first()
+        if override and override.stock_available is not None:
+            override.stock_available -= 1
+
+    db.session.add(redemption)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'token': token,
+        'prize_name': prize_name,
+        'points_spent': point_cost,
+        'points_remaining': stats.total_points,
+        'expires_at': expires_at.isoformat(),
+        'school_name': school.name,
+        'message': f'Show token {token} to your school rep to collect your prize!'
+    })
+
+
+@app.route('/api/prizes/my-redemptions')
+@login_required
+@approved_required
+def get_my_redemptions():
+    """Get student's prize redemption history"""
+    user_id = session.get('user_id')
+
+    redemptions = PrizeRedemption.query.filter_by(user_id=user_id).order_by(
+        PrizeRedemption.redeemed_at.desc()
+    ).all()
+
+    return jsonify({
+        'redemptions': [r.to_dict() for r in redemptions]
+    })
+
+
+# ==================== SCHOOL REP ROUTES ====================
+# School representative dashboard for managing prize fulfilment
+
+def school_rep_required(f):
+    """Decorator to ensure user is a school rep"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'error': 'Please log in first'}), 401
+
+        user_id = session['user_id']
+        user = User.query.get(user_id)
+
+        if not user:
+            return jsonify({'error': 'User not found'}), 401
+
+        # Check if user is a rep for any school
+        school = PrizeSchool.query.filter_by(rep_user_id=user_id, status='approved').first()
+
+        # Also allow admins and teachers
+        if not school and user.role not in ['admin', 'teacher']:
+            return jsonify({'error': 'You are not authorized as a school rep'}), 403
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@app.route('/school-rep')
+@login_required
+def school_rep_dashboard():
+    """School rep dashboard page"""
+    if not FEATURE_FLAGS.get('PRIZE_SYSTEM_ENABLED', False):
+        flash('Prize system is not enabled.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+
+    # Check if user is a school rep
+    school = PrizeSchool.query.filter_by(rep_user_id=user_id, status='approved').first()
+
+    # Allow admin/teacher to access (they can select school)
+    if not school and user.role not in ['admin', 'teacher']:
+        flash('You are not registered as a school rep.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    return render_template('school_rep_dashboard.html')
+
+
+@app.route('/api/school-rep/my-schools')
+@login_required
+def get_rep_schools():
+    """Get schools this user is a rep for"""
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+
+    # Reps see their assigned schools
+    schools = PrizeSchool.query.filter_by(rep_user_id=user_id, status='approved').all()
+
+    # Admins see all schools
+    if user.role == 'admin':
+        schools = PrizeSchool.query.filter_by(status='approved').all()
+
+    return jsonify({
+        'schools': [s.to_dict() for s in schools],
+        'is_admin': user.role == 'admin'
+    })
+
+
+@app.route('/api/school-rep/pending/<int:school_id>')
+@login_required
+def get_pending_redemptions(school_id):
+    """Get pending redemptions for a school"""
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+
+    # Verify access
+    school = PrizeSchool.query.get_or_404(school_id)
+    if school.rep_user_id != user_id and user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    redemptions = PrizeRedemption.query.filter_by(
+        school_id=school_id,
+        status='pending'
+    ).order_by(PrizeRedemption.redeemed_at.desc()).all()
+
+    return jsonify({
+        'school': school.to_dict(),
+        'redemptions': [r.to_dict(include_user=True) for r in redemptions],
+        'count': len(redemptions)
+    })
+
+
+@app.route('/api/school-rep/search-token', methods=['POST'])
+@login_required
+def search_token():
+    """Search for a redemption by token"""
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+    data = request.get_json()
+
+    token = data.get('token', '').strip().upper()
+
+    if not token:
+        return jsonify({'error': 'Please enter a token'}), 400
+
+    redemption = PrizeRedemption.query.filter_by(token=token).first()
+
+    if not redemption:
+        return jsonify({'error': 'Token not found', 'found': False}), 404
+
+    # Verify access to this school
+    school = redemption.school
+    if school.rep_user_id != user_id and user.role != 'admin':
+        return jsonify({'error': 'This token belongs to a different school', 'found': False}), 403
+
+    return jsonify({
+        'found': True,
+        'redemption': redemption.to_dict(include_user=True),
+        'school': school.to_dict()
+    })
+
+
+@app.route('/api/school-rep/fulfil/<int:redemption_id>', methods=['POST'])
+@login_required
+def fulfil_redemption(redemption_id):
+    """Mark a redemption as fulfilled"""
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+    data = request.get_json() or {}
+
+    redemption = PrizeRedemption.query.get_or_404(redemption_id)
+    school = redemption.school
+
+    # Verify access
+    if school.rep_user_id != user_id and user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    if redemption.status != 'pending':
+        return jsonify({'error': f'Redemption already {redemption.status}'}), 400
+
+    # Mark as fulfilled
+    redemption.status = 'fulfilled'
+    redemption.fulfilled_at = datetime.utcnow()
+    redemption.fulfilled_by = user_id
+    redemption.fulfilment_notes = data.get('notes', '')
+
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message': 'Prize marked as delivered!',
+        'redemption': redemption.to_dict()
+    })
+
+
+@app.route('/api/school-rep/history/<int:school_id>')
+@login_required
+def get_fulfilment_history(school_id):
+    """Get fulfilment history for a school"""
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+
+    # Verify access
+    school = PrizeSchool.query.get_or_404(school_id)
+    if school.rep_user_id != user_id and user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    # Get fulfilled redemptions
+    redemptions = PrizeRedemption.query.filter_by(
+        school_id=school_id,
+        status='fulfilled'
+    ).order_by(PrizeRedemption.fulfilled_at.desc()).limit(50).all()
+
+    return jsonify({
+        'school': school.to_dict(),
+        'redemptions': [r.to_dict(include_user=True) for r in redemptions]
+    })
+
+
+@app.route('/api/school-rep/stats/<int:school_id>')
+@login_required
+def get_school_rep_stats(school_id):
+    """Get stats for a school"""
+    user_id = session.get('user_id')
+    user = User.query.get(user_id)
+
+    # Verify access
+    school = PrizeSchool.query.get_or_404(school_id)
+    if school.rep_user_id != user_id and user.role != 'admin':
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    from sqlalchemy import func
+
+    pending = PrizeRedemption.query.filter_by(school_id=school_id, status='pending').count()
+    fulfilled = PrizeRedemption.query.filter_by(school_id=school_id, status='fulfilled').count()
+    expired = PrizeRedemption.query.filter_by(school_id=school_id, status='expired').count()
+
+    total_points = db.session.query(func.sum(PrizeRedemption.points_spent)).filter_by(
+        school_id=school_id, status='fulfilled'
+    ).scalar() or 0
+
+    return jsonify({
+        'school': school.to_dict(),
+        'stats': {
+            'pending': pending,
+            'fulfilled': fulfilled,
+            'expired': expired,
+            'total_points_redeemed': total_points
+        }
+    })
+
+
+# ==================== WHO AM I? FEATURE ====================
+# Progressive image reveal gamification feature
+
+def admin_required(f):
+    """Decorator to ensure only admins can access these routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            flash('Please log in first.', 'warning')
+            return redirect(url_for('login'))
+
+        user = User.query.get(session['user_id'])
+        if not user or user.role != 'admin':
+            flash('Admin access required.', 'danger')
+            return redirect(url_for('dashboard'))
+
+        return f(*args, **kwargs)
+    return decorated_function
+    return decorated_function
+
+
+# Helper function for Who Am I answer variants - MUST BE BEFORE ROUTES
+def auto_generate_variants(answer):
+    """
+    Auto-generate acceptable answer variants
+    Returns a list of lowercase variants
+    """
+    variants = set()
+    answer_lower = answer.lower().strip()
+    variants.add(answer_lower)
+
+    # Remove common titles
+    titles = ['dr.', 'dr', 'sir', 'professor', 'prof.', 'prof', 'dame', 'lord', 'lady']
+    for title in titles:
+        if answer_lower.startswith(title + ' '):
+            without_title = answer_lower.replace(title + ' ', '', 1).strip()
+            variants.add(without_title)
+
+    # Split into name parts
+    parts = answer_lower.split()
+
+    if len(parts) >= 2:
+        # First name only
+        variants.add(parts[0])
+
+        # Last name only
+        variants.add(parts[-1])
+
+        # First and last (skip middle)
+        if len(parts) > 2:
+            variants.add(f"{parts[0]} {parts[-1]}")
+
+        # Remove middle initials
+        filtered_parts = [p for p in parts if len(p) > 2 or not p.endswith('.')]
+        if len(filtered_parts) != len(parts):
+            variants.add(' '.join(filtered_parts))
+
+    # Remove punctuation variants
+    import string
+    no_punct = answer_lower.translate(str.maketrans('', '', string.punctuation))
+    if no_punct != answer_lower:
+        variants.add(no_punct)
+
+    return sorted(list(variants))
+
+
+@app.route('/admin/who-am-i')
+@admin_required
+def admin_who_am_i():
+    """Display all Who Am I images with multi-topic support"""
+    from sqlalchemy import text
+
+    # Get all images with their topics - INCLUDE accepted_answers
+    query = text("""
+        SELECT
+            i.id,
+            i.difficulty,
+            i.image_filename,
+            i.answer,
+            i.hint,
+            i.active,
+            i.created_at,
+            i.topic as primary_topic,
+            i.accepted_answers,
+            GROUP_CONCAT(t.topic) as all_topics
+        FROM who_am_i_images i
+        LEFT JOIN who_am_i_image_topics t ON i.id = t.image_id
+        GROUP BY i.id
+        ORDER BY i.created_at DESC
+    """)
+
+    results = db.session.execute(query).fetchall()
+
+    images = []
+    for row in results:
+        # Parse comma-separated topics
+        topics = row.all_topics.split(',') if row.all_topics else []
+        
+        # Parse accepted answers to get count
+        accepted_answers_count = 0
+        if row.accepted_answers:
+            try:
+                accepted_answers_count = len(json.loads(row.accepted_answers))
+            except:
+                pass
+        
+        images.append({
+            'id': row.id,
+            'primary_topic': row.primary_topic,
+            'topics': topics,
+            'difficulty': row.difficulty,
+            'image_filename': row.image_filename,
+            'answer': row.answer,
+            'hint': row.hint,
+            'active': row.active,
+            'created_at': row.created_at,
+            'accepted_answers_count': accepted_answers_count
+        })
+
+    # Get ALL topics from questions table
+    topics = db.session.execute(text("SELECT DISTINCT topic FROM questions ORDER BY topic")).fetchall()
+    all_topics = [row.topic for row in topics]
+
+    # Get enabled topics (topics that have at least one image)
+    enabled_query = text("""
+        SELECT DISTINCT topic
+        FROM who_am_i_image_topics
+        ORDER BY topic
+    """)
+    enabled_results = db.session.execute(enabled_query).fetchall()
+    enabled_topics = [row.topic for row in enabled_results]
+
+    return render_template('admin_who_am_i.html',
+                         images=images,
+                         all_topics=all_topics,
+                         enabled_topics=enabled_topics)
+
+
+@app.route('/admin/who-am-i/upload', methods=['POST'])
+@admin_required
+def admin_who_am_i_upload():
+    """Handle image upload with multi-topic support"""
+    from sqlalchemy import text
+
+    # Validate form data
+    if 'image' not in request.files:
+        flash('No image file provided', 'danger')
+        return redirect(url_for('admin_who_am_i'))
+
+    file = request.files['image']
+    primary_topic = request.form.get('topic')  # Primary topic for backward compatibility
+    selected_topics = request.form.getlist('topics[]')  # Multiple topics
+    difficulty = request.form.get('difficulty')
+    answer = request.form.get('answer')
+    hint = request.form.get('hint', '')
+
+    # Handle accepted answers
+    accepted_answers_text = request.form.get('accepted_answers', '').strip()
+    if accepted_answers_text:
+        # Parse from textarea (one per line)
+        variants = [v.strip() for v in accepted_answers_text.split('\n') if v.strip()]
+        accepted_answers_json = json.dumps(variants)
+    else:
+        # Auto-generate if not provided
+        variants = auto_generate_variants(answer)
+        accepted_answers_json = json.dumps(variants)
+
+    if file.filename == '':
+        flash('No file selected', 'danger')
+        return redirect(url_for('admin_who_am_i'))
+
+    # Handle both single topic and multi-topic selection
+    if not selected_topics and not primary_topic:
+        flash('At least one topic is required', 'danger')
+        return redirect(url_for('admin_who_am_i'))
+
+    if not difficulty or not answer:
+        flash('Difficulty and answer are required', 'danger')
+        return redirect(url_for('admin_who_am_i'))
+
+    # If only single topic selected (old form), use it
+    if not selected_topics and primary_topic:
+        selected_topics = [primary_topic]
+    # If multi-topics selected but no primary, use first as primary
+    elif selected_topics and not primary_topic:
+        primary_topic = selected_topics[0]
+
+    if file and allowed_file(file.filename):
+        # Create upload directory if it doesn't exist
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+        # Generate secure filename
+        filename = secure_filename(file.filename)
+        # Add timestamp to avoid conflicts
+        import time
+        timestamp = int(time.time())
+        name, ext = os.path.splitext(filename)
+        filename = f"{name}_{timestamp}{ext}"
+
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(filepath)
+
+        # Save to database
+        query = text("""
+            INSERT INTO who_am_i_images (topic, difficulty, image_filename, answer, hint)
+            VALUES (:topic, :difficulty, :filename, :answer, :hint)
+        """)
+        result = db.session.execute(query, {
+            'topic': primary_topic,
+            'difficulty': difficulty,
+            'filename': filename,
+            'answer': answer,
+            'hint': hint
+        })
+        db.session.commit()
+
+        # Get the new image ID
+        image_id = result.lastrowid
+
+        # Add topic associations
+        for topic in selected_topics:
+            db.session.execute(text("""
+                INSERT OR IGNORE INTO who_am_i_image_topics (image_id, topic)
+                VALUES (:image_id, :topic)
+            """), {'image_id': image_id, 'topic': topic})
+
+        db.session.commit()
+
+        flash(f'Image uploaded successfully! Answer: {answer} | Topics: {", ".join(selected_topics)}', 'success')
+    else:
+        flash('Invalid file type. Allowed types: png, jpg, jpeg, gif, webp', 'danger')
+
+    return redirect(url_for('admin_who_am_i'))
+
+
+@app.route('/admin/who-am-i/toggle/<int:image_id>', methods=['POST'])
+@admin_required
+def admin_who_am_i_toggle(image_id):
+    """Toggle active status of an image"""
+    from sqlalchemy import text
+
+    result = db.session.execute(
+        text("SELECT active FROM who_am_i_images WHERE id = :id"),
+        {'id': image_id}
+    ).fetchone()
+
+    if result:
+        new_status = 0 if result.active == 1 else 1
+        db.session.execute(
+            text("UPDATE who_am_i_images SET active = :status WHERE id = :id"),
+            {'status': new_status, 'id': image_id}
+        )
+        db.session.commit()
+        flash('Image status updated', 'success')
+    else:
+        flash('Image not found', 'danger')
+
+    return redirect(url_for('admin_who_am_i'))
+
+
+@app.route('/admin/who-am-i/delete/<int:image_id>', methods=['POST'])
+@admin_required
+def admin_who_am_i_delete(image_id):
+    """Delete an image"""
+    from sqlalchemy import text
+
+    result = db.session.execute(
+        text("SELECT image_filename FROM who_am_i_images WHERE id = :id"),
+        {'id': image_id}
+    ).fetchone()
+
+    if result:
+        # Delete file
+        filepath = os.path.join(UPLOAD_FOLDER, result.image_filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+        # Delete from database
+        db.session.execute(
+            text("DELETE FROM who_am_i_images WHERE id = :id"),
+            {'id': image_id}
+        )
+        db.session.commit()
+        flash('Image deleted successfully', 'success')
+    else:
+        flash('Image not found', 'danger')
+
+    return redirect(url_for('admin_who_am_i'))
+
+
+
+@app.route('/admin/who-am-i/get/<int:image_id>')
+@admin_required
+def admin_who_am_i_get(image_id):
+    """Get image details for editing (including accepted_answers)"""
+    from sqlalchemy import text
+
+    query = text("""
+        SELECT
+            i.id,
+            i.answer,
+            i.hint,
+            i.difficulty,
+            i.accepted_answers,
+            i.active,
+            GROUP_CONCAT(t.topic) as topics
+        FROM who_am_i_images i
+        LEFT JOIN who_am_i_image_topics t ON i.id = t.image_id
+        WHERE i.id = :image_id
+        GROUP BY i.id
+    """)
+
+    result = db.session.execute(query, {'image_id': image_id}).fetchone()
+
+    if not result:
+        return jsonify({'error': 'Image not found'}), 404
+
+    topics = result.topics.split(',') if result.topics else []
+
+    return jsonify({
+        'id': result.id,
+        'answer': result.answer,
+        'hint': result.hint,
+        'difficulty': result.difficulty,
+        'accepted_answers': result.accepted_answers,
+        'active': result.active,
+        'topics': topics
+    })
+
+
+@app.route('/admin/who-am-i/edit/<int:image_id>', methods=['GET', 'POST'])
+@admin_required
+def admin_who_am_i_edit(image_id):
+    """Edit image details including accepted_answers"""
+    from sqlalchemy import text
+
+    if request.method == 'GET':
+        # Redirect to main page (handled by GET endpoint now)
+        return redirect(url_for('admin_who_am_i'))
+
+    # POST - handle edit
+    answer = request.form.get('answer')
+    hint = request.form.get('hint', '')
+    difficulty = request.form.get('difficulty')
+    selected_topics = request.form.getlist('topics[]')
+
+    # Handle accepted answers from form
+    accepted_answers_json = request.form.get('accepted_answers')
+
+    # If not provided or empty, auto-generate
+    if not accepted_answers_json:
+        variants = auto_generate_variants(answer)
+        accepted_answers_json = json.dumps(variants)
+
+    # Update image
+    db.session.execute(text("""
+        UPDATE who_am_i_images
+        SET answer = :answer,
+            hint = :hint,
+            difficulty = :difficulty,
+            accepted_answers = :accepted_answers
+        WHERE id = :image_id
+    """), {
+        'answer': answer,
+        'hint': hint,
+        'difficulty': difficulty,
+        'accepted_answers': accepted_answers_json,
+        'image_id': image_id
+    })
+
+    # Update topics - delete old associations
+    db.session.execute(text("""
+        DELETE FROM who_am_i_image_topics WHERE image_id = :image_id
+    """), {'image_id': image_id})
+
+    # Insert new topic associations
+    if selected_topics:
+        for topic in selected_topics:
+            db.session.execute(text("""
+                INSERT INTO who_am_i_image_topics (image_id, topic)
+                VALUES (:image_id, :topic)
+            """), {'image_id': image_id, 'topic': topic})
+
+    db.session.commit()
+
+    flash('Image updated successfully', 'success')
+    return jsonify({'success': True})
+
+@app.route('/admin/who-am-i/bulk-assign', methods=['POST'])
+@admin_required
+def admin_who_am_i_bulk_assign():
+    """Bulk assign images to topics"""
+    from sqlalchemy import text
+
+    data = request.json
+    image_ids = data.get('image_ids', [])
+    topics = data.get('topics', [])
+    action = data.get('action', 'add')  # 'add' or 'replace'
+
+    if not image_ids or not topics:
+        return jsonify({'success': False, 'error': 'Image IDs and topics required'}), 400
+
+    if action == 'replace':
+        # Remove existing topics for these images
+        for image_id in image_ids:
+            db.session.execute(text("""
+                DELETE FROM who_am_i_image_topics WHERE image_id = :id
+            """), {'id': image_id})
+
+    # Add new topic associations
+    for image_id in image_ids:
+        for topic in topics:
+            db.session.execute(text("""
+                INSERT OR IGNORE INTO who_am_i_image_topics (image_id, topic)
+                VALUES (:image_id, :topic)
+            """), {'image_id': image_id, 'topic': topic})
+
+        # Update primary topic if replacing
+        if action == 'replace' and topics:
+            db.session.execute(text("""
+                UPDATE who_am_i_images SET topic = :topic WHERE id = :id
+            """), {'topic': topics[0], 'id': image_id})
+
+    db.session.commit()
+
+    action_text = 'replaced with' if action == 'replace' else 'added to'
+    return jsonify({
+        'success': True,
+        'message': f'{len(image_ids)} images {action_text} {len(topics)} topics'
+    })
+
+
+@app.route('/admin/who-am-i/bulk-delete', methods=['POST'])
+@admin_required
+def admin_who_am_i_bulk_delete():
+    """Bulk delete images"""
+    from sqlalchemy import text
+
+    data = request.json
+    image_ids = data.get('image_ids', [])
+
+    if not image_ids:
+        return jsonify({'success': False, 'error': 'No images selected'}), 400
+
+    # Get filenames for deletion
+    placeholders = ','.join([':id' + str(i) for i in range(len(image_ids))])
+    params = {f'id{i}': image_id for i, image_id in enumerate(image_ids)}
+
+    results = db.session.execute(text(f"""
+        SELECT image_filename FROM who_am_i_images WHERE id IN ({placeholders})
+    """), params).fetchall()
+
+    # Delete files
+    for row in results:
+        filepath = os.path.join(UPLOAD_FOLDER, row.image_filename)
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+    # Delete from database
+    db.session.execute(text(f"""
+        DELETE FROM who_am_i_images WHERE id IN ({placeholders})
+    """), params)
+
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': f'{len(image_ids)} images deleted'})
+
+
+@app.route('/admin/who-am-i/copy-topic', methods=['POST'])
+@admin_required
+def admin_who_am_i_copy_topic():
+    """Copy all Who Am I images from one topic to another"""
+    from sqlalchemy import text
+
+    data = request.json
+    source_topic = data.get('source_topic')
+    destination_topic = data.get('destination_topic')
+
+    if not source_topic or not destination_topic:
+        return jsonify({'success': False, 'error': 'Source and destination topics required'}), 400
+
+    if source_topic == destination_topic:
+        return jsonify({'success': False, 'error': 'Source and destination must be different'}), 400
+
+    # Get all image IDs associated with the source topic
+    source_images = db.session.execute(text("""
+        SELECT image_id FROM who_am_i_image_topics WHERE topic = :topic
+    """), {'topic': source_topic}).fetchall()
+
+    if not source_images:
+        return jsonify({'success': False, 'error': f'No images found in topic: {source_topic}'}), 404
+
+    image_ids = [row.image_id for row in source_images]
+
+    # Count how many are already in destination (to avoid duplicates)
+    existing = db.session.execute(text("""
+        SELECT COUNT(*) as cnt FROM who_am_i_image_topics 
+        WHERE topic = :topic AND image_id IN ({})
+    """.format(','.join(str(id) for id in image_ids))), {'topic': destination_topic}).fetchone()
+    
+    already_exist = existing.cnt if existing else 0
+
+    # Add topic associations for the destination topic
+    added_count = 0
+    for image_id in image_ids:
+        try:
+            db.session.execute(text("""
+                INSERT OR IGNORE INTO who_am_i_image_topics (image_id, topic)
+                VALUES (:image_id, :topic)
+            """), {'image_id': image_id, 'topic': destination_topic})
+            added_count += 1
+        except Exception as e:
+            print(f"Error adding image {image_id} to {destination_topic}: {e}")
+
+    db.session.commit()
+
+    # Calculate actual new additions
+    new_additions = added_count - already_exist
+
+    return jsonify({
+        'success': True,
+        'message': f'Copied {len(image_ids)} images from "{source_topic}" to "{destination_topic}"',
+        'details': {
+            'total_images': len(image_ids),
+            'new_additions': new_additions,
+            'already_existed': already_exist
+        }
+    })
+
+
+# ==================== WHO'S ONLINE COUNTER ====================
+
+@app.route('/api/online-count')
+def get_online_count():
+    """Get count of users active in the last 5 minutes"""
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
+    
+    try:
+        five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+        
+        # Count registered users active recently
+        registered_count = 0
+        try:
+            result = db.session.execute(text("""
+                SELECT COUNT(DISTINCT user_id) FROM quiz_attempts 
+                WHERE created_at > :since
+            """), {'since': five_minutes_ago}).fetchone()
+            registered_count = result[0] if result else 0
+        except:
+            pass
+        
+        # Count guest users active recently
+        guest_count = 0
+        try:
+            result = db.session.execute(text("""
+                SELECT COUNT(*) FROM guest_users 
+                WHERE last_active > :since
+            """), {'since': five_minutes_ago}).fetchone()
+            guest_count = result[0] if result else 0
+        except:
+            pass
+        
+        total_online = registered_count + guest_count
+        
+        # Add some variability/minimum to make it look active
+        # During low activity, show at least 1 (the current user)
+        if total_online == 0:
+            total_online = 1
+        
+        return jsonify({
+            'count': total_online,
+            'online_count': total_online,
+            'registered': registered_count,
+            'guests': guest_count
+        })
+        
+    except Exception as e:
+        print(f"Error getting online count: {e}")
+        return jsonify({'count': 1, 'online_count': 1})
+
+
+# ==================== DAY 2: QUICK PLAY API ====================
+
+@app.route('/api/quick-play/<difficulty>')
+@login_required
+def get_quick_play_questions(difficulty):
+    """Get 10 random questions from Junior Cycle topics only for Quick Play mode"""
+    from sqlalchemy import text
+    
+    try:
+        # Get 10 random questions from Junior Cycle strands only
+        # Exclude any strand containing 'Senior' in the name
+        result = db.session.execute(text("""
+            SELECT q.id, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d,
+                   q.correct_answer, q.explanation, q.hint_text, q.topic, q.difficulty,
+                   q.image_url, q.image_caption, q.strand
+            FROM questions q
+            WHERE LOWER(q.difficulty) = LOWER(:difficulty)
+            AND (q.strand IS NULL OR LOWER(q.strand) NOT LIKE '%senior%')
+            ORDER BY RANDOM()
+            LIMIT 10
+        """), {'difficulty': difficulty}).fetchall()
+        
+        questions = []
+        for row in result:
+            questions.append({
+                'id': row.id,
+                'question': row.question_text,
+                'options': [row.option_a, row.option_b, row.option_c, row.option_d],
+                'correct': row.correct_answer,
+                'explanation': row.explanation,
+                'hint': row.hint_text,
+                'topic': row.topic,
+                'difficulty': row.difficulty,
+                'image_url': row.image_url,
+                'image_caption': row.image_caption
+            })
+        
+        return jsonify(questions)
+        
+    except Exception as e:
+        print(f"Quick Play error: {e}")
+        return jsonify([]), 500
+
+
+# ==================== DAY 2: WEEKLY CHALLENGE API ====================
+
+@app.route('/api/weekly-challenge/status')
+@login_required
+def get_weekly_challenge_status():
+    """Get user's weekly challenge progress"""
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
+    
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id')
+    
+    # Get start of current week (Monday)
+    today = datetime.utcnow().date()
+    start_of_week = today - timedelta(days=today.weekday())
+    
+    try:
+        # Count quizzes this week
+        if guest_code:
+            quiz_count = db.session.execute(text("""
+                SELECT COUNT(*) FROM guest_quiz_attempts
+                WHERE guest_code = :code AND DATE(completed_at) >= :start
+            """), {'code': guest_code, 'start': start_of_week}).fetchone()[0]
+            
+            high_score_count = db.session.execute(text("""
+                SELECT COUNT(*) FROM guest_quiz_attempts
+                WHERE guest_code = :code AND DATE(completed_at) >= :start AND percentage >= 80
+            """), {'code': guest_code, 'start': start_of_week}).fetchone()[0]
+        else:
+            quiz_count = db.session.execute(text("""
+                SELECT COUNT(*) FROM quiz_attempts
+                WHERE user_id = :uid AND DATE(created_at) >= :start
+            """), {'uid': user_id, 'start': start_of_week}).fetchone()[0]
+            
+            high_score_count = db.session.execute(text("""
+                SELECT COUNT(*) FROM quiz_attempts
+                WHERE user_id = :uid AND DATE(created_at) >= :start AND percentage >= 80
+            """), {'uid': user_id, 'start': start_of_week}).fetchone()[0]
+        
+        # For streak, we'd need to track max streak per quiz - simplified for now
+        max_streak = 0
+        
+        return jsonify({
+            'challenge': {
+                'goals': [
+                    {'id': 'goal1', 'target': 5, 'current': quiz_count, 'points': 50, 'type': 'quizzes'},
+                    {'id': 'goal2', 'target': 3, 'current': high_score_count, 'points': 75, 'type': 'highscores'},
+                    {'id': 'goal3', 'target': 5, 'current': max_streak, 'points': 100, 'type': 'streak'}
+                ]
+            },
+            'week_start': start_of_week.isoformat()
+        })
+        
+    except Exception as e:
+        print(f"Weekly challenge error: {e}")
+        return jsonify({'challenge': None, 'error': str(e)})
+
+
+@app.route('/api/weekly-challenge/update', methods=['POST'])
+@login_required
+def update_weekly_challenge():
+    """Update weekly challenge progress (called after quiz completion)"""
+    # Progress is tracked via quiz_attempts, so this is mainly for acknowledgment
+    return jsonify({'success': True})
+
+
+# ==================== DAY 2: ENHANCED LEADERBOARD API ====================
+
+@app.route('/api/leaderboard/<period>')
+@login_required
+def get_leaderboard(period):
+    """Get leaderboard - weekly or all-time, includes user position even if not in top 20"""
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
+    
+    current_guest = session.get('guest_code')
+    
+    try:
+        if period == 'weekly':
+            # Get start of current week
+            today = datetime.utcnow().date()
+            start_of_week = today - timedelta(days=today.weekday())
+            
+            # Weekly leaderboard from guest_quiz_attempts - top 20
+            result = db.session.execute(text("""
+                SELECT guest_code, SUM(score) as total_score,
+                       COUNT(*) as quiz_count
+                FROM guest_quiz_attempts
+                WHERE DATE(completed_at) >= :start
+                GROUP BY guest_code
+                ORDER BY total_score DESC
+                LIMIT 20
+            """), {'start': start_of_week}).fetchall()
+            
+            # Get current user's position if not in top 20
+            user_position = None
+            user_score = None
+            if current_guest:
+                # Get user's rank
+                rank_result = db.session.execute(text("""
+                    SELECT COUNT(*) + 1 as rank, 
+                           (SELECT SUM(score) FROM guest_quiz_attempts 
+                            WHERE guest_code = :code AND DATE(completed_at) >= :start) as my_score
+                    FROM (
+                        SELECT guest_code, SUM(score) as total_score
+                        FROM guest_quiz_attempts
+                        WHERE DATE(completed_at) >= :start
+                        GROUP BY guest_code
+                    ) rankings
+                    WHERE total_score > COALESCE(
+                        (SELECT SUM(score) FROM guest_quiz_attempts 
+                         WHERE guest_code = :code AND DATE(completed_at) >= :start), 0
+                    )
+                """), {'code': current_guest, 'start': start_of_week}).fetchone()
+                if rank_result:
+                    user_position = rank_result.rank
+                    user_score = rank_result.my_score or 0
+            
+        else:  # all-time
+            # All-time leaderboard from guest_users - top 20
+            result = db.session.execute(text("""
+                SELECT guest_code, total_score, quizzes_completed as quiz_count
+                FROM guest_users
+                WHERE is_active = 1
+                ORDER BY total_score DESC
+                LIMIT 20
+            """)).fetchall()
+            
+            # Get current user's position if not in top 20
+            user_position = None
+            user_score = None
+            if current_guest:
+                rank_result = db.session.execute(text("""
+                    SELECT COUNT(*) + 1 as rank,
+                           (SELECT total_score FROM guest_users WHERE guest_code = :code) as my_score
+                    FROM guest_users
+                    WHERE is_active = 1 
+                    AND total_score > COALESCE(
+                        (SELECT total_score FROM guest_users WHERE guest_code = :code), 0
+                    )
+                """), {'code': current_guest}).fetchone()
+                if rank_result:
+                    user_position = rank_result.rank
+                    user_score = rank_result.my_score or 0
+        
+        leaderboard = []
+        user_in_top20 = False
+        
+        for row in result:
+            is_current = row.guest_code == current_guest
+            if is_current:
+                user_in_top20 = True
+            leaderboard.append({
+                'guest_code': row.guest_code,
+                'name': row.guest_code.capitalize() if row.guest_code else 'Anonymous',
+                'total_score': row.total_score or 0,
+                'points': row.total_score or 0,
+                'quiz_count': row.quiz_count or 0,
+                'is_current_user': is_current
+            })
+        
+        # Build response
+        response_data = {
+            'leaderboard': leaderboard,
+            'period': period
+        }
+        
+        # Add user position if not in top 20
+        if current_guest and not user_in_top20 and user_position:
+            response_data['my_position'] = {
+                'rank': user_position,
+                'guest_code': current_guest,
+                'name': current_guest.capitalize(),
+                'points': user_score,
+                'is_current_user': True
+            }
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"Leaderboard error: {e}")
+        return jsonify({'leaderboard': [], 'error': str(e)})
+
+
+# ==================== WHO AM I? API ENDPOINTS ====================
+
+@app.route('/api/debug-session')
+def debug_session():
+    """Debug endpoint to check session state - REMOVE IN PRODUCTION"""
+    return jsonify({
+        'user_id': session.get('user_id'),
+        'guest_code': session.get('guest_code'),
+        'is_guest': session.get('is_guest'),
+        'guest_type': session.get('guest_type'),
+        'role': session.get('role'),
+        'session_keys': list(session.keys())
+    })
+
+@app.route('/api/debug-bonus-attempts')
+def debug_bonus_attempts():
+    """Debug endpoint to check bonus attempts in database"""
+    from sqlalchemy import text
+    
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id')
+    
+    results = {
+        'session_guest_code': guest_code,
+        'session_user_id': user_id,
+        'attempts_by_guest_code': [],
+        'attempts_by_user_id': [],
+        'total_in_table': 0
+    }
+    
+    try:
+        # Count total attempts
+        total = db.session.execute(text("SELECT COUNT(*) FROM bonus_question_attempts")).fetchone()
+        results['total_in_table'] = total[0] if total else 0
+        
+        # Check attempts by guest_code
+        if guest_code:
+            by_guest = db.session.execute(text("""
+                SELECT id, question_id, guest_code, user_id, is_correct, attempted_at 
+                FROM bonus_question_attempts 
+                WHERE guest_code = :code
+                ORDER BY attempted_at DESC
+                LIMIT 10
+            """), {'code': guest_code}).fetchall()
+            
+            results['attempts_by_guest_code'] = [
+                {'id': r[0], 'question_id': r[1], 'guest_code': r[2], 'user_id': r[3], 'is_correct': r[4], 'attempted_at': str(r[5])}
+                for r in by_guest
+            ]
+        
+        # Check attempts by user_id
+        if user_id:
+            by_user = db.session.execute(text("""
+                SELECT id, question_id, guest_code, user_id, is_correct, attempted_at 
+                FROM bonus_question_attempts 
+                WHERE user_id = :uid
+                ORDER BY attempted_at DESC
+                LIMIT 10
+            """), {'uid': user_id}).fetchall()
+            
+            results['attempts_by_user_id'] = [
+                {'id': r[0], 'question_id': r[1], 'guest_code': r[2], 'user_id': r[3], 'is_correct': r[4], 'attempted_at': str(r[5])}
+                for r in by_user
+            ]
+            
+    except Exception as e:
+        results['error'] = str(e)
+    
+    return jsonify(results)
+
+@app.route('/api/who-am-i/start', methods=['POST'])
+def who_am_i_start():
+    """Initialize a new Who Am I session for a quiz"""
+    from sqlalchemy import text
+
+    # Support both regular users and repeat guests
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    
+    print(f"🔍 WHO AM I START - user_id: {user_id}, guest_code: {guest_code}")
+    
+    if not user_id and not guest_code:
+        print("❌ WHO AM I START - No user_id or guest_code in session")
+        return jsonify({'error': 'Not logged in'}), 401
+
+    data = request.json
+    topic = data.get('topic')
+    difficulty = data.get('difficulty')
+    quiz_attempt_id = data.get('quiz_attempt_id')
+    
+    print(f"🔍 WHO AM I START - topic: {topic}, difficulty: {difficulty}, quiz_attempt_id: {quiz_attempt_id}")
+
+    # Get a random active image for this topic/difficulty
+    # Now uses the junction table for multi-topic support
+    # For adaptive quizzes, try 'adaptive' difficulty first, then fall back to any difficulty
+    result = db.session.execute(text("""
+        SELECT DISTINCT i.id, i.image_filename, i.answer, i.hint
+        FROM who_am_i_images i
+        JOIN who_am_i_image_topics t ON i.id = t.image_id
+        WHERE t.topic = :topic AND i.difficulty = :difficulty AND i.active = 1
+        ORDER BY RANDOM()
+        LIMIT 1
+    """), {'topic': topic, 'difficulty': difficulty}).fetchone()
+    
+    # Fallback: if difficulty is 'adaptive' and no images found, try any difficulty
+    if not result and difficulty == 'adaptive':
+        print(f"🔄 WHO AM I START - No 'adaptive' images, trying any difficulty for topic={topic}")
+        result = db.session.execute(text("""
+            SELECT DISTINCT i.id, i.image_filename, i.answer, i.hint
+            FROM who_am_i_images i
+            JOIN who_am_i_image_topics t ON i.id = t.image_id
+            WHERE t.topic = :topic AND i.active = 1
+            ORDER BY RANDOM()
+            LIMIT 1
+        """), {'topic': topic}).fetchone()
+    
+    # Second fallback: if still no images for specific topic, use any available image
+    if not result and difficulty == 'adaptive':
+        print(f"🔄 WHO AM I START - No images for topic={topic}, trying any available image")
+        result = db.session.execute(text("""
+            SELECT DISTINCT i.id, i.image_filename, i.answer, i.hint
+            FROM who_am_i_images i
+            WHERE i.active = 1
+            ORDER BY RANDOM()
+            LIMIT 1
+        """)).fetchone()
+
+    if not result:
+        print(f"❌ WHO AM I START - No images found for topic={topic}, difficulty={difficulty}")
+        return jsonify({'error': 'No images available for this topic/difficulty'}), 404
+
+    image_id = result.id
+    image_filename = result.image_filename
+    answer = result.answer
+    hint = result.hint
+    
+    print(f"✅ WHO AM I START - Found image: {image_id}, answer: {answer}")
+
+    # Create session - include guest_code for repeat guests
+    # First, ensure guest_code column exists (add it if missing)
+    try:
+        db.session.execute(text("SELECT guest_code FROM who_am_i_sessions LIMIT 1"))
+    except:
+        try:
+            db.session.execute(text("ALTER TABLE who_am_i_sessions ADD COLUMN guest_code VARCHAR(50)"))
+            db.session.commit()
+            print("✅ Added guest_code column to who_am_i_sessions")
+        except:
+            db.session.rollback()
+    
+    try:
+        insert_result = db.session.execute(text("""
+            INSERT INTO who_am_i_sessions (user_id, guest_code, quiz_attempt_id, image_id, tiles_revealed, guesses_made)
+            VALUES (:user_id, :guest_code, :quiz_attempt_id, :image_id, '[]', 0)
+        """), {
+            'user_id': user_id,
+            'guest_code': guest_code,
+            'quiz_attempt_id': quiz_attempt_id,
+            'image_id': image_id
+        })
+
+        db.session.commit()
+        session_id = insert_result.lastrowid
+        print(f"✅ WHO AM I START - Created session: {session_id}")
+    except Exception as e:
+        print(f"❌ WHO AM I START - Error creating session: {e}")
+        db.session.rollback()
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+
+    return jsonify({
+        'session_id': session_id,
+        'image_url': url_for('static', filename=f'who_am_i_images/{image_filename}'),
+        'hint': hint,
+        'total_tiles': 25
+    })
+
+
+@app.route('/api/who-am-i/reveal', methods=['POST'])
+def who_am_i_reveal():
+    """Reveal a tile after correct answer"""
+    from sqlalchemy import text
+
+    # Support both regular users and repeat guests
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    
+    if not user_id and not guest_code:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    data = request.json
+    session_id = data.get('session_id')
+
+    # Get current session - match on guest_code for repeat guests, user_id for others
+    if guest_code:
+        result = db.session.execute(text("""
+            SELECT tiles_revealed FROM who_am_i_sessions
+            WHERE id = :session_id AND guest_code = :guest_code
+        """), {'session_id': session_id, 'guest_code': guest_code}).fetchone()
+    else:
+        result = db.session.execute(text("""
+            SELECT tiles_revealed FROM who_am_i_sessions
+            WHERE id = :session_id AND user_id = :user_id AND guest_code IS NULL
+        """), {'session_id': session_id, 'user_id': user_id}).fetchone()
+
+    if not result:
+        return jsonify({'error': 'Session not found'}), 404
+
+    tiles_revealed = json.loads(result.tiles_revealed)
+
+    # Find next unrevealed tile
+    all_tiles = list(range(16))
+    available_tiles = [t for t in all_tiles if t not in tiles_revealed]
+
+    if not available_tiles:
+        return jsonify({'tiles_revealed': tiles_revealed, 'all_revealed': True})
+
+    # Pick random tile to reveal
+    new_tile = random.choice(available_tiles)
+    tiles_revealed.append(new_tile)
+
+    # Update session
+    db.session.execute(text("""
+        UPDATE who_am_i_sessions
+        SET tiles_revealed = :tiles
+        WHERE id = :session_id
+    """), {'tiles': json.dumps(tiles_revealed), 'session_id': session_id})
+
+    db.session.commit()
+
+    return jsonify({
+        'tiles_revealed': tiles_revealed,
+        'new_tile': new_tile,
+        'all_revealed': len(tiles_revealed) >= 25
+    })
+
+
+@app.route('/api/who-am-i/guess', methods=['POST'])
+def who_am_i_guess():
+    """Submit a guess for Who Am I"""
+    from sqlalchemy import text
+
+    # Support both regular users and repeat guests
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    
+    if not user_id and not guest_code:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    data = request.json
+    session_id = data.get('session_id')
+    guess = data.get('guess', '').strip()
+
+    # Get session and image details - match on guest_code for repeat guests
+    if guest_code:
+        result = db.session.execute(text("""
+            SELECT s.tiles_revealed, s.guesses_made, s.correct_guess, s.quiz_attempt_id,
+                   i.answer, i.accepted_answers
+            FROM who_am_i_sessions s
+            JOIN who_am_i_images i ON s.image_id = i.id
+            WHERE s.id = :session_id AND s.guest_code = :guest_code
+        """), {'session_id': session_id, 'guest_code': guest_code}).fetchone()
+    else:
+        result = db.session.execute(text("""
+            SELECT s.tiles_revealed, s.guesses_made, s.correct_guess, s.quiz_attempt_id,
+                   i.answer, i.accepted_answers
+            FROM who_am_i_sessions s
+            JOIN who_am_i_images i ON s.image_id = i.id
+            WHERE s.id = :session_id AND s.user_id = :user_id AND s.guest_code IS NULL
+        """), {'session_id': session_id, 'user_id': user_id}).fetchone()
+
+    if not result:
+        return jsonify({'error': 'Session not found'}), 404
+
+    tiles_revealed = json.loads(result.tiles_revealed)
+    guesses_made = result.guesses_made
+    correct_guess = result.correct_guess
+    quiz_attempt_id = result.quiz_attempt_id  # NOW IT'S RETRIEVED!
+    correct_answer = result.answer
+    accepted_answers_json = result.accepted_answers
+
+    # Check if already guessed correctly
+    if correct_guess:
+        return jsonify({'error': 'Already guessed correctly'}), 400
+
+    # Check guess limit
+    if guesses_made >= 3:
+        return jsonify({'error': 'No guesses remaining', 'correct': False, 'answer': correct_answer}), 400
+
+    # Flexible answer checking with variants
+    # Parse accepted answers
+    accepted_answers = []
+    if accepted_answers_json:
+        try:
+            accepted_answers = json.loads(accepted_answers_json)
+        except:
+            pass
+
+    # If no variants defined, fall back to original answer only
+    if not accepted_answers:
+        accepted_answers = [correct_answer.lower().strip()]
+
+    # Normalize guess
+    guess_normalized = guess.lower().strip()
+
+    # Check if guess matches any accepted variant
+    is_correct = guess_normalized in [a.lower().strip() for a in accepted_answers]
+    guesses_made += 1
+
+    # Calculate bonus points if correct
+    bonus_points = 0
+    if is_correct:
+        tiles_hidden = 25 - len(tiles_revealed)  # 5×5 grid = 25 tiles
+        if tiles_hidden >= 20:      # Guessed with 80%+ hidden (very early)
+            bonus_points = 100
+        elif tiles_hidden >= 15:    # Guessed with 60-79% hidden (early)
+            bonus_points = 75
+        elif tiles_hidden >= 10:    # Guessed with 40-59% hidden (moderate)
+            bonus_points = 50
+        elif tiles_hidden >= 5:     # Guessed with 20-39% hidden (late)
+            bonus_points = 25
+        else:                        # Less than 5 tiles hidden (very late)
+            bonus_points = 10
+
+        # Update session
+        db.session.execute(text("""
+            UPDATE who_am_i_sessions
+            SET guesses_made = :guesses, correct_guess = 1, bonus_points_earned = :bonus, completed_at = CURRENT_TIMESTAMP
+            WHERE id = :session_id
+        """), {'guesses': guesses_made, 'bonus': bonus_points, 'session_id': session_id})
+    else:
+        # Just increment guesses
+        db.session.execute(text("""
+            UPDATE who_am_i_sessions
+            SET guesses_made = :guesses
+            WHERE id = :session_id
+        """), {'guesses': guesses_made, 'session_id': session_id})
+
+    db.session.commit()
+
+    # If correct, try to load another image automatically
+    next_session_data = None
+    if is_correct:
+        try:
+            # Get topic/difficulty - prefer from request (for adaptive quiz), fall back to quiz_attempts
+            request_topic = data.get('topic')
+            request_difficulty = data.get('difficulty')
+            
+            quiz_topic = None
+            quiz_difficulty = None
+            
+            if request_topic and request_difficulty:
+                # Use values from request (adaptive quiz passes these directly)
+                quiz_topic = request_topic
+                quiz_difficulty = request_difficulty
+                print(f"🔍 Using topic/difficulty from request: {quiz_topic}, {quiz_difficulty}")
+            else:
+                # Fall back to quiz_attempts lookup (regular quiz)
+                quiz_info = db.session.execute(text("""
+                    SELECT topic, difficulty FROM quiz_attempts WHERE id = :quiz_id
+                """), {'quiz_id': quiz_attempt_id}).fetchone()
+                
+                if quiz_info:
+                    quiz_topic = quiz_info.topic
+                    quiz_difficulty = quiz_info.difficulty
+                    print(f"🔍 Using topic/difficulty from quiz_attempts: {quiz_topic}, {quiz_difficulty}")
+
+            print(f"🔍 Looking for next image - quiz_id: {quiz_attempt_id}, topic: {quiz_topic}, difficulty: {quiz_difficulty}")
+
+            if quiz_topic:
+                # Get list of images already shown in this quiz
+                shown_images = db.session.execute(text("""
+                    SELECT image_id FROM who_am_i_sessions
+                    WHERE quiz_attempt_id = :quiz_id
+                """), {'quiz_id': quiz_attempt_id}).fetchall()
+
+                shown_image_ids = [row.image_id for row in shown_images]
+                print(f"🚫 Already shown image IDs: {shown_image_ids}")
+
+                # Build query to exclude already-shown images
+                if shown_image_ids:
+                    # Create string of IDs for NOT IN clause
+                    id_list = ','.join([str(id) for id in shown_image_ids])
+
+                    print(f"🔎 Searching with: topic={quiz_topic}, difficulty={quiz_difficulty}, excluding IDs: {id_list}")
+
+                    next_image = db.session.execute(text(f"""
+                        SELECT DISTINCT i.id, i.image_filename, i.answer, i.hint
+                        FROM who_am_i_images i
+                        JOIN who_am_i_image_topics t ON i.id = t.image_id
+                        WHERE t.topic = :topic
+                        AND LOWER(i.difficulty) = LOWER(:difficulty)
+                        AND i.active = 1
+                        AND i.id NOT IN ({id_list})
+                        ORDER BY RANDOM()
+                        LIMIT 1
+                    """), {
+                        'topic': quiz_topic,
+                        'difficulty': quiz_difficulty
+                    }).fetchone()
+                    
+                    # FALLBACK: If 'adaptive' difficulty, try ANY difficulty for this topic
+                    if not next_image and quiz_difficulty == 'adaptive':
+                        print(f"🔄 No 'adaptive' images, trying any difficulty for topic={quiz_topic}")
+                        next_image = db.session.execute(text(f"""
+                            SELECT DISTINCT i.id, i.image_filename, i.answer, i.hint
+                            FROM who_am_i_images i
+                            JOIN who_am_i_image_topics t ON i.id = t.image_id
+                            WHERE t.topic = :topic
+                            AND i.active = 1
+                            AND i.id NOT IN ({id_list})
+                            ORDER BY RANDOM()
+                            LIMIT 1
+                        """), {
+                            'topic': quiz_topic
+                        }).fetchone()
+                    
+                    # FALLBACK 2: Try ANY active image not yet shown
+                    if not next_image and quiz_difficulty == 'adaptive':
+                        print(f"🔄 No topic images, trying any active image")
+                        next_image = db.session.execute(text(f"""
+                            SELECT DISTINCT i.id, i.image_filename, i.answer, i.hint
+                            FROM who_am_i_images i
+                            WHERE i.active = 1
+                            AND i.id NOT IN ({id_list})
+                            ORDER BY RANDOM()
+                            LIMIT 1
+                        """)).fetchone()
+                else:
+                    print(f"🔎 First image search with: topic={quiz_topic}, difficulty={quiz_difficulty}")
+                    # First image, get any
+                    next_image = db.session.execute(text("""
+                        SELECT DISTINCT i.id, i.image_filename, i.answer, i.hint
+                        FROM who_am_i_images i
+                        JOIN who_am_i_image_topics t ON i.id = t.image_id
+                        WHERE t.topic = :topic
+                        AND LOWER(i.difficulty) = LOWER(:difficulty)
+                        AND i.active = 1
+                        ORDER BY RANDOM()
+                        LIMIT 1
+                    """), {
+                        'topic': quiz_topic,
+                        'difficulty': quiz_difficulty
+                    }).fetchone()
+                    
+                    # FALLBACK for first image too
+                    if not next_image and quiz_difficulty == 'adaptive':
+                        next_image = db.session.execute(text("""
+                            SELECT DISTINCT i.id, i.image_filename, i.answer, i.hint
+                            FROM who_am_i_images i
+                            WHERE i.active = 1
+                            ORDER BY RANDOM()
+                            LIMIT 1
+                        """)).fetchone()
+
+                if next_image:
+                    print(f"✅ Next image found! ID: {next_image.id}, Answer: {next_image.answer}")
+                    # Create new session for next image - include guest_code for repeat guests
+                    new_session = db.session.execute(text("""
+                        INSERT INTO who_am_i_sessions (user_id, guest_code, quiz_attempt_id, image_id, tiles_revealed, guesses_made)
+                        VALUES (:user_id, :guest_code, :quiz_attempt_id, :image_id, '[]', 0)
+                    """), {
+                        'user_id': user_id,
+                        'guest_code': guest_code,
+                        'quiz_attempt_id': quiz_attempt_id,
+                        'image_id': next_image.id
+                    })
+                    db.session.commit()
+
+                    next_session_data = {
+                        'session_id': new_session.lastrowid,
+                        'image_url': url_for('static', filename=f'who_am_i_images/{next_image.image_filename}'),
+                        'hint': next_image.hint,
+                        'total_tiles': 25
+                    }
+                    print(f"✅ New session created: {new_session.lastrowid}")
+                else:
+                    print(f"ℹ️ No more images available for topic={quiz_topic}, difficulty={quiz_difficulty}")
+        except Exception as e:
+            # Log error but don't break the guess response
+            print(f"❌ Error loading next Who Am I image: {e}")
+            import traceback
+            traceback.print_exc()
+
+    response_data = {
+        'correct': is_correct,
+        'bonus_points': bonus_points,
+        'guesses_remaining': 3 - guesses_made,
+        'answer': correct_answer if is_correct or guesses_made >= 3 else None
+    }
+
+    # Add next session info if available
+    if next_session_data:
+        response_data['next_session'] = next_session_data
+
+    return jsonify(response_data)
+
+# ==================== AVATAR SYSTEM ROUTES ====================
+# All avatar routes check FEATURE_FLAGS before executing
+# BACKOUT: Set AVATAR_SYSTEM_ENABLED=false to disable all routes
+
+@app.route('/avatar/shop')
+def avatar_shop_page():
+    """Avatar customization shop page"""
+    if not FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False):
+        flash('Avatar shop is currently unavailable', 'warning')
+        return redirect(url_for('student_app'))
+
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    is_casual_guest = session.get('is_guest', False)
+
+    if not user_id and not guest_code:
+        flash('Please log in to access the avatar shop', 'warning')
+        return redirect(url_for('login'))
+
+    # Get user info based on user type
+    user_name = None
+    display_name = None
+
+    if guest_code:
+        # Repeat guest with animal code - use guest_code as name
+        display_name = guest_code
+    elif is_casual_guest:
+        # Casual guest (Quick Try) - show generic name
+        display_name = "Quick Try Guest"
+    elif user_id:
+        # Regular registered user
+        user = User.query.get(user_id)
+        user_name = user.full_name if user else None
+        display_name = user_name
+
+    # Get points - prioritize guest_code for repeat guests
+    if guest_code:
+        points, level = get_avatar_user_points(None, guest_code)
+    elif user_id and not is_casual_guest:
+        points, level = get_avatar_user_points(user_id, None)
+    else:
+        # Casual guests don't have persistent points for avatar shop
+        points, level = 0, 1
+
+    return render_template('avatar_shop.html',
+        user_name=display_name,
+        guest_code=guest_code,
+        points=points,
+        level=level,
+        is_casual_guest=is_casual_guest
+    )
+
+@app.route('/api/avatar/items', methods=['GET'])
+def api_avatar_items():
+    """Get all available shop items"""
+    if not FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False):
+        return jsonify({'success': False, 'message': 'Avatar system disabled'}), 503
+
+    item_type = request.args.get('type')  # Optional filter
+
+    query = AvatarItem.query.filter_by(is_active=True)
+    if item_type:
+        query = query.filter_by(item_type=item_type)
+
+    items = query.order_by(AvatarItem.sort_order).all()
+
+    return jsonify({
+        'success': True,
+        'items': [item.to_dict() for item in items]
+    })
+
+@app.route('/api/avatar/inventory', methods=['GET'])
+def api_avatar_inventory():
+    """Get current user's inventory and points"""
+    if not FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False):
+        return jsonify({'success': False, 'message': 'Avatar system disabled'}), 503
+
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    is_casual_guest = session.get('is_guest', False)
+
+    if not user_id and not guest_code:
+        return jsonify({
+            'success': False,
+            'message': 'Not logged in',
+            'inventory': [],
+            'points': 0
+        })
+
+    # Get inventory based on user type
+    query = UserAvatarInventory.query
+    if guest_code:
+        # Repeat guest - use guest_code
+        query = query.filter_by(guest_code=guest_code)
+        points, level = get_avatar_user_points(None, guest_code)
+    elif user_id and not is_casual_guest:
+        # Regular registered user
+        query = query.filter_by(user_id=user_id)
+        points, level = get_avatar_user_points(user_id, None)
+    else:
+        # Casual guest - no persistent inventory or points
+        return jsonify({
+            'success': True,
+            'inventory': [],
+            'points': 0,
+            'level': 1,
+            'is_casual_guest': True
+        })
+
+    inventory = query.all()
+
+    return jsonify({
+        'success': True,
+        'inventory': [inv.to_dict() for inv in inventory],
+        'points': points,
+        'level': level
+    })
+
+@app.route('/api/avatar/equipped', methods=['GET'])
+def api_avatar_equipped():
+    """Get currently equipped avatar configuration"""
+    if not FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False):
+        return jsonify({'success': False, 'message': 'Avatar system disabled'}), 503
+
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+
+    # DEBUG: Log what we're looking for
+    print(f"🔍 api_avatar_equipped called: user_id={user_id}, guest_code={guest_code}")
+
+    equipped = get_equipped_avatar(user_id, guest_code)
+
+    # DEBUG: Log what we found
+    print(f"🎭 Returning equipped: {equipped}")
+
+    return jsonify({
+        'success': True,
+        'equipped': equipped,
+        '_debug': {
+            'session_user_id': user_id,
+            'session_guest_code': guest_code
+        }
+    })
+
+@app.route('/api/avatar/purchase', methods=['POST'])
+def api_avatar_purchase():
+    """Purchase an item"""
+    if not FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False):
+        return jsonify({'success': False, 'message': 'Avatar system disabled'}), 503
+
+    if not FEATURE_FLAGS.get('AVATAR_SHOP_ENABLED', False):
+        return jsonify({'success': False, 'message': 'Avatar shop disabled'}), 503
+
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+
+    if not user_id and not guest_code:
+        return jsonify({'success': False, 'message': 'You must be logged in to purchase items'}), 401
+
+    data = request.get_json()
+    item_id = data.get('item_id')
+
+    if not item_id:
+        return jsonify({'success': False, 'message': 'Item ID is required'}), 400
+
+    # Get the item
+    item = AvatarItem.query.get(item_id)
+    if not item:
+        return jsonify({'success': False, 'message': 'Item not found'}), 404
+
+    if not item.is_active:
+        return jsonify({'success': False, 'message': 'Item is not available'}), 400
+
+    # Check if already owned
+    if avatar_owns_item(item_id, user_id, guest_code):
+        return jsonify({'success': False, 'message': 'You already own this item'}), 400
+
+    # Check if it's a free/default item
+    if item.is_default or item.point_cost == 0:
+        # Just add to inventory, no points needed
+        inventory_entry = UserAvatarInventory(
+            user_id=user_id,
+            guest_code=guest_code,
+            item_id=item_id
+        )
+        db.session.add(inventory_entry)
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': f"Added {item.display_name} to your collection!",
+            'new_points': None
+        })
+
+    # Get current points
+    current_points, _ = get_avatar_user_points(user_id, guest_code)
+
+    # Check if enough points
+    if current_points < item.point_cost:
+        return jsonify({
+            'success': False,
+            'message': f"Not enough points. You need {item.point_cost} but have {current_points}"
+        }), 400
+
+    # Deduct points
+    from sqlalchemy import text
+    new_points = current_points - item.point_cost
+
+    # Deduct from correct table (guest_code takes priority)
+    if guest_code:
+        db.session.execute(text(
+            "UPDATE guest_users SET total_score = :points WHERE guest_code = :code"
+        ), {"points": new_points, "code": guest_code})
+    elif user_id:
+        db.session.execute(text(
+            "UPDATE user_stats SET total_points = :points WHERE user_id = :uid"
+        ), {"points": new_points, "uid": user_id})
+
+    # Add to inventory (store both for tracking, but guest_code is primary for guests)
+    inventory_entry = UserAvatarInventory(
+        user_id=user_id if not guest_code else None,  # Only set user_id for actual registered users
+        guest_code=guest_code,
+        item_id=item_id
+    )
+    db.session.add(inventory_entry)
+
+    # AUTO-EQUIP: Automatically equip the purchased item
+    print(f"🛒 AUTO-EQUIP: user_id={user_id}, guest_code={guest_code}, item_type={item.item_type}, item_key={item.item_key}")
+
+    if guest_code:
+        equipped = UserAvatarEquipped.query.filter_by(guest_code=guest_code).first()
+        print(f"🔍 Found equipped for guest_code={guest_code}: {equipped}")
+        if not equipped:
+            equipped = UserAvatarEquipped(guest_code=guest_code)
+            db.session.add(equipped)
+            print(f"📝 Created new equipped record for guest_code={guest_code}")
+    elif user_id:
+        equipped = UserAvatarEquipped.query.filter_by(user_id=user_id).first()
+        print(f"🔍 Found equipped for user_id={user_id}: {equipped}")
+        if not equipped:
+            equipped = UserAvatarEquipped(user_id=user_id)
+            db.session.add(equipped)
+            print(f"📝 Created new equipped record for user_id={user_id}")
+    else:
+        equipped = None
+
+    # Set the appropriate slot based on item type
+    if equipped:
+        print(f"📝 Before equip: animal={equipped.animal_key}, hat={equipped.hat_key}, glasses={equipped.glasses_key}")
+        if item.item_type == 'animal':
+            equipped.animal_key = item.item_key
+        elif item.item_type == 'hat':
+            equipped.hat_key = item.item_key
+        elif item.item_type == 'glasses':
+            equipped.glasses_key = item.item_key
+        elif item.item_type == 'background':
+            equipped.background_key = item.item_key
+        elif item.item_type == 'accessory':
+            equipped.accessory_key = item.item_key
+        equipped.updated_at = datetime.utcnow()
+        print(f"📝 After equip: animal={equipped.animal_key}, hat={equipped.hat_key}, glasses={equipped.glasses_key}")
+
+    # Log the purchase
+    purchase_log = AvatarPurchaseLog(
+        user_id=user_id,
+        guest_code=guest_code,
+        item_id=item_id,
+        points_spent=item.point_cost,
+        points_before=current_points,
+        points_after=new_points
+    )
+    db.session.add(purchase_log)
+
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message': f"Purchased {item.display_name} for {item.point_cost} points!",
+        'new_points': new_points
+    })
+
+@app.route('/api/avatar/equip', methods=['POST'])
+def api_avatar_equip():
+    """Equip an item"""
+    if not FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False):
+        return jsonify({'success': False, 'message': 'Avatar system disabled'}), 503
+
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+
+    if not user_id and not guest_code:
+        return jsonify({'success': False, 'message': 'You must be logged in to equip items'}), 401
+
+    data = request.get_json()
+    item_type = data.get('item_type')
+    item_key = data.get('item_key')
+
+    if not item_type or not item_key:
+        return jsonify({'success': False, 'message': 'Item type and key are required'}), 400
+
+    # Verify item exists
+    item = AvatarItem.query.filter_by(
+        item_type=item_type,
+        item_key=item_key
+    ).first()
+
+    if not item:
+        return jsonify({'success': False, 'message': 'Item not found'}), 404
+
+    # Check ownership (default items are always available)
+    if not item.is_default and not avatar_owns_item(item.id, user_id, guest_code):
+        return jsonify({'success': False, 'message': "You don't own this item"}), 400
+
+    # Get or create equipped record (guest_code takes priority)
+    if guest_code:
+        equipped = UserAvatarEquipped.query.filter_by(guest_code=guest_code).first()
+        if not equipped:
+            equipped = UserAvatarEquipped(guest_code=guest_code)
+            db.session.add(equipped)
+    elif user_id:
+        equipped = UserAvatarEquipped.query.filter_by(user_id=user_id).first()
+        if not equipped:
+            equipped = UserAvatarEquipped(user_id=user_id)
+            db.session.add(equipped)
+    else:
+        return jsonify({'success': False, 'message': 'No user or guest identified'}), 400
+
+    # Update the appropriate slot
+    if item_type == 'animal':
+        equipped.animal_key = item_key
+    elif item_type == 'hat':
+        equipped.hat_key = item_key
+    elif item_type == 'glasses':
+        equipped.glasses_key = item_key
+    elif item_type == 'background':
+        equipped.background_key = item_key
+    elif item_type == 'accessory':
+        equipped.accessory_key = item_key
+    else:
+        return jsonify({'success': False, 'message': f'Unknown item type: {item_type}'}), 400
+
+    equipped.updated_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message': f"Equipped {item.display_name}!"
+    })
+
+@app.route('/api/avatar/grant-defaults', methods=['POST'])
+def api_avatar_grant_defaults():
+    """Grant default items to current user (call on first login)"""
+    if not FEATURE_FLAGS.get('AVATAR_SYSTEM_ENABLED', False):
+        return jsonify({'success': False, 'message': 'Avatar system disabled'}), 503
+
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+
+    if not user_id and not guest_code:
+        return jsonify({'success': False, 'message': 'Not logged in'}), 401
+
+    grant_default_avatar_items(user_id, guest_code)
+
+    return jsonify({
+        'success': True,
+        'message': 'Default items granted'
+    })
+
+# ==================== TOPIC MANAGEMENT MODULE ====================
+# Import and register topic management routes
+try:
+    from topic_management import register_topic_routes
+    register_topic_routes(app, db)
+except ImportError:
+    print("Warning: topic_management.py not found - topic management disabled")
+except Exception as e:
+    print(f"Warning: Could not load topic management: {e}")
+
+# ==================== QUESTION GENERATOR MODULE ====================
+# Import and register AI question generator routes
+try:
+    from question_generator import register_generator_routes
+    register_generator_routes(app, db)
+except ImportError:
+    print("Warning: question_generator.py not found - question generator disabled")
+except Exception as e:
+    print(f"Warning: Could not load question generator: {e}")
+
+# ==================== CHART QUESTION GENERATOR MODULE ====================
+# Import and register chart-based question generator routes
+try:
+    from chart_question_generator import register_chart_generator_routes
+    
+    # Create admin_required_api decorator for the chart generator
+    def admin_required_api_wrapper(f):
+        from functools import wraps
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({'error': 'Login required'}), 401
+            user = User.query.get(session['user_id'])
+            if not user or user.role != 'admin':
+                return jsonify({'error': 'Admin access required'}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    
+    register_chart_generator_routes(app, db, Question, admin_required_api_wrapper)
+    print("✓ Chart question generator loaded successfully")
+except ImportError:
+    print("Warning: chart_question_generator.py not found - chart generator disabled")
+except Exception as e:
+    print(f"Warning: Could not load chart generator: {e}")
+
+# ==================== GEOMETRY QUESTION GENERATOR MODULE ====================
+# Import and register geometry-based question generator routes
+try:
+    from geometry_question_generator import register_geometry_generator_routes
+    
+    # Create admin_required_api decorator for the geometry generator
+    def admin_required_api_geom(f):
+        from functools import wraps
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({'error': 'Login required'}), 401
+            user = User.query.get(session['user_id'])
+            if not user or user.role != 'admin':
+                return jsonify({'error': 'Admin access required'}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    
+    register_geometry_generator_routes(app, db, Question, admin_required_api_geom)
+    print("✓ Geometry question generator loaded successfully")
+except ImportError:
+    print("Warning: geometry_question_generator.py not found - geometry generator disabled")
+except Exception as e:
+    print(f"Warning: Could not load geometry generator: {e}")
+
+# ==================== PATTERN QUESTION GENERATOR MODULE ====================
+# Import and register pattern-based question generator routes
+try:
+    from pattern_question_generator import register_pattern_generator_routes
+    
+    # Create admin_required_api decorator for the pattern generator
+    def admin_required_api_pattern(f):
+        from functools import wraps
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({'error': 'Login required'}), 401
+            user = User.query.get(session['user_id'])
+            if not user or user.role != 'admin':
+                return jsonify({'error': 'Admin access required'}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    
+    register_pattern_generator_routes(app, db, Question, admin_required_api_pattern)
+    print("✓ Pattern question generator loaded successfully")
+except ImportError:
+    print("Warning: pattern_question_generator.py not found - pattern generator disabled")
+except Exception as e:
+    print(f"Warning: Could not load pattern generator: {e}")
+
+# ==================== PATTERNS QUESTION GENERATOR MODULE ====================
+# Import and register visual patterns question generator routes
+try:
+    from patterns_question_generator import register_patterns_generator_routes
+    
+    # Create admin_required_api decorator for the patterns generator
+    def admin_required_api_patterns(f):
+        from functools import wraps
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({'error': 'Login required'}), 401
+            user = User.query.get(session['user_id'])
+            if not user or user.role != 'admin':
+                return jsonify({'error': 'Admin access required'}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    
+    register_patterns_generator_routes(app, db, Question, admin_required_api_patterns)
+    print("✓ Patterns question generator loaded successfully")
+except ImportError:
+    print("Warning: patterns_question_generator.py not found - patterns generator disabled")
+except Exception as e:
+    print(f"Warning: Could not load patterns generator: {e}")
+
+# ==================== COORDINATE GEOMETRY QUESTION GENERATOR MODULE ====================
+# Import and register coordinate geometry question generator routes
+try:
+    from coordinate_question_generator import register_coordinate_generator_routes
+    
+    # Create admin_required_api decorator for the coordinate generator
+    def admin_required_api_coordinate(f):
+        from functools import wraps
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({'error': 'Login required'}), 401
+            user = User.query.get(session['user_id'])
+            if not user or user.role != 'admin':
+                return jsonify({'error': 'Admin access required'}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    
+    register_coordinate_generator_routes(app, db, Question, admin_required_api_coordinate)
+    print("✓ Coordinate geometry question generator loaded successfully")
+except ImportError:
+    print("Warning: coordinate_question_generator.py not found - coordinate generator disabled")
+except Exception as e:
+    print(f"Warning: Could not load coordinate generator: {e}")
+
+
+# ==================== SPEED, DISTANCE, TIME QUESTION GENERATOR MODULE ====================
+# Import and register SDT question generator routes
+try:
+    from speed_distance_time_generator import register_sdt_generator_routes
+    
+    # Create admin_required_api decorator for the SDT generator
+    def admin_required_api_sdt(f):
+        from functools import wraps
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({'error': 'Login required'}), 401
+            user = User.query.get(session['user_id'])
+            if not user or user.role != 'admin':
+                return jsonify({'error': 'Admin access required'}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    
+    register_sdt_generator_routes(app, db, Question, admin_required_api_sdt)
+    print("✓ Speed, Distance, Time question generator loaded successfully")
+except ImportError:
+    print("Warning: speed_distance_time_generator.py not found - SDT generator disabled")
+except Exception as e:
+    print(f"Warning: Could not load SDT generator: {e}")
+
+# ==================== CURRENCY QUESTION GENERATOR MODULE ====================
+# Import and register currency question generator routes
+try:
+    from currency_question_generator import register_currency_generator_routes
+    
+    # Create admin_required_api decorator for the currency generator
+    def admin_required_api_currency(f):
+        from functools import wraps
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                return jsonify({'error': 'Login required'}), 401
+            user = User.query.get(session['user_id'])
+            if not user or user.role != 'admin':
+                return jsonify({'error': 'Admin access required'}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    
+    register_currency_generator_routes(app, db, Question, admin_required_api_currency)
+    print("✓ Currency question generator loaded successfully")
+except ImportError:
+    print("Warning: currency_question_generator.py not found - currency generator disabled")
+except Exception as e:
+    print(f"Warning: Could not load currency generator: {e}")
+
+
+
+# =============================================================================
+# PHASE 4: RAFFLE SYSTEM (Student & Admin Routes)
+# =============================================================================
+
+# Admin Raffle Management Routes
+@app.route('/api/admin/raffles', methods=['GET'])
+@login_required
+@role_required('admin')
+def api_admin_get_raffles():
+    """Get all raffles"""
+    from sqlalchemy import text
+    
+    raffles = db.session.execute(text("""
+        SELECT r.*, ps.name as school_name,
+               (SELECT COUNT(*) FROM raffle_entries WHERE raffle_id = r.id AND is_active = 1) as active_entries
+        FROM raffles r
+        LEFT JOIN prize_schools ps ON r.school_id = ps.id
+        ORDER BY r.created_at DESC
+    """)).fetchall()
+    
+    return jsonify([{
+        'id': r.id,
+        'name': r.name,
+        'description': r.description,
+        'prize_description': r.prize_description,
+        'emoji': r.emoji,
+        'school_name': r.school_name or 'All Schools',
+        'entry_cost': r.entry_cost,
+        'max_entries_per_student': r.max_entries_per_student,
+        'draw_frequency': r.draw_frequency,
+        'is_active': bool(r.is_active),
+        'auto_draw_enabled': bool(r.auto_draw_enabled),
+        'total_entries': r.total_entries,
+        'total_draws': r.total_draws,
+        'active_entries': r.active_entries
+    } for r in raffles])
+
+
+@app.route('/api/admin/raffles', methods=['POST'])
+@login_required
+@role_required('admin')
+def api_admin_create_raffle():
+    """Create raffle"""
+    from sqlalchemy import text
+    
+    data = request.json
+    
+    try:
+        result = db.session.execute(text("""
+            INSERT INTO raffles (
+                name, description, prize_description, emoji,
+                school_id, entry_cost, max_entries_per_student,
+                draw_frequency, draw_day_of_week, draw_time,
+                prize_type, prize_value,
+                is_active, auto_draw_enabled, created_by
+            ) VALUES (
+                :name, :description, :prize_description, :emoji,
+                :school_id, :entry_cost, :max_entries,
+                :frequency, :day_of_week, :draw_time,
+                :prize_type, :prize_value,
+                :is_active, :auto_draw, :created_by
+            )
+        """), {
+            'name': data['name'],
+            'description': data.get('description'),
+            'prize_description': data['prize_description'],
+            'emoji': data.get('emoji', '🎟️'),
+            'school_id': data.get('school_id'),
+            'entry_cost': data['entry_cost'],
+            'max_entries': data.get('max_entries_per_student', 10),
+            'frequency': data.get('draw_frequency', 'weekly'),
+            'day_of_week': data.get('draw_day_of_week', 5),
+            'draw_time': data.get('draw_time', '15:00:00'),
+            'prize_type': data.get('prize_type', 'physical'),
+            'prize_value': data.get('prize_value'),
+            'is_active': data.get('is_active', True),
+            'auto_draw': data.get('auto_draw_enabled', True),
+            'created_by': session['user_id']
+        })
+        
+        raffle_id = result.lastrowid
+        db.session.commit()
+        
+        return jsonify({'success': True, 'raffle_id': raffle_id})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/raffles/<int:raffle_id>', methods=['PUT'])
+@login_required
+@role_required('admin')
+def api_admin_update_raffle(raffle_id):
+    """Update raffle"""
+    from sqlalchemy import text
+    
+    data = request.json
+    
+    try:
+        # Build update query dynamically based on provided fields
+        update_fields = []
+        params = {'raffle_id': raffle_id}
+        
+        field_mapping = {
+            'name': 'name',
+            'description': 'description',
+            'prize_description': 'prize_description',
+            'emoji': 'emoji',
+            'entry_cost': 'entry_cost',
+            'max_entries_per_student': 'max_entries_per_student',
+            'draw_frequency': 'draw_frequency',
+            'draw_day_of_week': 'draw_day_of_week',
+            'draw_time': 'draw_time',
+            'is_active': 'is_active',
+            'auto_draw_enabled': 'auto_draw_enabled'
+        }
+        
+        for json_key, db_key in field_mapping.items():
+            if json_key in data:
+                update_fields.append(f"{db_key} = :{json_key}")
+                params[json_key] = data[json_key]
+        
+        if not update_fields:
+            return jsonify({'error': 'No fields to update'}), 400
+        
+        query = f"UPDATE raffles SET {', '.join(update_fields)} WHERE id = :raffle_id"
+        db.session.execute(text(query), params)
+        db.session.commit()
+        
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/raffles/<int:raffle_id>/entries')
+@login_required
+@role_required('admin')
+def api_admin_get_raffle_entries(raffle_id):
+    """Get all entries for a raffle"""
+    from sqlalchemy import text
+    
+    try:
+        entries = db.session.execute(text("""
+            SELECT re.*, 
+                   u.full_name as student_name,
+                   re.guest_code
+            FROM raffle_entries re
+            LEFT JOIN users u ON re.student_id = u.id
+            WHERE re.raffle_id = :raffle_id AND re.is_active = 1
+            ORDER BY re.entered_at DESC
+        """), {'raffle_id': raffle_id}).fetchall()
+        
+        return jsonify([{
+            'id': e.id,
+            'student_name': e.student_name,
+            'guest_code': e.guest_code,
+            'entered_at': e.entered_at.isoformat() if e.entered_at else None
+        } for e in entries])
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/raffles/winners')
+@login_required
+@role_required('admin')
+def api_admin_get_raffle_winners():
+    """Get recent raffle winners"""
+    from sqlalchemy import text
+    
+    try:
+        winners = db.session.execute(text("""
+            SELECT rd.*, 
+                   r.name as raffle_name,
+                   r.emoji,
+                   r.prize_description,
+                   u.full_name as winner_name,
+                   rd.winner_guest_code
+            FROM raffle_draws rd
+            JOIN raffles r ON rd.raffle_id = r.id
+            LEFT JOIN users u ON rd.winner_id = u.id
+            WHERE rd.status = 'drawn' AND rd.winner_id IS NOT NULL
+            ORDER BY rd.drawn_at DESC
+            LIMIT 20
+        """)).fetchall()
+        
+        return jsonify([{
+            'id': w.id,
+            'raffle_name': w.raffle_name,
+            'emoji': w.emoji,
+            'prize_description': w.prize_description,
+            'winner_name': w.winner_name or w.winner_guest_code or 'Unknown',
+            'drawn_at': w.drawn_at.isoformat() if w.drawn_at else None,
+            'total_entries': w.total_entries if hasattr(w, 'total_entries') else None
+        } for w in winners])
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/raffles/<int:raffle_id>/draw', methods=['POST'])
+@login_required
+@role_required('admin')
+def api_admin_manual_draw(raffle_id):
+    """Manual draw with winner info returned"""
+    from sqlalchemy import text
+    
+    draw_id = perform_raffle_draw(raffle_id)
+    
+    if draw_id:
+        # Get winner info from the draw
+        try:
+            winner_info = db.session.execute(text("""
+                SELECT rd.*, 
+                       r.name as raffle_name,
+                       r.prize_description,
+                       u.full_name as winner_name,
+                       rd.winner_guest_code
+                FROM raffle_draws rd
+                JOIN raffles r ON rd.raffle_id = r.id
+                LEFT JOIN users u ON rd.winner_id = u.id
+                WHERE rd.id = :draw_id
+            """), {'draw_id': draw_id}).fetchone()
+            
+            if winner_info:
+                return jsonify({
+                    'success': True, 
+                    'draw_id': draw_id,
+                    'winner': {
+                        'name': winner_info.winner_name or winner_info.winner_guest_code or 'Unknown',
+                        'class': None  # Could add class info if needed
+                    },
+                    'prize': winner_info.prize_description
+                })
+        except Exception as e:
+            print(f"Error getting winner info: {e}")
+        
+        return jsonify({'success': True, 'draw_id': draw_id})
+    else:
+        return jsonify({'error': 'Draw failed - no entries or error occurred'}), 500
+
+
+# Student Raffle Routes
+@app.route('/api/raffles/available')
+@login_required
+def api_raffles_available():
+    """Get available raffles for student (supports both registered and guest users)"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    try:
+        # Build query based on user type
+        if user_id:
+            raffles = db.session.execute(text("""
+                SELECT r.*,
+                       (SELECT COUNT(*) FROM raffle_entries WHERE raffle_id = r.id AND student_id = :user_id AND is_active = 1) as my_entries,
+                       (SELECT COUNT(*) FROM raffle_entries WHERE raffle_id = r.id AND is_active = 1) as total_entries
+                FROM raffles r
+                WHERE r.is_active = 1
+                ORDER BY r.created_at DESC
+            """), {'user_id': user_id}).fetchall()
+        elif guest_code:
+            raffles = db.session.execute(text("""
+                SELECT r.*,
+                       (SELECT COUNT(*) FROM raffle_entries WHERE raffle_id = r.id AND guest_code = :guest_code AND is_active = 1) as my_entries,
+                       (SELECT COUNT(*) FROM raffle_entries WHERE raffle_id = r.id AND is_active = 1) as total_entries
+                FROM raffles r
+                WHERE r.is_active = 1
+                ORDER BY r.created_at DESC
+            """), {'guest_code': guest_code}).fetchall()
+        else:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        return jsonify([{
+            'id': r.id,
+            'name': r.name,
+            'description': r.description,
+            'prize_description': r.prize_description,
+            'emoji': r.emoji or '🎟️',
+            'entry_cost': r.entry_cost,
+            'max_entries_per_student': r.max_entries_per_student,
+            'draw_frequency': r.draw_frequency,
+            'my_entries': r.my_entries or 0,
+            'total_entries': r.total_entries or 0
+        } for r in raffles])
+        
+    except Exception as e:
+        print(f"Error getting raffles: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/raffles/<int:raffle_id>/enter', methods=['POST'])
+@login_required
+def api_raffle_enter(raffle_id):
+    """Buy raffle entries - supports both registered users and guests"""
+    from sqlalchemy import text
+    
+    data = request.json
+    num_entries = data.get('entries', 1)
+    
+    guest_code = session.get('guest_code')
+    user_id = session.get('user_id')
+    
+    # Determine if this is a guest user (has guest_code and points in guest_users)
+    # or a registered user (has user_id and points in user_stats)
+    is_guest_user = False
+    if guest_code:
+        # Check if this guest has points in guest_users table
+        guest_check = db.session.execute(text("""
+            SELECT total_score FROM guest_users WHERE guest_code = :guest_code
+        """), {'guest_code': guest_code}).fetchone()
+        if guest_check:
+            is_guest_user = True
+    
+    if not user_id and not guest_code:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    try:
+        # Get raffle info
+        raffle = db.session.execute(text("""
+            SELECT * FROM raffles WHERE id = :raffle_id AND is_active = 1
+        """), {'raffle_id': raffle_id}).fetchone()
+        
+        if not raffle:
+            return jsonify({'error': 'Raffle not found'}), 404
+        
+        # Check current entries for this user
+        if is_guest_user:
+            current = db.session.execute(text("""
+                SELECT COUNT(*) as total
+                FROM raffle_entries
+                WHERE raffle_id = :raffle_id AND guest_code = :guest_code AND is_active = 1
+            """), {'raffle_id': raffle_id, 'guest_code': guest_code}).fetchone()
+        else:
+            current = db.session.execute(text("""
+                SELECT COUNT(*) as total
+                FROM raffle_entries
+                WHERE raffle_id = :raffle_id AND student_id = :user_id AND is_active = 1
+            """), {'raffle_id': raffle_id, 'user_id': user_id}).fetchone()
+        
+        current_count = current.total if current else 0
+        
+        if current_count + num_entries > raffle.max_entries_per_student:
+            return jsonify({'error': f'Maximum {raffle.max_entries_per_student} entries allowed. You have {current_count}.'}), 400
+        
+        cost = raffle.entry_cost * num_entries
+        
+        # Get and check user's points
+        if is_guest_user:
+            guest = db.session.execute(text("""
+                SELECT total_score FROM guest_users WHERE guest_code = :guest_code
+            """), {'guest_code': guest_code}).fetchone()
+            points = guest.total_score if guest else 0
+        else:
+            stats = db.session.execute(text("""
+                SELECT total_points FROM user_stats WHERE user_id = :user_id
+            """), {'user_id': user_id}).fetchone()
+            points = stats.total_points if stats else 0
+        
+        if points < cost:
+            return jsonify({'error': f'Not enough points. Need {cost}, have {points}.'}), 400
+        
+        # Deduct points
+        if is_guest_user:
+            db.session.execute(text("""
+                UPDATE guest_users SET total_score = total_score - :cost WHERE guest_code = :guest_code
+            """), {'cost': cost, 'guest_code': guest_code})
+        else:
+            db.session.execute(text("""
+                UPDATE user_stats SET total_points = total_points - :cost WHERE user_id = :user_id
+            """), {'cost': cost, 'user_id': user_id})
+        
+        # Create entry records (one per entry for fair drawing)
+        for _ in range(num_entries):
+            db.session.execute(text("""
+                INSERT INTO raffle_entries (
+                    raffle_id, student_id, guest_code, points_spent, is_active
+                ) VALUES (
+                    :raffle_id, :student_id, :guest_code, :cost_per_entry, 1
+                )
+            """), {
+                'raffle_id': raffle_id,
+                'student_id': user_id if not is_guest_user else None,
+                'guest_code': guest_code if is_guest_user else None,
+                'cost_per_entry': raffle.entry_cost
+            })
+        
+        # Update raffle total entries
+        db.session.execute(text("""
+            UPDATE raffles SET total_entries = total_entries + :entries
+            WHERE id = :raffle_id
+        """), {'entries': num_entries, 'raffle_id': raffle_id})
+        
+        db.session.commit()
+        
+        # Get updated entry count
+        new_total = current_count + num_entries
+        
+        return jsonify({
+            'success': True, 
+            'entries_purchased': num_entries,
+            'total_entries': new_total,
+            'points_spent': cost,
+            'remaining_points': points - cost
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/raffles/check-wins')
+@login_required
+def api_check_raffle_wins():
+    """Check for unacknowledged wins - supports both registered users and guests"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    try:
+        if user_id:
+            wins = db.session.execute(text("""
+                SELECT wn.*, rd.token, rd.token_expires_at,
+                       r.name as raffle_name, r.prize_description, r.emoji
+                FROM winner_notifications wn
+                JOIN raffle_draws rd ON wn.draw_id = rd.id
+                JOIN raffles r ON rd.raffle_id = r.id
+                WHERE wn.winner_id = :user_id AND wn.acknowledged = 0
+            """), {'user_id': user_id}).fetchall()
+        elif guest_code:
+            wins = db.session.execute(text("""
+                SELECT wn.*, rd.token, rd.token_expires_at,
+                       r.name as raffle_name, r.prize_description, r.emoji
+                FROM winner_notifications wn
+                JOIN raffle_draws rd ON wn.draw_id = rd.id
+                JOIN raffles r ON rd.raffle_id = r.id
+                WHERE wn.winner_guest_code = :guest_code AND wn.acknowledged = 0
+            """), {'guest_code': guest_code}).fetchall()
+        else:
+            return jsonify([])
+        
+        return jsonify([{
+            'id': w.id,
+            'draw_id': w.draw_id,
+            'raffle_name': w.raffle_name,
+            'prize_description': w.prize_description,
+            'emoji': w.emoji,
+            'token': w.token,
+            'expires_at': str(w.token_expires_at) if w.token_expires_at else None,
+            'message': w.message
+        } for w in wins])
+        
+    except Exception as e:
+        print(f"Error checking wins: {e}")
+        return jsonify([])
+
+
+@app.route('/api/raffles/wins/<int:notification_id>/acknowledge', methods=['POST'])
+@login_required
+def api_acknowledge_win(notification_id):
+    """Acknowledge winner notification"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id') if not session.get('is_guest') else None
+    guest_code = session.get('guest_code')
+    
+    if user_id:
+        db.session.execute(text("""
+            UPDATE winner_notifications
+            SET acknowledged = 1, acknowledged_at = CURRENT_TIMESTAMP
+            WHERE id = :notification_id AND winner_id = :user_id
+        """), {'notification_id': notification_id, 'user_id': user_id})
+    elif guest_code:
+        db.session.execute(text("""
+            UPDATE winner_notifications
+            SET acknowledged = 1, acknowledged_at = CURRENT_TIMESTAMP
+            WHERE id = :notification_id AND winner_guest_code = :guest_code
+        """), {'notification_id': notification_id, 'guest_code': guest_code})
+    
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+
+@app.route('/api/raffles/winners')
+@login_required
+def api_student_raffle_winners():
+    """Get recent raffle winners for students to see"""
+    from sqlalchemy import text
+    
+    try:
+        winners = db.session.execute(text("""
+            SELECT rd.id, rd.drawn_at, rd.total_entries,
+                   r.name as raffle_name, r.emoji, r.prize_description,
+                   CASE 
+                       WHEN u.id IS NOT NULL THEN u.full_name
+                       WHEN rd.winner_guest_code IS NOT NULL THEN 'Guest ' || SUBSTR(rd.winner_guest_code, 1, 4) || '***'
+                       ELSE 'Anonymous'
+                   END as winner_name
+            FROM raffle_draws rd
+            JOIN raffles r ON rd.raffle_id = r.id
+            LEFT JOIN users u ON rd.winner_id = u.id
+            WHERE rd.status = 'drawn' AND rd.winner_id IS NOT NULL
+            ORDER BY rd.drawn_at DESC
+            LIMIT 10
+        """)).fetchall()
+        
+        return jsonify([{
+            'id': w.id,
+            'raffle_name': w.raffle_name,
+            'emoji': w.emoji,
+            'prize_description': w.prize_description,
+            'winner_name': w.winner_name,
+            'drawn_at': w.drawn_at.isoformat() if w.drawn_at else None,
+            'total_entries': w.total_entries
+        } for w in winners])
+        
+    except Exception as e:
+        print(f"Error getting winners: {e}")
+        return jsonify([])
+
+
+# Remove old duplicate route
+# @app.route('/api/raffles/acknowledge-win/<int:notification_id>', methods=['POST'])
+
+
+# =============================================================================
+# RAFFLE HELPER FUNCTIONS
+# =============================================================================
+
+def generate_raffle_token():
+    """Generate unique token for raffle prize collection"""
+    import secrets
+    return secrets.token_urlsafe(12)
+
+
+def get_user_school_id(user_id):
+    """Get the school_id for a student"""
+    from sqlalchemy import text
+    result = db.session.execute(text("""
+        SELECT school_id FROM prize_redemptions 
+        WHERE user_id = :user_id 
+        LIMIT 1
+    """), {'user_id': user_id}).fetchone()
+    
+    if result:
+        return result.school_id
+    
+    result = db.session.execute(text("""
+        SELECT c.school_id 
+        FROM class_enrollments ce
+        JOIN classes c ON ce.class_id = c.id
+        WHERE ce.student_id = :user_id
+        LIMIT 1
+    """), {'user_id': user_id}).fetchone()
+    
+    return result.school_id if result else None
+
+
+def select_raffle_winner(raffle_id, draw_id):
+    """Randomly select a winner from active entries (supports both users and guests)"""
+    from sqlalchemy import text
+    import random
+    
+    # Get all active entries - each row is one entry (ticket)
+    entries = db.session.execute(text("""
+        SELECT id, student_id, guest_code
+        FROM raffle_entries
+        WHERE raffle_id = :raffle_id 
+        AND is_active = 1
+    """), {'raffle_id': raffle_id}).fetchall()
+    
+    if not entries:
+        return None, None, None
+    
+    # Each entry is already one ticket, so just pick randomly
+    winning_entry = random.choice(entries)
+    
+    return winning_entry.student_id, winning_entry.guest_code, winning_entry.id
+
+
+def perform_raffle_draw(raffle_id):
+    """Perform a raffle draw - supports both registered users and guests"""
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
+    
+    try:
+        raffle = db.session.execute(text("""
+            SELECT * FROM raffles WHERE id = :raffle_id
+        """), {'raffle_id': raffle_id}).fetchone()
+        
+        if not raffle:
+            print(f"Raffle {raffle_id} not found")
+            return None
+        
+        # Check if there are any entries
+        entry_count = db.session.execute(text("""
+            SELECT COUNT(*) as cnt FROM raffle_entries
+            WHERE raffle_id = :raffle_id AND is_active = 1
+        """), {'raffle_id': raffle_id}).fetchone()
+        
+        if not entry_count or entry_count.cnt == 0:
+            print(f"Raffle {raffle_id} has no entries - skipping draw")
+            return None
+        
+        draw_date = datetime.now().date()
+        draw_time = datetime.now()
+        
+        result = db.session.execute(text("""
+            INSERT INTO raffle_draws (
+                raffle_id, school_id, draw_date, draw_time,
+                status, drawn_at, drawn_by
+            ) VALUES (
+                :raffle_id, :school_id, :draw_date, :draw_time,
+                'drawing', CURRENT_TIMESTAMP, 'system'
+            )
+        """), {
+            'raffle_id': raffle_id,
+            'school_id': raffle.school_id if hasattr(raffle, 'school_id') else None,
+            'draw_date': draw_date,
+            'draw_time': draw_time
+        })
+        
+        draw_id = result.lastrowid
+        db.session.commit()
+        
+        # Select winner (returns user_id, guest_code, entry_id)
+        winner_id, winner_guest_code, winning_entry_id = select_raffle_winner(raffle_id, draw_id)
+        
+        stats = db.session.execute(text("""
+            SELECT COUNT(*) as total_entries,
+                   COUNT(DISTINCT COALESCE(student_id, guest_code)) as total_participants
+            FROM raffle_entries
+            WHERE raffle_id = :raffle_id AND is_active = 1
+        """), {'raffle_id': raffle_id}).fetchone()
+        
+        if winner_id or winner_guest_code:
+            token = generate_raffle_token()
+            token_expires = draw_time + timedelta(days=7)
+            
+            db.session.execute(text("""
+                UPDATE raffle_draws
+                SET winner_id = :winner_id,
+                    winner_guest_code = :winner_guest_code,
+                    winning_entry_id = :winning_entry_id,
+                    total_entries = :total_entries,
+                    total_participants = :total_participants,
+                    token = :token,
+                    token_expires_at = :token_expires,
+                    status = 'drawn'
+                WHERE id = :draw_id
+            """), {
+                'winner_id': winner_id,
+                'winner_guest_code': winner_guest_code,
+                'winning_entry_id': winning_entry_id,
+                'total_entries': stats.total_entries,
+                'total_participants': stats.total_participants,
+                'token': token,
+                'token_expires': token_expires,
+                'draw_id': draw_id
+            })
+            
+            # Mark all entries for this raffle as used
+            db.session.execute(text("""
+                UPDATE raffle_entries
+                SET is_active = 0, draw_id = :draw_id
+                WHERE raffle_id = :raffle_id AND is_active = 1
+            """), {'draw_id': draw_id, 'raffle_id': raffle_id})
+            
+            # Create winner notification
+            message = f"🎉 Congratulations! You won the {raffle.name}! Prize: {raffle.prize_description}"
+            
+            db.session.execute(text("""
+                INSERT INTO winner_notifications (
+                    draw_id, winner_id, winner_guest_code, notification_type, message, acknowledged
+                ) VALUES (
+                    :draw_id, :winner_id, :winner_guest_code, 'on_login', :message, 0
+                )
+            """), {
+                'draw_id': draw_id,
+                'winner_id': winner_id,
+                'winner_guest_code': winner_guest_code,
+                'message': message
+            })
+            
+            db.session.commit()
+            print(f"Raffle {raffle_id} draw complete - Winner: {winner_id or winner_guest_code}")
+            
+        else:
+            db.session.execute(text("""
+                UPDATE raffle_draws
+                SET status = 'no_entries',
+                    total_entries = 0,
+                    total_participants = 0
+                WHERE id = :draw_id
+            """), {'draw_id': draw_id})
+            db.session.commit()
+            print(f"Raffle {raffle_id} draw complete - No winner (no valid entries)")
+        
+        # Update raffle total draws count
+        db.session.execute(text("""
+            UPDATE raffles
+            SET total_draws = total_draws + 1
+            WHERE id = :raffle_id
+        """), {'raffle_id': raffle_id})
+        db.session.commit()
+        
+        return draw_id
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error drawing raffle {raffle_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def check_and_run_auto_draws():
+    """Check for raffles that need automatic draws and run them"""
+    from sqlalchemy import text
+    from datetime import datetime
+    
+    now = datetime.now()
+    current_day = now.weekday()  # 0=Monday, 6=Sunday
+    current_time = now.strftime('%H:%M')
+    
+    results = {
+        'checked': 0,
+        'drawn': 0,
+        'skipped': 0,
+        'errors': 0,
+        'details': []
+    }
+    
+    try:
+        # Find raffles due for auto-draw
+        # Weekly: check if today is the draw day and we haven't drawn this week
+        # Monthly: check if today is the 1st and we haven't drawn this month
+        
+        raffles = db.session.execute(text("""
+            SELECT r.* FROM raffles r
+            WHERE r.is_active = 1 
+            AND r.auto_draw_enabled = 1
+            AND r.draw_frequency IN ('weekly', 'daily', 'monthly')
+        """)).fetchall()
+        
+        results['checked'] = len(raffles)
+        
+        for raffle in raffles:
+            try:
+                should_draw = False
+                reason = ""
+                
+                # Check if already drawn today
+                today_draw = db.session.execute(text("""
+                    SELECT id FROM raffle_draws 
+                    WHERE raffle_id = :raffle_id 
+                    AND DATE(drawn_at) = DATE('now')
+                """), {'raffle_id': raffle.id}).fetchone()
+                
+                if today_draw:
+                    results['skipped'] += 1
+                    results['details'].append({
+                        'raffle': raffle.name,
+                        'action': 'skipped',
+                        'reason': 'Already drawn today'
+                    })
+                    continue
+                
+                # Check draw frequency
+                if raffle.draw_frequency == 'daily':
+                    # Daily draws happen every day at the specified time
+                    draw_time = raffle.draw_time or '15:00'
+                    if current_time >= draw_time[:5]:
+                        should_draw = True
+                        reason = "Daily draw time reached"
+                        
+                elif raffle.draw_frequency == 'weekly':
+                    # Weekly draws happen on the specified day
+                    draw_day = raffle.draw_day_of_week if raffle.draw_day_of_week is not None else 4  # Default Friday
+                    draw_time = raffle.draw_time or '15:00'
+                    
+                    if current_day == draw_day and current_time >= draw_time[:5]:
+                        # Check if already drawn this week
+                        week_start = now.date() - timedelta(days=current_day)
+                        week_draw = db.session.execute(text("""
+                            SELECT id FROM raffle_draws 
+                            WHERE raffle_id = :raffle_id 
+                            AND DATE(drawn_at) >= :week_start
+                        """), {'raffle_id': raffle.id, 'week_start': week_start}).fetchone()
+                        
+                        if not week_draw:
+                            should_draw = True
+                            reason = f"Weekly draw day ({['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][draw_day]})"
+                            
+                elif raffle.draw_frequency == 'monthly':
+                    # Monthly draws happen on the 1st of each month
+                    if now.day == 1:
+                        draw_time = raffle.draw_time or '15:00'
+                        if current_time >= draw_time[:5]:
+                            # Check if already drawn this month
+                            month_draw = db.session.execute(text("""
+                                SELECT id FROM raffle_draws 
+                                WHERE raffle_id = :raffle_id 
+                                AND strftime('%Y-%m', drawn_at) = strftime('%Y-%m', 'now')
+                            """), {'raffle_id': raffle.id}).fetchone()
+                            
+                            if not month_draw:
+                                should_draw = True
+                                reason = "Monthly draw (1st of month)"
+                
+                if should_draw:
+                    # Check if there are entries
+                    entry_count = db.session.execute(text("""
+                        SELECT COUNT(*) as cnt FROM raffle_entries
+                        WHERE raffle_id = :raffle_id AND is_active = 1
+                    """), {'raffle_id': raffle.id}).fetchone()
+                    
+                    if entry_count and entry_count.cnt > 0:
+                        draw_id = perform_raffle_draw(raffle.id)
+                        if draw_id:
+                            results['drawn'] += 1
+                            results['details'].append({
+                                'raffle': raffle.name,
+                                'action': 'drawn',
+                                'reason': reason,
+                                'draw_id': draw_id,
+                                'entries': entry_count.cnt
+                            })
+                        else:
+                            results['errors'] += 1
+                            results['details'].append({
+                                'raffle': raffle.name,
+                                'action': 'error',
+                                'reason': 'Draw function failed'
+                            })
+                    else:
+                        results['skipped'] += 1
+                        results['details'].append({
+                            'raffle': raffle.name,
+                            'action': 'skipped',
+                            'reason': 'No entries to draw from'
+                        })
+                else:
+                    results['skipped'] += 1
+                    
+            except Exception as e:
+                results['errors'] += 1
+                results['details'].append({
+                    'raffle': raffle.name if raffle else 'Unknown',
+                    'action': 'error',
+                    'reason': str(e)
+                })
+                print(f"Error checking raffle {raffle.id}: {e}")
+                
+        return results
+        
+    except Exception as e:
+        print(f"Error in auto-draw check: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'error': str(e)}
+
+
+@app.route('/api/admin/raffles/auto-draw', methods=['POST'])
+@login_required
+@role_required('admin')
+def api_admin_trigger_auto_draws():
+    """Manually trigger auto-draw check (for testing or manual runs)"""
+    results = check_and_run_auto_draws()
+    return jsonify(results)
+
+
+@app.route('/api/cron/raffle-auto-draw')
+def api_cron_raffle_auto_draw():
+    """Endpoint for PythonAnywhere scheduled task to trigger auto-draws
+    
+    Security: Uses a secret key to prevent unauthorized access.
+    Set up in PythonAnywhere Scheduled Tasks to run every hour or at specific times.
+    
+    Example scheduled task command:
+    curl "https://yourdomain.com/api/cron/raffle-auto-draw?key=YOUR_SECRET_KEY"
+    """
+    from sqlalchemy import text
+    
+    # Check for secret key
+    provided_key = request.args.get('key', '')
+    
+    # Get the secret key from settings or environment
+    try:
+        secret_key = SystemSetting.get('raffle_cron_secret', '')
+    except:
+        secret_key = ''
+    
+    # If no key is set, allow access (for initial setup)
+    # Once set, require the key
+    if secret_key and provided_key != secret_key:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    results = check_and_run_auto_draws()
+    
+    # Log the run
+    print(f"[CRON] Raffle auto-draw completed: {results.get('drawn', 0)} drawn, {results.get('skipped', 0)} skipped")
+    
+    return jsonify(results)
+
+
+# =============================================================================
+# ADMIN QUESTION HISTORY MANAGEMENT
+# =============================================================================
+
+@app.route('/api/admin/question-history/stats')
+@login_required
+@role_required('admin')
+def admin_question_history_stats():
+    """Get statistics about question history tracking"""
+    from sqlalchemy import text
+    
+    try:
+        stats = {}
+        
+        # Total records
+        total = db.session.execute(text(
+            "SELECT COUNT(*) FROM user_question_history"
+        )).fetchone()
+        stats['total_records'] = total[0] if total else 0
+        
+        # Unique users
+        users = db.session.execute(text(
+            "SELECT COUNT(DISTINCT user_id) FROM user_question_history WHERE user_id IS NOT NULL"
+        )).fetchone()
+        stats['unique_users'] = users[0] if users else 0
+        
+        # Unique guests
+        guests = db.session.execute(text(
+            "SELECT COUNT(DISTINCT guest_code) FROM user_question_history WHERE guest_code IS NOT NULL"
+        )).fetchone()
+        stats['unique_guests'] = guests[0] if guests else 0
+        
+        # By topic
+        by_topic = db.session.execute(text("""
+            SELECT topic, COUNT(*) as count
+            FROM user_question_history
+            GROUP BY topic
+            ORDER BY count DESC
+        """)).fetchall()
+        stats['by_topic'] = [{
+            'topic': row.topic,
+            'count': row.count
+        } for row in by_topic]
+        
+        return jsonify(stats)
+        
+    except Exception as e:
+        return jsonify({'error': str(e), 'message': 'Table may not exist yet'}), 200
+
+
+@app.route('/api/admin/question-history/clear', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_clear_question_history():
+    """Clear question history - can clear for specific user or all"""
+    from sqlalchemy import text
+    
+    data = request.json or {}
+    user_id = data.get('user_id')
+    guest_code = data.get('guest_code')
+    topic = data.get('topic')
+    clear_all = data.get('clear_all', False)
+    
+    try:
+        if clear_all:
+            db.session.execute(text("DELETE FROM user_question_history"))
+            message = "Cleared all question history"
+        elif user_id:
+            if topic:
+                db.session.execute(text("""
+                    DELETE FROM user_question_history 
+                    WHERE user_id = :user_id AND topic = :topic
+                """), {'user_id': user_id, 'topic': topic})
+                message = f"Cleared history for user {user_id} on topic {topic}"
+            else:
+                db.session.execute(text("""
+                    DELETE FROM user_question_history WHERE user_id = :user_id
+                """), {'user_id': user_id})
+                message = f"Cleared all history for user {user_id}"
+        elif guest_code:
+            if topic:
+                db.session.execute(text("""
+                    DELETE FROM user_question_history 
+                    WHERE guest_code = :guest_code AND topic = :topic
+                """), {'guest_code': guest_code, 'topic': topic})
+                message = f"Cleared history for guest {guest_code} on topic {topic}"
+            else:
+                db.session.execute(text("""
+                    DELETE FROM user_question_history WHERE guest_code = :guest_code
+                """), {'guest_code': guest_code})
+                message = f"Cleared all history for guest {guest_code}"
+        else:
+            return jsonify({'error': 'Specify user_id, guest_code, or clear_all=true'}), 400
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': message})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
+# ADMIN ADAPTIVE QUESTION HISTORY MANAGEMENT
+# =============================================================================
+
+@app.route('/api/admin/adaptive-question-history/stats')
+@login_required
+@role_required('admin')
+def admin_adaptive_question_history_stats():
+    """Get statistics about adaptive question history tracking (Learning in Stages)"""
+    from sqlalchemy import text
+    
+    try:
+        stats = {}
+        
+        # Total records
+        total = db.session.execute(text(
+            "SELECT COUNT(*) FROM user_adaptive_question_history"
+        )).fetchone()
+        stats['total_records'] = total[0] if total else 0
+        
+        # Unique users
+        users = db.session.execute(text(
+            "SELECT COUNT(DISTINCT user_id) FROM user_adaptive_question_history WHERE user_id IS NOT NULL"
+        )).fetchone()
+        stats['unique_users'] = users[0] if users else 0
+        
+        # Unique guests
+        guests = db.session.execute(text(
+            "SELECT COUNT(DISTINCT guest_code) FROM user_adaptive_question_history WHERE guest_code IS NOT NULL"
+        )).fetchone()
+        stats['unique_guests'] = guests[0] if guests else 0
+        
+        # By topic
+        by_topic = db.session.execute(text("""
+            SELECT topic, COUNT(*) as count
+            FROM user_adaptive_question_history
+            GROUP BY topic
+            ORDER BY count DESC
+            LIMIT 20
+        """)).fetchall()
+        stats['by_topic'] = [{
+            'topic': row.topic,
+            'count': row.count
+        } for row in by_topic]
+        
+        # By level
+        by_level = db.session.execute(text("""
+            SELECT difficulty_level, COUNT(*) as count
+            FROM user_adaptive_question_history
+            GROUP BY difficulty_level
+            ORDER BY difficulty_level
+        """)).fetchall()
+        stats['by_level'] = [{
+            'level': row.difficulty_level,
+            'count': row.count
+        } for row in by_level]
+        
+        return jsonify(stats)
+        
+    except Exception as e:
+        return jsonify({'error': str(e), 'message': 'Table may not exist yet - run the CREATE TABLE script'}), 200
+
+
+@app.route('/api/admin/adaptive-question-history/clear', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_clear_adaptive_question_history():
+    """Clear adaptive question history - can clear for specific user, topic, or all"""
+    from sqlalchemy import text
+    
+    data = request.json or {}
+    user_id = data.get('user_id')
+    guest_code = data.get('guest_code')
+    topic = data.get('topic')
+    clear_all = data.get('clear_all', False)
+    
+    try:
+        if clear_all:
+            db.session.execute(text("DELETE FROM user_adaptive_question_history"))
+            message = "Cleared all adaptive question history"
+        elif user_id:
+            if topic:
+                db.session.execute(text("""
+                    DELETE FROM user_adaptive_question_history 
+                    WHERE user_id = :user_id AND topic = :topic
+                """), {'user_id': user_id, 'topic': topic})
+                message = f"Cleared adaptive history for user {user_id} on topic {topic}"
+            else:
+                db.session.execute(text("""
+                    DELETE FROM user_adaptive_question_history WHERE user_id = :user_id
+                """), {'user_id': user_id})
+                message = f"Cleared all adaptive history for user {user_id}"
+        elif guest_code:
+            if topic:
+                db.session.execute(text("""
+                    DELETE FROM user_adaptive_question_history 
+                    WHERE guest_code = :guest_code AND topic = :topic
+                """), {'guest_code': guest_code, 'topic': topic})
+                message = f"Cleared adaptive history for guest {guest_code} on topic {topic}"
+            else:
+                db.session.execute(text("""
+                    DELETE FROM user_adaptive_question_history WHERE guest_code = :guest_code
+                """), {'guest_code': guest_code})
+                message = f"Cleared all adaptive history for guest {guest_code}"
+        elif topic:
+            db.session.execute(text("""
+                DELETE FROM user_adaptive_question_history WHERE topic = :topic
+            """), {'topic': topic})
+            message = f"Cleared all adaptive history for topic {topic}"
+        else:
+            return jsonify({'error': 'Specify user_id, guest_code, topic, or clear_all=true'}), 400
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': message})
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
+# ADMIN USER ANALYTICS & MANAGEMENT ROUTES
+# =============================================================================
+
+@app.route('/api/admin/analytics/overview')
+@login_required
+@role_required('admin')
+def admin_analytics_overview():
+    """Get overview statistics"""
+    from sqlalchemy import text
+    
+    # Count registered users (exclude guest accounts)
+    registered_count = db.session.execute(text("""
+        SELECT COUNT(*) 
+        FROM users 
+        WHERE email NOT LIKE 'guest%@%' 
+        AND role = 'student'
+    """)).scalar()
+    
+    # Count repeat guests
+    repeat_guests_count = db.session.execute(text("""
+        SELECT COUNT(*) FROM guest_users
+    """)).scalar() or 0
+    
+    # Count inactive guests (60+ days)
+    sixty_days_ago = datetime.utcnow() - timedelta(days=60)
+    inactive_guests = db.session.execute(text("""
+        SELECT COUNT(*) 
+        FROM guest_users 
+        WHERE last_active < :cutoff
+    """), {'cutoff': sixty_days_ago}).scalar() or 0
+    
+    # Count casual sessions today (approximate from guest_sessions if exists)
+    try:
+        casual_today = db.session.execute(text("""
+            SELECT COUNT(*) 
+            FROM guest_sessions 
+            WHERE DATE(created_at) = DATE('now')
+        """)).scalar() or 0
+    except:
+        casual_today = 0
+    
+    return jsonify({
+        'registered_users': registered_count,
+        'repeat_guests': repeat_guests_count,
+        'inactive_guests': inactive_guests,
+        'casual_sessions_today': casual_today
+    })
+
+
+@app.route('/api/admin/analytics/debug')
+@login_required
+@role_required('admin')
+def admin_analytics_debug():
+    """Debug endpoint to check table structure"""
+    from sqlalchemy import text
+    
+    results = {}
+    
+    # Check guest_users columns
+    try:
+        # Get one row to see what columns exist
+        sample = db.session.execute(text("SELECT * FROM guest_users LIMIT 1")).fetchone()
+        if sample:
+            results['guest_users_columns'] = list(sample._mapping.keys()) if hasattr(sample, '_mapping') else f"Row has {len(sample)} columns"
+            results['guest_users_sample'] = [str(x) for x in sample]
+        else:
+            results['guest_users_columns'] = 'Table empty'
+        results['guest_users_count'] = db.session.execute(text("SELECT COUNT(*) FROM guest_users")).scalar()
+    except Exception as e:
+        results['guest_users_error'] = str(e)
+    
+    # Check users table
+    try:
+        sample = db.session.execute(text("SELECT id, email, full_name, role FROM users WHERE role='student' LIMIT 1")).fetchone()
+        if sample:
+            results['users_sample'] = [str(x) for x in sample]
+        results['users_student_count'] = db.session.execute(text("SELECT COUNT(*) FROM users WHERE role='student'")).scalar()
+    except Exception as e:
+        results['users_error'] = str(e)
+    
+    # Check user_stats table
+    try:
+        results['user_stats_count'] = db.session.execute(text("SELECT COUNT(*) FROM user_stats")).scalar()
+    except Exception as e:
+        results['user_stats_error'] = str(e)
+    
+    return jsonify(results)
+
+
+@app.route('/api/admin/analytics/registered-users')
+@login_required
+@role_required('admin')
+def admin_analytics_registered_users():
+    """Get list of all registered users with stats"""
+    from sqlalchemy import text
+    
+    try:
+        # Count first
+        count = db.session.execute(text("""
+            SELECT COUNT(*) FROM users 
+            WHERE email NOT LIKE 'guest%@%' AND role = 'student'
+        """)).scalar()
+        print(f"DEBUG: Found {count} registered students")
+        
+        if count == 0:
+            return jsonify([])
+        
+        # Simple query
+        rows = db.session.execute(text("""
+            SELECT id, email, full_name, created_at
+            FROM users
+            WHERE email NOT LIKE 'guest%@%'
+            AND role = 'student'
+            ORDER BY created_at DESC
+            LIMIT 200
+        """)).fetchall()
+        
+        print(f"DEBUG: Query returned {len(rows)} rows")
+        
+        if rows:
+            print(f"DEBUG: First row: {list(rows[0])}")
+        
+        result = []
+        now = datetime.utcnow()
+        
+        for row in rows:
+            row_data = list(row)
+            user_id = row_data[0]
+            email = row_data[1] if len(row_data) > 1 else 'unknown'
+            full_name = row_data[2] if len(row_data) > 2 and row_data[2] else 'Unknown'
+            created_at = row_data[3] if len(row_data) > 3 else None
+            
+            # Try to get stats
+            points = 0
+            last_active = created_at
+            try:
+                stats = db.session.execute(text(
+                    "SELECT total_points, updated_at FROM user_stats WHERE user_id = :uid"
+                ), {'uid': user_id}).fetchone()
+                if stats:
+                    points = stats[0] if stats[0] else 0
+                    if stats[1]:
+                        last_active = stats[1]
+            except Exception as e:
+                print(f"DEBUG: Error getting stats for user {user_id}: {e}")
+            
+            days_inactive = 0
+            if last_active:
+                try:
+                    days_inactive = (now - last_active).days
+                except:
+                    pass
+            
+            result.append({
+                'id': user_id,
+                'email': str(email),
+                'full_name': str(full_name),
+                'points': points,
+                'quizzes': 0,
+                'last_active': last_active.isoformat() if last_active and hasattr(last_active, 'isoformat') else str(last_active) if last_active else None,
+                'activity_status': 'active' if days_inactive < 7 else ('stale' if days_inactive < 30 else 'inactive'),
+                'activity_label': 'Active' if days_inactive < 7 else ('Inactive' if days_inactive < 30 else f'{days_inactive}d ago')
+            })
+        
+        print(f"DEBUG: Returning {len(result)} users")
+        return jsonify(result)
+        
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        trace = traceback.format_exc()
+        print(f"ERROR in registered-users: {error_msg}")
+        print(trace)
+        return jsonify({'error': error_msg, 'trace': trace})
+
+
+@app.route('/api/admin/analytics/repeat-guests')
+@login_required
+@role_required('admin')
+def admin_analytics_repeat_guests():
+    """Get list of all repeat guests with stats"""
+    from sqlalchemy import text
+    
+    try:
+        # First, let's see what we're working with
+        count = db.session.execute(text("SELECT COUNT(*) FROM guest_users")).scalar()
+        print(f"DEBUG: guest_users has {count} rows")
+        
+        if count == 0:
+            return jsonify([])
+        
+        # Get column names first
+        try:
+            # SQLite way to get column info
+            columns_info = db.session.execute(text("PRAGMA table_info(guest_users)")).fetchall()
+            column_names = [col[1] for col in columns_info]  # col[1] is the column name
+            print(f"DEBUG: guest_users columns: {column_names}")
+        except Exception as e:
+            print(f"DEBUG: Could not get columns: {e}")
+            column_names = []
+        
+        # Build SELECT based on available columns
+        select_cols = ['guest_code']  # This must exist
+        if 'total_score' in column_names:
+            select_cols.append('total_score')
+        if 'created_at' in column_names:
+            select_cols.append('created_at')
+        if 'last_active' in column_names:
+            select_cols.append('last_active')
+        if 'nickname' in column_names:
+            select_cols.append('nickname')
+        
+        query = f"SELECT {', '.join(select_cols)} FROM guest_users ORDER BY last_active DESC LIMIT 200"
+        print(f"DEBUG: Running query: {query}")
+        
+        rows = db.session.execute(text(query)).fetchall()
+        print(f"DEBUG: Got {len(rows)} rows")
+        
+        if not rows:
+            return jsonify([])
+        
+        # Print first row for debugging
+        if rows:
+            print(f"DEBUG: First row: {list(rows[0])}")
+        
+        result = []
+        now = datetime.utcnow()
+        
+        for row in rows:
+            row_data = list(row)  # Convert to list for index access
+            
+            # Map based on select_cols order
+            guest_code = row_data[0] if len(row_data) > 0 else 'unknown'
+            
+            total_score = 0
+            created_at = None
+            last_active = None
+            nickname = None
+            
+            col_idx = 1
+            if 'total_score' in select_cols:
+                total_score = row_data[col_idx] if len(row_data) > col_idx and row_data[col_idx] else 0
+                col_idx += 1
+            if 'created_at' in select_cols:
+                created_at = row_data[col_idx] if len(row_data) > col_idx else None
+                col_idx += 1
+            if 'last_active' in select_cols:
+                last_active = row_data[col_idx] if len(row_data) > col_idx else None
+                col_idx += 1
+            if 'nickname' in select_cols:
+                nickname = row_data[col_idx] if len(row_data) > col_idx else None
+            
+            days_inactive = 0
+            if last_active:
+                try:
+                    days_inactive = (now - last_active).days
+                except:
+                    pass
+            
+            result.append({
+                'guest_code': str(guest_code),
+                'nickname': nickname,
+                'total_score': total_score or 0,
+                'quizzes_completed': 0,
+                'created_at': created_at.isoformat() if created_at and hasattr(created_at, 'isoformat') else str(created_at) if created_at else None,
+                'last_active': last_active.isoformat() if last_active and hasattr(last_active, 'isoformat') else str(last_active) if last_active else None,
+                'days_inactive': days_inactive,
+                'activity_status': 'active' if days_inactive < 7 else ('stale' if days_inactive < 60 else 'inactive'),
+                'activity_label': 'Active' if days_inactive < 7 else (f'{days_inactive}d ago' if days_inactive < 60 else f'Inactive {days_inactive}d')
+            })
+        
+        print(f"DEBUG: Returning {len(result)} guests")
+        return jsonify(result)
+        
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        trace = traceback.format_exc()
+        print(f"ERROR in repeat-guests: {error_msg}")
+        print(trace)
+        return jsonify({'error': error_msg, 'trace': trace, 'debug': 'Check server logs'})
+
+
+@app.route('/api/admin/analytics/inactive-users')
+@login_required
+@role_required('admin')
+def admin_analytics_inactive_users():
+    """Get list of inactive users (60+ days)"""
+    from sqlalchemy import text
+    
+    try:
+        sixty_days_ago = datetime.utcnow() - timedelta(days=60)
+        
+        # Use SELECT * for flexibility
+        rows = db.session.execute(text("""
+            SELECT * FROM guest_users
+            WHERE last_active < :cutoff
+            ORDER BY last_active ASC
+        """), {'cutoff': sixty_days_ago}).fetchall()
+        
+        if not rows:
+            return jsonify([])
+        
+        result = []
+        now = datetime.utcnow()
+        
+        for row in rows:
+            # Get data using _mapping if available
+            if hasattr(row, '_mapping'):
+                data = dict(row._mapping)
+            else:
+                data = {'guest_code': row[0]}
+            
+            guest_code = data.get('guest_code', str(row[0]))
+            last_active = data.get('last_active')
+            points = data.get('total_score', 0) or 0
+            
+            days_inactive = 0
+            if last_active:
+                try:
+                    days_inactive = (now - last_active).days
+                except:
+                    days_inactive = 999
+            
+            result.append({
+                'type': 'Guest',
+                'identifier': guest_code,
+                'last_active': last_active.isoformat() if last_active else None,
+                'days_inactive': days_inactive,
+                'points': points
+            })
+        
+        return jsonify(result)
+    except Exception as e:
+        import traceback
+        print(f"Error in inactive-users: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e), 'trace': traceback.format_exc()})
+
+
+@app.route('/api/admin/analytics/user-detail')
+@login_required
+@role_required('admin')
+def admin_analytics_user_detail():
+    """Get detailed info about a specific user"""
+    from sqlalchemy import text
+    
+    user_type = request.args.get('type')
+    user_id = request.args.get('id')
+    
+    if user_type == 'registered':
+        # Get registered user details
+        user = User.query.get(user_id)
+        stats = UserStats.query.filter_by(user_id=user_id).first()
+        
+        # Get recent activity
+        recent_attempts = db.session.execute(text("""
+            SELECT topic, difficulty, score, total_questions, completed_at
+            FROM quiz_attempts
+            WHERE user_id = :user_id
+            ORDER BY completed_at DESC
+            LIMIT 10
+        """), {'user_id': user_id}).fetchall()
+        
+        recent_activity_html = '<ul>' + ''.join([
+            f'<li>{att.topic} ({att.difficulty}): {att.score}/{att.total_questions} - {att.completed_at.strftime("%Y-%m-%d")}</li>'
+            for att in recent_attempts
+        ]) + '</ul>' if recent_attempts else '<p>No recent activity</p>'
+        
+        return jsonify({
+            'full_name': user.full_name,
+            'email': user.email,
+            'role': user.role,
+            'points': stats.total_points if stats else 0,
+            'level': stats.level if stats else 1,
+            'quizzes': stats.total_quizzes if stats else 0,
+            'accuracy': round((stats.total_correct_answers / stats.total_questions_answered * 100), 1) if stats and stats.total_questions_answered > 0 else 0,
+            'streak': stats.current_streak_days if stats else 0,
+            'recent_activity': recent_activity_html
+        })
+    
+    else:  # guest
+        try:
+            # Get guest details
+            guest = db.session.execute(text("""
+                SELECT 
+                    guest_code,
+                    total_score,
+                    created_at,
+                    last_active
+                FROM guest_users WHERE guest_code = :code
+            """), {'code': user_id}).fetchone()
+            
+            if not guest:
+                return jsonify({'error': 'Guest not found'}), 404
+            
+            # Access by index: 0=guest_code, 1=total_score, 2=created_at, 3=last_active
+            guest_code = guest[0]
+            total_score = guest[1] if guest[1] else 0
+            created_at = guest[2]
+            last_active = guest[3]
+            
+            # Get recent quizzes
+            try:
+                recent_quizzes = db.session.execute(text("""
+                    SELECT topic, difficulty, score, total_questions, completed_at
+                    FROM guest_quiz_attempts
+                    WHERE guest_code = :code
+                    ORDER BY completed_at DESC
+                    LIMIT 10
+                """), {'code': user_id}).fetchall()
+                
+                recent_quizzes_html = '<ul>' + ''.join([
+                    f'<li>{q[0]} ({q[1]}): {q[2]}/{q[3]}</li>'
+                    for q in recent_quizzes
+                ]) + '</ul>' if recent_quizzes else '<p>No quizzes yet</p>'
+            except:
+                recent_quizzes_html = '<p>No quiz data available</p>'
+            
+            now = datetime.utcnow()
+            days_old = (now - created_at).days if created_at else 0
+            days_inactive = (now - last_active).days if last_active else 999
+            
+            return jsonify({
+                'guest_code': guest_code,
+                'nickname': None,
+                'total_score': total_score,
+                'quizzes_completed': 0,
+                'days_old': days_old,
+                'days_inactive': days_inactive,
+                'recent_quizzes': recent_quizzes_html
+            })
+        except Exception as e:
+            import traceback
+            print(f"Error in user-detail guest: {str(e)}")
+            print(traceback.format_exc())
+            return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/analytics/recycle-guest', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_analytics_recycle_guest():
+    """Manually recycle a guest code (delete all data)"""
+    from sqlalchemy import text
+    
+    data = request.json
+    guest_code = data.get('guest_code')
+    
+    try:
+        # Delete guest quiz attempts
+        db.session.execute(text("""
+            DELETE FROM guest_quiz_attempts WHERE guest_code = :code
+        """), {'code': guest_code})
+        
+        # Delete guest badges
+        try:
+            db.session.execute(text("""
+                DELETE FROM guest_badges WHERE guest_code = :code
+            """), {'code': guest_code})
+        except:
+            pass  # Table might not exist
+        
+        # Delete guest user record
+        db.session.execute(text("""
+            DELETE FROM guest_users WHERE guest_code = :code
+        """), {'code': guest_code})
+        
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': f'Guest code {guest_code} recycled'})
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/admin/analytics/run-cleanup', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_analytics_run_cleanup():
+    """Run cleanup process now"""
+    from sqlalchemy import text
+    
+    # Get cleanup threshold from settings (default 60 days)
+    cleanup_days = int(SystemSetting.get('cleanup_days_threshold', '60'))
+    cutoff_date = datetime.utcnow() - timedelta(days=cleanup_days)
+    
+    # Find inactive guest codes
+    inactive_codes = db.session.execute(text("""
+        SELECT guest_code 
+        FROM guest_users 
+        WHERE last_active < :cutoff
+    """), {'cutoff': cutoff_date}).fetchall()
+    
+    recycled_count = 0
+    
+    for row in inactive_codes:
+        guest_code = row.guest_code
+        
+        try:
+            # Delete all related data
+            db.session.execute(text("""
+                DELETE FROM guest_quiz_attempts WHERE guest_code = :code
+            """), {'code': guest_code})
+            
+            try:
+                db.session.execute(text("""
+                    DELETE FROM guest_badges WHERE guest_code = :code
+                """), {'code': guest_code})
+            except:
+                pass
+            
+            db.session.execute(text("""
+                DELETE FROM guest_users WHERE guest_code = :code
+            """), {'code': guest_code})
+            
+            recycled_count += 1
+        except Exception as e:
+            print(f"Error recycling {guest_code}: {e}")
+            continue
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'recycled_count': recycled_count,
+        'message': f'Recycled {recycled_count} inactive guest codes'
+    })
+
+
+@app.route('/api/admin/analytics/cleanup-settings', methods=['GET', 'POST'])
+@login_required
+@role_required('admin')
+def admin_analytics_cleanup_settings():
+    """Get or update cleanup settings"""
+    
+    if request.method == 'GET':
+        return jsonify({
+            'days_threshold': int(SystemSetting.get('cleanup_days_threshold', '60')),
+            'auto_enabled': SystemSetting.get('auto_cleanup_enabled', 'false') == 'true'
+        })
+    
+    else:  # POST
+        data = request.json
+        user_id = session.get('user_id')
+        
+        SystemSetting.set(
+            'cleanup_days_threshold',
+            str(data.get('days_threshold', 60)),
+            'Days of inactivity before guest code cleanup',
+            user_id
+        )
+        
+        SystemSetting.set(
+            'auto_cleanup_enabled',
+            'true' if data.get('auto_enabled') else 'false',
+            'Enable automatic daily cleanup',
+            user_id
+        )
+        
+        return jsonify({'success': True})
+
+
+# =============================================================================
+# SITE SETTINGS API (Admin)
+# =============================================================================
+
+@app.route('/api/admin/site-settings')
+@login_required
+@role_required('admin')
+def admin_get_site_settings():
+    """Get all site settings for admin dashboard"""
+    return jsonify({
+        'full_account_login_enabled': SystemSetting.get('FULL_ACCOUNT_LOGIN_ENABLED', False) in [True, 'true', 'True'],
+        'cleanup_days_threshold': int(SystemSetting.get('cleanup_days_threshold', '60')),
+        'auto_cleanup_enabled': SystemSetting.get('auto_cleanup_enabled', 'false') == 'true',
+        'prize_pin_threshold': int(SystemSetting.get('prize_pin_threshold', '2000'))
+    })
+
+
+@app.route('/api/admin/site-settings/full-account-login', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_toggle_full_account_login():
+    """Toggle full account login visibility"""
+    data = request.json or {}
+    enabled = data.get('enabled', False)
+    user_id = session.get('user_id')
+    
+    SystemSetting.set(
+        'FULL_ACCOUNT_LOGIN_ENABLED',
+        'true' if enabled else 'false',
+        'Enable full account login on the login page (GDPR compliance)',
+        user_id
+    )
+    
+    return jsonify({
+        'success': True,
+        'enabled': enabled,
+        'message': f'Full account login {"enabled" if enabled else "disabled"}'
+    })
+
+
+@app.route('/api/admin/site-settings/prize-pin-threshold', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_set_prize_pin_threshold():
+    """Set the points threshold for Prize Shop PIN protection"""
+    data = request.json or {}
+    threshold = int(data.get('threshold', 2000))
+    user_id = session.get('user_id')
+    
+    # Validate threshold (minimum 500, maximum 10000)
+    threshold = max(500, min(10000, threshold))
+    
+    SystemSetting.set(
+        'prize_pin_threshold',
+        str(threshold),
+        'Points threshold for Prize Shop PIN protection',
+        user_id
+    )
+    
+    return jsonify({
+        'success': True,
+        'threshold': threshold,
+        'message': f'Prize PIN threshold set to {threshold} points'
+    })
+
+
+# =============================================================================
+# ADDITIONAL RESOURCES API
+# =============================================================================
+
+@app.route('/api/resources')
+def get_resources():
+    """Get all active resources for student display"""
+    from sqlalchemy import text
+    
+    try:
+        result = db.session.execute(text("""
+            SELECT id, button_text, link_url, popup_text, image_filename, display_order, category
+            FROM additional_resources
+            WHERE is_active = 1
+            ORDER BY display_order, id
+        """)).fetchall()
+        
+        resources = []
+        for row in result:
+            image_url = None
+            if row[4]:
+                image_url = f'/static/resources/{row[4]}'
+            
+            resources.append({
+                'id': row[0],
+                'button_text': row[1],
+                'link_url': row[2],
+                'popup_text': row[3],
+                'image_url': image_url,
+                'display_order': row[5],
+                'category': row[6]
+            })
+        
+        return jsonify({'resources': resources})
+    except Exception as e:
+        print(f"Error loading resources: {e}")
+        return jsonify({'resources': []})
+
+
+@app.route('/api/admin/resources')
+@login_required
+@role_required('admin')
+def admin_get_resources():
+    """Get all resources for admin management"""
+    from sqlalchemy import text
+    
+    try:
+        result = db.session.execute(text("""
+            SELECT id, button_text, link_url, popup_text, image_filename, 
+                   display_order, is_active, created_at, updated_at, category
+            FROM additional_resources
+            ORDER BY display_order, id
+        """)).fetchall()
+        
+        resources = []
+        for row in result:
+            image_url = None
+            if row[4]:
+                image_url = f'/static/resources/{row[4]}'
+            
+            resources.append({
+                'id': row[0],
+                'button_text': row[1],
+                'link_url': row[2],
+                'popup_text': row[3],
+                'image_filename': row[4],
+                'image_url': image_url,
+                'display_order': row[5],
+                'is_active': bool(row[6]),
+                'created_at': row[7],
+                'updated_at': row[8],
+                'category': row[9]
+            })
+        
+        return jsonify({'resources': resources})
+    except Exception as e:
+        print(f"Error loading admin resources: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/resources', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_add_resource():
+    """Add a new external resource"""
+    from sqlalchemy import text
+    import os
+    from werkzeug.utils import secure_filename
+    
+    try:
+        button_text = request.form.get('button_text', '').strip()
+        link_url = request.form.get('link_url', '').strip()
+        popup_text = request.form.get('popup_text', '').strip()
+        category = request.form.get('category', '').strip()
+        display_order = request.form.get('display_order', '1').strip()
+        
+        if not button_text or not link_url:
+            return jsonify({'error': 'Button text and link URL are required'}), 400
+        
+        # Handle image upload
+        image_filename = None
+        if 'image' in request.files:
+            file = request.files['image']
+            if file.filename:
+                # Create resources directory if it doesn't exist
+                resources_dir = os.path.join(app.static_folder, 'resources')
+                os.makedirs(resources_dir, exist_ok=True)
+                
+                # Generate unique filename
+                ext = os.path.splitext(file.filename)[1].lower()
+                safe_name = secure_filename(button_text.lower().replace(' ', '_'))
+                image_filename = f"{safe_name}_{int(datetime.now().timestamp())}{ext}"
+                
+                # Save file
+                file.save(os.path.join(resources_dir, image_filename))
+        
+        # Use provided display_order or get next available
+        try:
+            display_order = int(display_order)
+        except:
+            result = db.session.execute(text(
+                "SELECT COALESCE(MAX(display_order), 0) + 1 FROM additional_resources"
+            )).fetchone()
+            display_order = result[0]
+        
+        # Insert resource
+        user_id = session.get('user_id')
+        db.session.execute(text("""
+            INSERT INTO additional_resources 
+            (button_text, link_url, popup_text, image_filename, display_order, is_active, created_by, category)
+            VALUES (:button_text, :link_url, :popup_text, :image_filename, :display_order, 1, :created_by, :category)
+        """), {
+            'button_text': button_text,
+            'link_url': link_url,
+            'popup_text': popup_text,
+            'image_filename': image_filename,
+            'display_order': display_order,
+            'created_by': user_id,
+            'category': category
+        })
+        
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Resource added successfully'})
+        
+    except Exception as e:
+        print(f"Error adding resource: {e}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/resources/<int:resource_id>', methods=['PUT'])
+@login_required
+@role_required('admin')
+def admin_update_resource(resource_id):
+    """Update an existing resource"""
+    from sqlalchemy import text
+    import os
+    from werkzeug.utils import secure_filename
+    
+    try:
+        button_text = request.form.get('button_text', '').strip()
+        link_url = request.form.get('link_url', '').strip()
+        popup_text = request.form.get('popup_text', '').strip()
+        category = request.form.get('category', '').strip()
+        display_order = request.form.get('display_order', '1').strip()
+        
+        if not button_text or not link_url:
+            return jsonify({'error': 'Button text and link URL are required'}), 400
+        
+        # Parse display_order
+        try:
+            display_order = int(display_order)
+        except:
+            display_order = 1
+        
+        # Check if resource exists
+        existing = db.session.execute(text(
+            "SELECT image_filename FROM additional_resources WHERE id = :id"
+        ), {'id': resource_id}).fetchone()
+        
+        if not existing:
+            return jsonify({'error': 'Resource not found'}), 404
+        
+        # Handle image upload
+        image_filename = existing[0]  # Keep existing image by default
+        if 'image' in request.files:
+            file = request.files['image']
+            if file.filename:
+                # Create resources directory if it doesn't exist
+                resources_dir = os.path.join(app.static_folder, 'resources')
+                os.makedirs(resources_dir, exist_ok=True)
+                
+                # Delete old image if exists
+                if image_filename:
+                    old_path = os.path.join(resources_dir, image_filename)
+                    if os.path.exists(old_path):
+                        os.remove(old_path)
+                
+                # Generate unique filename
+                ext = os.path.splitext(file.filename)[1].lower()
+                safe_name = secure_filename(button_text.lower().replace(' ', '_'))
+                image_filename = f"{safe_name}_{int(datetime.now().timestamp())}{ext}"
+                
+                # Save file
+                file.save(os.path.join(resources_dir, image_filename))
+        
+        # Update resource
+        db.session.execute(text("""
+            UPDATE additional_resources 
+            SET button_text = :button_text, 
+                link_url = :link_url, 
+                popup_text = :popup_text,
+                image_filename = :image_filename,
+                category = :category,
+                display_order = :display_order,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        """), {
+            'button_text': button_text,
+            'link_url': link_url,
+            'popup_text': popup_text,
+            'image_filename': image_filename,
+            'category': category,
+            'display_order': display_order,
+            'id': resource_id
+        })
+        
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Resource updated successfully'})
+        
+    except Exception as e:
+        print(f"Error updating resource: {e}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/resources/<int:resource_id>/toggle', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_toggle_resource(resource_id):
+    """Toggle resource active status"""
+    from sqlalchemy import text
+    
+    try:
+        db.session.execute(text("""
+            UPDATE additional_resources 
+            SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        """), {'id': resource_id})
+        
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Resource status toggled'})
+        
+    except Exception as e:
+        print(f"Error toggling resource: {e}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/resources/<int:resource_id>', methods=['DELETE'])
+@login_required
+@role_required('admin')
+def admin_delete_resource(resource_id):
+    """Delete a resource"""
+    from sqlalchemy import text
+    import os
+    
+    try:
+        # Get image filename before deletion
+        result = db.session.execute(text(
+            "SELECT image_filename FROM additional_resources WHERE id = :id"
+        ), {'id': resource_id}).fetchone()
+        
+        if result and result[0]:
+            # Delete image file
+            image_path = os.path.join(app.static_folder, 'resources', result[0])
+            if os.path.exists(image_path):
+                os.remove(image_path)
+        
+        # Delete resource
+        db.session.execute(text(
+            "DELETE FROM additional_resources WHERE id = :id"
+        ), {'id': resource_id})
+        
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': 'Resource deleted successfully'})
+        
+    except Exception as e:
+        print(f"Error deleting resource: {e}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
+# PRIZE SHOP PIN PROTECTION API
+# =============================================================================
+
+@app.route('/api/prize-pin/status')
+@login_required
+def get_prize_pin_status():
+    """Check if user needs PIN for Prize Shop access"""
+    from sqlalchemy import text
+    
+    # Get threshold from settings
+    threshold = int(SystemSetting.get('prize_pin_threshold', '2000'))
+    
+    # Determine user type and get their data
+    if 'guest_code' in session:
+        # Guest code user
+        guest_code = session['guest_code']
+        result = db.session.execute(
+            text("SELECT total_score, prize_pin, prize_pin_hint FROM guest_users WHERE guest_code = :code"),
+            {'code': guest_code}
+        ).fetchone()
+        
+        if not result:
+            return jsonify({'requires_pin': False, 'has_pin': False, 'points': 0, 'threshold': threshold})
+        
+        points = result[0] or 0
+        has_pin = bool(result[1])
+        hint = result[2] or ''
+        
+    elif 'user_id' in session:
+        # Registered user
+        user_id = session['user_id']
+        stats = UserStats.query.filter_by(user_id=user_id).first()
+        
+        if not stats:
+            return jsonify({'requires_pin': False, 'has_pin': False, 'points': 0, 'threshold': threshold})
+        
+        points = stats.total_points or 0
+        has_pin = bool(stats.prize_pin)
+        hint = stats.prize_pin_hint or ''
+    else:
+        # Casual guest - no PIN needed
+        return jsonify({'requires_pin': False, 'has_pin': False, 'points': 0, 'threshold': threshold})
+    
+    requires_pin = points >= threshold
+    
+    return jsonify({
+        'requires_pin': requires_pin,
+        'has_pin': has_pin,
+        'needs_setup': requires_pin and not has_pin,
+        'hint': hint if has_pin else '',
+        'points': points,
+        'threshold': threshold
+    })
+
+
+@app.route('/api/prize-pin/set', methods=['POST'])
+@login_required
+def set_prize_pin():
+    """Set or update the Prize Shop PIN"""
+    from sqlalchemy import text
+    
+    data = request.json or {}
+    pin = data.get('pin', '').strip().lower()  # Store lowercase for case-insensitive matching
+    hint = data.get('hint', '').strip()
+    
+    # Validate PIN
+    if not pin or len(pin) < 2:
+        return jsonify({'error': 'PIN must be at least 2 characters'}), 400
+    
+    if len(pin) > 50:
+        return jsonify({'error': 'PIN is too long (max 50 characters)'}), 400
+    
+    # Validate hint
+    if not hint or len(hint) < 2:
+        return jsonify({'error': 'Please provide a hint (at least 2 characters)'}), 400
+    
+    if len(hint) > 100:
+        return jsonify({'error': 'Hint is too long (max 100 characters)'}), 400
+    
+    # Determine user type and save PIN
+    if 'guest_code' in session:
+        # Guest code user
+        guest_code = session['guest_code']
+        db.session.execute(
+            text("UPDATE guest_users SET prize_pin = :pin, prize_pin_hint = :hint WHERE guest_code = :code"),
+            {'pin': pin, 'hint': hint, 'code': guest_code}
+        )
+        db.session.commit()
+        
+    elif 'user_id' in session:
+        # Registered user
+        user_id = session['user_id']
+        stats = UserStats.query.filter_by(user_id=user_id).first()
+        
+        if not stats:
+            return jsonify({'error': 'User stats not found'}), 404
+        
+        stats.prize_pin = pin
+        stats.prize_pin_hint = hint
+        db.session.commit()
+    else:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    return jsonify({
+        'success': True,
+        'message': 'PIN set successfully! Remember your hint: ' + hint
+    })
+
+
+@app.route('/api/prize-pin/verify', methods=['POST'])
+@login_required
+def verify_prize_pin():
+    """Verify the Prize Shop PIN"""
+    from sqlalchemy import text
+    
+    data = request.json or {}
+    entered_pin = data.get('pin', '').strip().lower()  # Compare lowercase
+    
+    if not entered_pin:
+        return jsonify({'success': False, 'error': 'Please enter your PIN'}), 400
+    
+    # Get stored PIN based on user type
+    stored_pin = None
+    
+    if 'guest_code' in session:
+        guest_code = session['guest_code']
+        result = db.session.execute(
+            text("SELECT prize_pin FROM guest_users WHERE guest_code = :code"),
+            {'code': guest_code}
+        ).fetchone()
+        stored_pin = result[0] if result else None
+        
+    elif 'user_id' in session:
+        user_id = session['user_id']
+        stats = UserStats.query.filter_by(user_id=user_id).first()
+        stored_pin = stats.prize_pin if stats else None
+    
+    if not stored_pin:
+        return jsonify({'success': False, 'error': 'No PIN set'}), 400
+    
+    # Compare PINs (case-insensitive)
+    if entered_pin == stored_pin.lower():
+        # Store verification in session (expires with session)
+        session['prize_pin_verified'] = True
+        return jsonify({
+            'success': True,
+            'message': 'PIN verified! Welcome to the Prize Shop.'
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': 'Incorrect PIN. Check your hint and try again.'
+        }), 401
+
+
+@app.route('/api/prize-pin/reset', methods=['POST'])
+@login_required
+def reset_prize_pin():
+    """Reset/change the Prize Shop PIN (requires knowing current PIN)"""
+    from sqlalchemy import text
+    
+    data = request.json or {}
+    current_pin = data.get('current_pin', '').strip().lower()
+    new_pin = data.get('new_pin', '').strip().lower()
+    new_hint = data.get('new_hint', '').strip()
+    
+    # Validate inputs
+    if not current_pin:
+        return jsonify({'error': 'Current PIN is required'}), 400
+    
+    if not new_pin or len(new_pin) < 2:
+        return jsonify({'error': 'New PIN must be at least 2 characters'}), 400
+    
+    if not new_hint or len(new_hint) < 2:
+        return jsonify({'error': 'Please provide a hint for your new PIN'}), 400
+    
+    # Get and verify current PIN
+    stored_pin = None
+    
+    if 'guest_code' in session:
+        guest_code = session['guest_code']
+        result = db.session.execute(
+            text("SELECT prize_pin FROM guest_users WHERE guest_code = :code"),
+            {'code': guest_code}
+        ).fetchone()
+        stored_pin = result[0] if result else None
+        
+        if stored_pin and current_pin == stored_pin.lower():
+            db.session.execute(
+                text("UPDATE guest_users SET prize_pin = :pin, prize_pin_hint = :hint WHERE guest_code = :code"),
+                {'pin': new_pin, 'hint': new_hint, 'code': guest_code}
+            )
+            db.session.commit()
+        else:
+            return jsonify({'error': 'Current PIN is incorrect'}), 401
+            
+    elif 'user_id' in session:
+        user_id = session['user_id']
+        stats = UserStats.query.filter_by(user_id=user_id).first()
+        stored_pin = stats.prize_pin if stats else None
+        
+        if stored_pin and current_pin == stored_pin.lower():
+            stats.prize_pin = new_pin
+            stats.prize_pin_hint = new_hint
+            db.session.commit()
+        else:
+            return jsonify({'error': 'Current PIN is incorrect'}), 401
+    else:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    return jsonify({
+        'success': True,
+        'message': 'PIN changed successfully!'
+    })
+
+
+# =============================================================================
+# PUZZLE OF THE WEEK - STUDENT/USER API ROUTES
+# =============================================================================
+
+@app.route('/api/puzzle/current')
+def get_current_puzzle():
+    """Get the current week's active puzzle"""
+    puzzle = get_active_puzzle()
+    
+    if not puzzle:
+        return jsonify({'puzzle': None, 'message': 'No active puzzle this week'})
+    
+    # Increment view count
+    puzzle.view_count += 1
+    db.session.commit()
+    
+    return jsonify({
+        'puzzle': puzzle.to_dict(include_answer=False),
+        'week': puzzle.week_number,
+        'year': puzzle.year
+    })
+
+
+@app.route('/api/puzzle/status')
+def get_puzzle_status():
+    """Check user's puzzle status - should they see popup? Can reveal answer?"""
+    puzzle = get_active_puzzle()
+    
+    if not puzzle:
+        return jsonify({
+            'has_puzzle': False,
+            'show_popup': False,
+            'can_reveal_answer': False
+        })
+    
+    # Determine user identity
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    session_id = session.get('session_id', request.cookies.get('session_id'))
+    
+    # Get or create status
+    status = get_user_puzzle_status(
+        puzzle.id,
+        user_id=user_id,
+        guest_code=guest_code,
+        session_id=session_id
+    )
+    
+    if not status:
+        # No way to track this user, show puzzle anyway
+        return jsonify({
+            'has_puzzle': True,
+            'show_popup': True,
+            'can_reveal_answer': True,
+            'already_revealed': False,
+            'hint_available': bool(puzzle.hint),
+            'puzzle': puzzle.to_dict(include_answer=False)
+        })
+    
+    return jsonify({
+        'has_puzzle': True,
+        'show_popup': not status.dismissed_popup,
+        'can_reveal_answer': not status.dismissed_answer,
+        'already_revealed': status.revealed_answer,
+        'hint_viewed': status.hint_viewed,
+        'hint_available': bool(puzzle.hint),
+        'puzzle': puzzle.to_dict(include_answer=status.revealed_answer)
+    })
+
+
+@app.route('/api/puzzle/dismiss-popup', methods=['POST'])
+def dismiss_puzzle_popup():
+    """User dismisses the puzzle splash popup for this week"""
+    puzzle = get_active_puzzle()
+    if not puzzle:
+        return jsonify({'success': False, 'error': 'No active puzzle'})
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    session_id = session.get('session_id', request.cookies.get('session_id'))
+    
+    status = get_user_puzzle_status(
+        puzzle.id,
+        user_id=user_id,
+        guest_code=guest_code,
+        session_id=session_id
+    )
+    
+    if status:
+        status.dismissed_popup = True
+        db.session.commit()
+    
+    return jsonify({'success': True})
+
+
+@app.route('/api/puzzle/dismiss-answer', methods=['POST'])
+def dismiss_puzzle_answer():
+    """User declines to ever see the answer this week"""
+    puzzle = get_active_puzzle()
+    if not puzzle:
+        return jsonify({'success': False, 'error': 'No active puzzle'})
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    session_id = session.get('session_id', request.cookies.get('session_id'))
+    
+    status = get_user_puzzle_status(
+        puzzle.id,
+        user_id=user_id,
+        guest_code=guest_code,
+        session_id=session_id
+    )
+    
+    if status:
+        status.dismissed_answer = True
+        db.session.commit()
+    
+    return jsonify({'success': True})
+
+
+@app.route('/api/puzzle/reveal-answer', methods=['POST'])
+def reveal_puzzle_answer():
+    """User requests to see the puzzle answer"""
+    puzzle = get_active_puzzle()
+    if not puzzle:
+        return jsonify({'success': False, 'error': 'No active puzzle'})
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    session_id = session.get('session_id', request.cookies.get('session_id'))
+    
+    status = get_user_puzzle_status(
+        puzzle.id,
+        user_id=user_id,
+        guest_code=guest_code,
+        session_id=session_id
+    )
+    
+    if status:
+        status.revealed_answer = True
+        status.answer_revealed_at = datetime.utcnow()
+        status.dismissed_answer = True  # Don't offer again
+        db.session.commit()
+    
+    # Increment puzzle reveal count
+    puzzle.reveal_count += 1
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'answer_image': puzzle.answer_image,
+        'answer_text': puzzle.answer_text
+    })
+
+
+@app.route('/api/puzzle/view-hint', methods=['POST'])
+def view_puzzle_hint():
+    """User views the puzzle hint"""
+    puzzle = get_active_puzzle()
+    if not puzzle or not puzzle.hint:
+        return jsonify({'success': False, 'error': 'No hint available'})
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    session_id = session.get('session_id', request.cookies.get('session_id'))
+    
+    status = get_user_puzzle_status(
+        puzzle.id,
+        user_id=user_id,
+        guest_code=guest_code,
+        session_id=session_id
+    )
+    
+    if status:
+        status.hint_viewed = True
+        db.session.commit()
+    
+    # Increment puzzle hint view count
+    puzzle.hint_view_count += 1
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'hint': puzzle.hint
+    })
+
+
+# =============================================================================
+# PUZZLE OF THE WEEK - ADMIN API ROUTES
+# =============================================================================
+
+@app.route('/api/admin/puzzles')
+@login_required
+@role_required('admin')
+def admin_list_puzzles():
+    """List all puzzles"""
+    from sqlalchemy import text
+    
+    try:
+        # First, ensure tables exist
+        try:
+            db.session.execute(text("SELECT 1 FROM weekly_puzzles LIMIT 1"))
+        except Exception as table_error:
+            print(f"Puzzle tables don't exist, creating them...")
+            # Create tables
+            db.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS weekly_puzzles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title VARCHAR(200) NOT NULL,
+                    description TEXT,
+                    puzzle_type VARCHAR(20) DEFAULT 'image',
+                    puzzle_image VARCHAR(500),
+                    puzzle_text TEXT,
+                    answer_image VARCHAR(500),
+                    answer_text TEXT,
+                    hint TEXT,
+                    week_number INTEGER NOT NULL,
+                    year INTEGER NOT NULL,
+                    is_active BOOLEAN DEFAULT 0,
+                    view_count INTEGER DEFAULT 0,
+                    reveal_count INTEGER DEFAULT 0,
+                    hint_view_count INTEGER DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    created_by INTEGER,
+                    UNIQUE(week_number, year)
+                )
+            """))
+            db.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS puzzle_user_status (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    puzzle_id INTEGER NOT NULL,
+                    user_id INTEGER,
+                    guest_code VARCHAR(20),
+                    session_id VARCHAR(100),
+                    dismissed_popup BOOLEAN DEFAULT 0,
+                    dismissed_answer BOOLEAN DEFAULT 0,
+                    revealed_answer BOOLEAN DEFAULT 0,
+                    hint_viewed BOOLEAN DEFAULT 0,
+                    view_count INTEGER DEFAULT 1,
+                    first_viewed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    answer_revealed_at DATETIME,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (puzzle_id) REFERENCES weekly_puzzles(id)
+                )
+            """))
+            db.session.commit()
+            print("Puzzle tables created successfully!")
+        
+        puzzles = WeeklyPuzzle.query.order_by(
+            WeeklyPuzzle.year.desc(),
+            WeeklyPuzzle.week_number.desc()
+        ).all()
+        
+        current_week, current_year = get_current_week_year()
+        
+        return jsonify({
+            'puzzles': [p.to_dict(include_answer=True) for p in puzzles],
+            'current_week': current_week,
+            'current_year': current_year
+        })
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        print(f"ERROR listing puzzles: {error_msg}")
+        print(traceback.format_exc())
+        
+        # If table doesn't exist, return empty with week info
+        current_week, current_year = get_current_week_year()
+        return jsonify({
+            'puzzles': [],
+            'current_week': current_week,
+            'current_year': current_year,
+            'error': error_msg
+        })
+
+
+@app.route('/api/admin/puzzles', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_create_puzzle():
+    """Create a new puzzle"""
+    try:
+        data = request.get_json() or {}
+        
+        print(f"DEBUG: Creating puzzle with data: {data}")
+        
+        # Validate required fields
+        if not data.get('title'):
+            return jsonify({'success': False, 'error': 'Title is required'}), 400
+        if not data.get('week_number') or not data.get('year'):
+            return jsonify({'success': False, 'error': 'Week and year are required'}), 400
+        
+        # Check for existing puzzle in that week
+        existing = WeeklyPuzzle.query.filter_by(
+            week_number=data['week_number'],
+            year=data['year']
+        ).first()
+        
+        if existing:
+            return jsonify({
+                'success': False, 
+                'error': f'Puzzle already exists for Week {data["week_number"]}, {data["year"]}'
+            }), 400
+        
+        puzzle = WeeklyPuzzle(
+            title=data['title'],
+            description=data.get('description'),
+            puzzle_type=data.get('puzzle_type', 'image'),
+            puzzle_image=data.get('puzzle_image'),
+            puzzle_text=data.get('puzzle_text'),
+            answer_image=data.get('answer_image'),
+            answer_text=data.get('answer_text'),
+            hint=data.get('hint'),
+            week_number=data['week_number'],
+            year=data['year'],
+            is_active=data.get('is_active', False),
+            created_by=session.get('user_id')
+        )
+        
+        db.session.add(puzzle)
+        db.session.commit()
+        
+        print(f"DEBUG: Puzzle created with ID: {puzzle.id}")
+        
+        return jsonify({
+            'success': True,
+            'puzzle': puzzle.to_dict(include_answer=True)
+        })
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        trace = traceback.format_exc()
+        print(f"ERROR creating puzzle: {error_msg}")
+        print(trace)
+        db.session.rollback()
+        return jsonify({'success': False, 'error': error_msg}), 500
+
+
+@app.route('/api/admin/puzzles/<int:puzzle_id>', methods=['PUT'])
+@login_required
+@role_required('admin')
+def admin_update_puzzle(puzzle_id):
+    """Update an existing puzzle"""
+    puzzle = WeeklyPuzzle.query.get_or_404(puzzle_id)
+    data = request.get_json() or {}
+    
+    # Update fields
+    if 'title' in data:
+        puzzle.title = data['title']
+    if 'description' in data:
+        puzzle.description = data['description']
+    if 'puzzle_type' in data:
+        puzzle.puzzle_type = data['puzzle_type']
+    if 'puzzle_image' in data:
+        puzzle.puzzle_image = data['puzzle_image']
+    if 'puzzle_text' in data:
+        puzzle.puzzle_text = data['puzzle_text']
+    if 'answer_image' in data:
+        puzzle.answer_image = data['answer_image']
+    if 'answer_text' in data:
+        puzzle.answer_text = data['answer_text']
+    if 'hint' in data:
+        puzzle.hint = data['hint']
+    if 'is_active' in data:
+        puzzle.is_active = data['is_active']
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'puzzle': puzzle.to_dict(include_answer=True)
+    })
+
+
+@app.route('/api/admin/puzzles/<int:puzzle_id>', methods=['DELETE'])
+@login_required
+@role_required('admin')
+def admin_delete_puzzle(puzzle_id):
+    """Delete a puzzle"""
+    puzzle = WeeklyPuzzle.query.get_or_404(puzzle_id)
+    
+    # Delete associated user statuses first
+    PuzzleUserStatus.query.filter_by(puzzle_id=puzzle_id).delete()
+    
+    db.session.delete(puzzle)
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/puzzles/<int:puzzle_id>/activate', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_activate_puzzle(puzzle_id):
+    """Activate a puzzle (deactivate others for same week)"""
+    puzzle = WeeklyPuzzle.query.get_or_404(puzzle_id)
+    
+    # Deactivate any other puzzles for the same week
+    WeeklyPuzzle.query.filter_by(
+        week_number=puzzle.week_number,
+        year=puzzle.year
+    ).update({'is_active': False})
+    
+    # Activate this one
+    puzzle.is_active = True
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'puzzle': puzzle.to_dict(include_answer=True)
+    })
+
+
+@app.route('/api/admin/puzzles/<int:puzzle_id>/deactivate', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_deactivate_puzzle(puzzle_id):
+    """Deactivate a puzzle"""
+    puzzle = WeeklyPuzzle.query.get_or_404(puzzle_id)
+    puzzle.is_active = False
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'puzzle': puzzle.to_dict(include_answer=True)
+    })
+
+
+@app.route('/api/admin/puzzles/<int:puzzle_id>/stats')
+@login_required
+@role_required('admin')
+def admin_puzzle_stats(puzzle_id):
+    """Get detailed stats for a puzzle"""
+    puzzle = WeeklyPuzzle.query.get_or_404(puzzle_id)
+    
+    from sqlalchemy import func, case
+    
+    # Get stats from puzzle_user_status
+    stats = db.session.query(
+        func.count(PuzzleUserStatus.id).label('total_users'),
+        func.sum(case((PuzzleUserStatus.revealed_answer == True, 1), else_=0)).label('reveals'),
+        func.sum(case((PuzzleUserStatus.hint_viewed == True, 1), else_=0)).label('hints_viewed'),
+        func.sum(case((PuzzleUserStatus.dismissed_popup == True, 1), else_=0)).label('dismissed')
+    ).filter_by(puzzle_id=puzzle_id).first()
+    
+    return jsonify({
+        'puzzle_id': puzzle_id,
+        'title': puzzle.title,
+        'week_number': puzzle.week_number,
+        'year': puzzle.year,
+        'is_active': puzzle.is_active,
+        'view_count': puzzle.view_count,
+        'reveal_count': puzzle.reveal_count,
+        'hint_view_count': puzzle.hint_view_count,
+        'unique_users': stats.total_users or 0,
+        'answer_reveals': int(stats.reveals or 0),
+        'hints_viewed': int(stats.hints_viewed or 0),
+        'popup_dismissed': int(stats.dismissed or 0)
+    })
+
+
+@app.route('/api/admin/puzzles/upload-image', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_upload_puzzle_image():
+    """Upload a puzzle or answer image (800x600)"""
+    import os
+    from werkzeug.utils import secure_filename
+    
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'error': 'No file selected'}), 400
+    
+    # Validate file type
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    if ext not in allowed_extensions:
+        return jsonify({'success': False, 'error': 'Invalid file type. Use PNG, JPG, GIF, or WEBP'}), 400
+    
+    # Create puzzles directory if needed
+    upload_dir = os.path.join(app.static_folder, 'puzzles')
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    # Generate unique filename
+    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    image_type = request.form.get('type', 'puzzle')  # 'puzzle' or 'answer'
+    filename = secure_filename(f"{image_type}_{timestamp}.{ext}")
+    filepath = os.path.join(upload_dir, filename)
+    
+    # Save file
+    file.save(filepath)
+    
+    # Return the URL path
+    url_path = f"/static/puzzles/{filename}"
+    
+    return jsonify({
+        'success': True,
+        'path': url_path,
+        'filename': filename
+    })
+
+
+# =============================================================================
+# QUESTION IMAGE UPLOAD API
+# =============================================================================
+
+@app.route('/api/admin/questions/upload-image', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_upload_question_image():
+    """Upload an image for a question"""
+    import os
+    from werkzeug.utils import secure_filename
+    
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'error': 'No file selected'}), 400
+    
+    # Validate file type
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
+    ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else ''
+    if ext not in allowed_extensions:
+        return jsonify({'success': False, 'error': 'Invalid file type. Use PNG, JPG, GIF, WEBP, or SVG'}), 400
+    
+    # Check file size (max 2MB)
+    file.seek(0, 2)  # Seek to end
+    size = file.tell()
+    file.seek(0)  # Reset to beginning
+    if size > 2 * 1024 * 1024:
+        return jsonify({'success': False, 'error': 'File too large. Maximum 2MB'}), 400
+    
+    # Create question_images directory if needed
+    upload_dir = os.path.join(app.static_folder, 'question_images')
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    # Generate unique filename
+    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    question_id = request.form.get('question_id', 'new')
+    topic = request.form.get('topic', 'general')
+    filename = secure_filename(f"q_{topic}_{question_id}_{timestamp}.{ext}")
+    filepath = os.path.join(upload_dir, filename)
+    
+    # Save file
+    file.save(filepath)
+    
+    # Return the URL path
+    url_path = f"/static/question_images/{filename}"
+    
+    return jsonify({
+        'success': True,
+        'path': url_path,
+        'filename': filename
+    })
+
+
+@app.route('/api/admin/questions/delete-image', methods=['POST'])
+@login_required
+@role_required('admin')
+def admin_delete_question_image():
+    """Delete a question image file"""
+    import os
+    
+    data = request.json or {}
+    image_path = data.get('image_path', '')
+    
+    if not image_path or not image_path.startswith('/static/question_images/'):
+        return jsonify({'success': False, 'error': 'Invalid image path'}), 400
+    
+    # Get filename from path
+    filename = image_path.replace('/static/question_images/', '')
+    filepath = os.path.join(app.static_folder, 'question_images', filename)
+    
+    # Delete file if it exists
+    if os.path.exists(filepath):
+        os.remove(filepath)
+        return jsonify({'success': True, 'message': 'Image deleted'})
+    else:
+        return jsonify({'success': False, 'error': 'Image not found'}), 404
+
+
+
+
+# =====================================================
+# RACING CAR CHALLENGE ROUTES
+# =====================================================
+
+@app.route('/racing-car')
+@guest_or_login_required
+def racing_car_page():
+    """Racing Car 3D viewer page"""
+    return render_template('racing_car.html')
+
+
+@app.route('/api/racing-car/status')
+@guest_or_login_required
+def get_racing_car_status():
+    """Get the user's racing car status including parts unlocked, points, next part"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    
+    if not user_id and not guest_code:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    # Get current points
+    current_points = 0
+    if guest_code:
+        result = db.session.execute(text(
+            "SELECT total_score FROM guest_users WHERE guest_code = :code"
+        ), {"code": guest_code}).fetchone()
+        current_points = result[0] if result else 0
+    elif user_id:
+        stats = UserStats.query.filter_by(user_id=user_id).first()
+        current_points = stats.total_points if stats else 0
+    
+    # Get or create user's race car record
+    try:
+        if guest_code:
+            car = db.session.execute(text(
+                "SELECT id, user_id, guest_code, parts_unlocked, highest_points_seen, car_name, primary_color, secondary_color FROM user_race_cars WHERE guest_code = :code"
+            ), {"code": guest_code}).fetchone()
+            
+            if not car:
+                db.session.execute(text("""
+                    INSERT INTO user_race_cars (guest_code, parts_unlocked, highest_points_seen, created_at, updated_at)
+                    VALUES (:code, 0, :points, :now, :now)
+                """), {"code": guest_code, "points": current_points, "now": datetime.utcnow()})
+                db.session.commit()
+                car = db.session.execute(text(
+                    "SELECT id, user_id, guest_code, parts_unlocked, highest_points_seen, car_name, primary_color, secondary_color FROM user_race_cars WHERE guest_code = :code"
+                ), {"code": guest_code}).fetchone()
+        else:
+            car = db.session.execute(text(
+                "SELECT id, user_id, guest_code, parts_unlocked, highest_points_seen, car_name, primary_color, secondary_color FROM user_race_cars WHERE user_id = :uid"
+            ), {"uid": user_id}).fetchone()
+            
+            if not car:
+                db.session.execute(text("""
+                    INSERT INTO user_race_cars (user_id, parts_unlocked, highest_points_seen, created_at, updated_at)
+                    VALUES (:uid, 0, :points, :now, :now)
+                """), {"uid": user_id, "points": current_points, "now": datetime.utcnow()})
+                db.session.commit()
+                car = db.session.execute(text(
+                    "SELECT id, user_id, guest_code, parts_unlocked, highest_points_seen, car_name, primary_color, secondary_color FROM user_race_cars WHERE user_id = :uid"
+                ), {"uid": user_id}).fetchone()
+    except Exception as e:
+        return jsonify({'error': f'Database error: {str(e)}', 'parts_unlocked': 0, 'current_points': current_points, 'all_parts': []})
+    
+    car_columns = ['id', 'user_id', 'guest_code', 'parts_unlocked', 'highest_points_seen', 'car_name', 'primary_color', 'secondary_color']
+    car_dict = dict(zip(car_columns, car)) if car else {}
+    
+    # Calculate parts that should be unlocked (1 part per 1000 points)
+    parts_should_have = min(50, current_points // 1000)
+    current_parts = car_dict.get('parts_unlocked', 0)
+    
+    # Check for new unlocks
+    new_unlocks = []
+    if parts_should_have > current_parts:
+        try:
+            new_parts = db.session.execute(text("""
+                SELECT part_number, part_name, category, description, points_required
+                FROM car_parts
+                WHERE part_number > :current AND part_number <= :new
+                ORDER BY part_number
+            """), {"current": current_parts, "new": parts_should_have}).fetchall()
+            
+            for part in new_parts:
+                new_unlocks.append({
+                    'part_number': part[0],
+                    'part_name': part[1],
+                    'category': part[2],
+                    'description': part[3],
+                    'points_required': part[4]
+                })
+                
+                # Record unlock
+                try:
+                    if guest_code:
+                        db.session.execute(text("""
+                            INSERT INTO car_part_unlocks (guest_code, part_id, unlocked_at, points_at_unlock)
+                            SELECT :code, id, :now, :points FROM car_parts WHERE part_number = :pnum
+                        """), {"code": guest_code, "now": datetime.utcnow(), "points": current_points, "pnum": part[0]})
+                    else:
+                        db.session.execute(text("""
+                            INSERT INTO car_part_unlocks (user_id, part_id, unlocked_at, points_at_unlock)
+                            SELECT :uid, id, :now, :points FROM car_parts WHERE part_number = :pnum
+                        """), {"uid": user_id, "now": datetime.utcnow(), "points": current_points, "pnum": part[0]})
+                except:
+                    pass
+            
+            # Update car record
+            if guest_code:
+                db.session.execute(text("""
+                    UPDATE user_race_cars 
+                    SET parts_unlocked = :parts, highest_points_seen = :points, updated_at = :now
+                    WHERE guest_code = :code
+                """), {"parts": parts_should_have, "points": current_points, "now": datetime.utcnow(), "code": guest_code})
+            else:
+                db.session.execute(text("""
+                    UPDATE user_race_cars 
+                    SET parts_unlocked = :parts, highest_points_seen = :points, updated_at = :now
+                    WHERE user_id = :uid
+                """), {"parts": parts_should_have, "points": current_points, "now": datetime.utcnow(), "uid": user_id})
+            
+            db.session.commit()
+            current_parts = parts_should_have
+        except Exception as e:
+            print(f"Error updating parts: {e}")
+    
+    # Get next part
+    next_part = None
+    if current_parts < 50:
+        try:
+            next_result = db.session.execute(text("""
+                SELECT part_number, part_name, category, description, points_required
+                FROM car_parts WHERE part_number = :next_num
+            """), {"next_num": current_parts + 1}).fetchone()
+            
+            if next_result:
+                next_part = {
+                    'part_number': next_result[0],
+                    'part_name': next_result[1],
+                    'category': next_result[2],
+                    'description': next_result[3],
+                    'points_required': next_result[4]
+                }
+        except:
+            pass
+    
+    # Get all parts
+    all_parts_list = []
+    try:
+        all_parts = db.session.execute(text("""
+            SELECT part_number, part_name, category, description, points_required
+            FROM car_parts ORDER BY part_number
+        """)).fetchall()
+        
+        all_parts_list = [{
+            'part_number': p[0],
+            'part_name': p[1],
+            'category': p[2],
+            'description': p[3],
+            'points_required': p[4]
+        } for p in all_parts]
+    except:
+        pass
+    
+    return jsonify({
+        'parts_unlocked': current_parts,
+        'current_points': current_points,
+        'car_name': car_dict.get('car_name') or 'Your F1 Car',
+        'primary_color': car_dict.get('primary_color', '#e10600'),
+        'secondary_color': car_dict.get('secondary_color', '#1e1e1e'),
+        'next_part': next_part,
+        'new_unlocks': new_unlocks,
+        'all_parts': all_parts_list,
+        'completion_percentage': round((current_parts / 50) * 100, 1)
+    })
+
+
+@app.route('/api/racing-car/parts')
+@guest_or_login_required
+def get_racing_car_parts():
+    """Get the full catalog of car parts"""
+    from sqlalchemy import text
+    
+    try:
+        parts = db.session.execute(text("""
+            SELECT part_number, part_name, category, description, points_required, model_component
+            FROM car_parts ORDER BY part_number
+        """)).fetchall()
+        
+        return jsonify({
+            'parts': [{
+                'part_number': p[0],
+                'part_name': p[1],
+                'category': p[2],
+                'description': p[3],
+                'points_required': p[4],
+                'model_component': p[5]
+            } for p in parts]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e), 'parts': []})
+
+
+@app.route('/api/racing-car/customize', methods=['POST'])
+@guest_or_login_required
+def customize_racing_car():
+    """Update car name and colors"""
+    from sqlalchemy import text
+    import re
+    
+    data = request.get_json()
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    
+    car_name = data.get('car_name', '')[:100]
+    primary_color = data.get('primary_color', '#e10600')
+    secondary_color = data.get('secondary_color', '#1e1e1e')
+    
+    hex_pattern = re.compile(r'^#[0-9A-Fa-f]{6}$')
+    if not hex_pattern.match(primary_color):
+        primary_color = '#e10600'
+    if not hex_pattern.match(secondary_color):
+        secondary_color = '#1e1e1e'
+    
+    try:
+        if guest_code:
+            db.session.execute(text("""
+                UPDATE user_race_cars 
+                SET car_name = :name, primary_color = :pc, secondary_color = :sc, updated_at = :now
+                WHERE guest_code = :code
+            """), {"name": car_name, "pc": primary_color, "sc": secondary_color, 
+                   "now": datetime.utcnow(), "code": guest_code})
+        else:
+            db.session.execute(text("""
+                UPDATE user_race_cars 
+                SET car_name = :name, primary_color = :pc, secondary_color = :sc, updated_at = :now
+                WHERE user_id = :uid
+            """), {"name": car_name, "pc": primary_color, "sc": secondary_color,
+                   "now": datetime.utcnow(), "uid": user_id})
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Car customization saved'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+# =====================================================
+# END RACING CAR ROUTES
+
+# =====================================================
+# RACING CAR PHASE 2 - UPGRADE SHOP ROUTES
+# =====================================================
+
+UPGRADE_BUDGET = 20000  # Maximum points user can spend on upgrades
+
+
+@app.route('/api/racing-car/upgrades')
+@guest_or_login_required
+def get_racing_car_upgrades():
+    """Get all available upgrades and user's current purchases"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    
+    if not user_id and not guest_code:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    # TEST MODE: Allow ?test=upgrades to bypass car completion check
+    test_mode = request.args.get('test') == 'upgrades'
+    
+    # Check if car is complete (50 parts)
+    try:
+        if guest_code:
+            car = db.session.execute(text(
+                "SELECT parts_unlocked, upgrade_budget_used FROM user_race_cars WHERE guest_code = :code"
+            ), {"code": guest_code}).fetchone()
+        else:
+            car = db.session.execute(text(
+                "SELECT parts_unlocked, upgrade_budget_used FROM user_race_cars WHERE user_id = :uid"
+            ), {"uid": user_id}).fetchone()
+        
+        if not car:
+            return jsonify({'error': 'No car found', 'car_complete': False})
+        
+        parts_unlocked = car[0] or 0
+        budget_used = car[1] or 0
+        
+        # Allow access if car complete OR test mode
+        if parts_unlocked < 50 and not test_mode:
+            return jsonify({
+                'car_complete': False,
+                'parts_unlocked': parts_unlocked,
+                'parts_needed': 50 - parts_unlocked,
+                'message': f'Complete your car first! {50 - parts_unlocked} parts remaining.'
+            })
+    except Exception as e:
+        return jsonify({'error': str(e), 'car_complete': False})
+    
+    # Get all upgrades
+    try:
+        upgrades = db.session.execute(text("""
+            SELECT id, upgrade_number, category, name, description, cost, performance_boost, icon, stat_key
+            FROM car_upgrades ORDER BY category, upgrade_number
+        """)).fetchall()
+    except Exception as e:
+        return jsonify({'error': f'Failed to load upgrades: {str(e)}', 'car_complete': True})
+    
+    # Get user's purchased upgrades
+    try:
+        if guest_code:
+            purchased = db.session.execute(text(
+                "SELECT upgrade_id FROM user_car_upgrades WHERE guest_code = :code"
+            ), {"code": guest_code}).fetchall()
+        else:
+            purchased = db.session.execute(text(
+                "SELECT upgrade_id FROM user_car_upgrades WHERE user_id = :uid"
+            ), {"uid": user_id}).fetchall()
+        purchased_ids = [p[0] for p in purchased]
+    except:
+        purchased_ids = []
+    
+    # Format upgrades by category
+    upgrades_by_category = {}
+    total_boost = 0
+    
+    for u in upgrades:
+        cat = u[2]
+        if cat not in upgrades_by_category:
+            upgrades_by_category[cat] = []
+        
+        is_owned = u[0] in purchased_ids
+        if is_owned:
+            total_boost += u[6]
+        
+        upgrades_by_category[cat].append({
+            'id': u[0], 'number': u[1], 'category': u[2], 'name': u[3],
+            'description': u[4], 'cost': u[5], 'boost': u[6],
+            'icon': u[7], 'stat_key': u[8], 'owned': is_owned
+        })
+    
+    return jsonify({
+        'car_complete': True,
+        'budget_total': UPGRADE_BUDGET,
+        'budget_used': budget_used,
+        'budget_remaining': UPGRADE_BUDGET - budget_used,
+        'total_performance_boost': total_boost,
+        'upgrades_by_category': upgrades_by_category,
+        'purchased_count': len(purchased_ids),
+        'total_upgrades': len(upgrades)
+    })
+
+
+@app.route('/api/racing-car/upgrades/buy', methods=['POST'])
+@guest_or_login_required
+def buy_racing_car_upgrade():
+    """Purchase an upgrade"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    data = request.get_json()
+    upgrade_id = data.get('upgrade_id')
+    test_mode = data.get('test_mode', False)
+    
+    if not upgrade_id:
+        return jsonify({'error': 'No upgrade specified'}), 400
+    
+    try:
+        upgrade = db.session.execute(text(
+            "SELECT id, name, cost, performance_boost FROM car_upgrades WHERE id = :uid"
+        ), {"uid": upgrade_id}).fetchone()
+        
+        if not upgrade:
+            return jsonify({'error': 'Upgrade not found'}), 404
+        
+        upgrade_cost = upgrade[2]
+        
+        if guest_code:
+            car = db.session.execute(text(
+                "SELECT parts_unlocked, upgrade_budget_used FROM user_race_cars WHERE guest_code = :code"
+            ), {"code": guest_code}).fetchone()
+        else:
+            car = db.session.execute(text(
+                "SELECT parts_unlocked, upgrade_budget_used FROM user_race_cars WHERE user_id = :uid"
+            ), {"uid": user_id}).fetchone()
+        
+        # Allow if car complete OR test mode
+        if not car or (car[0] < 50 and not test_mode):
+            return jsonify({'error': 'Car must be complete to buy upgrades'}), 400
+        
+        budget_used = car[1] or 0
+        budget_remaining = UPGRADE_BUDGET - budget_used
+        
+        if upgrade_cost > budget_remaining:
+            return jsonify({'error': 'Not enough budget', 'cost': upgrade_cost, 'budget_remaining': budget_remaining}), 400
+        
+        # Check if already owned
+        if guest_code:
+            existing = db.session.execute(text(
+                "SELECT id FROM user_car_upgrades WHERE guest_code = :code AND upgrade_id = :uid"
+            ), {"code": guest_code, "uid": upgrade_id}).fetchone()
+        else:
+            existing = db.session.execute(text(
+                "SELECT id FROM user_car_upgrades WHERE user_id = :uid AND upgrade_id = :upid"
+            ), {"uid": user_id, "upid": upgrade_id}).fetchone()
+        
+        if existing:
+            return jsonify({'error': 'Upgrade already owned'}), 400
+        
+        # Purchase
+        if guest_code:
+            db.session.execute(text("""
+                INSERT INTO user_car_upgrades (guest_code, upgrade_id, purchased_at, points_spent)
+                VALUES (:code, :uid, :now, :cost)
+            """), {"code": guest_code, "uid": upgrade_id, "now": datetime.utcnow(), "cost": upgrade_cost})
+            db.session.execute(text("""
+                UPDATE user_race_cars SET upgrade_budget_used = upgrade_budget_used + :cost, updated_at = :now
+                WHERE guest_code = :code
+            """), {"cost": upgrade_cost, "now": datetime.utcnow(), "code": guest_code})
+        else:
+            db.session.execute(text("""
+                INSERT INTO user_car_upgrades (user_id, upgrade_id, purchased_at, points_spent)
+                VALUES (:uid, :upid, :now, :cost)
+            """), {"uid": user_id, "upid": upgrade_id, "now": datetime.utcnow(), "cost": upgrade_cost})
+            db.session.execute(text("""
+                UPDATE user_race_cars SET upgrade_budget_used = upgrade_budget_used + :cost, updated_at = :now
+                WHERE user_id = :uid
+            """), {"cost": upgrade_cost, "now": datetime.utcnow(), "uid": user_id})
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Purchased {upgrade[1]}!', 'upgrade_name': upgrade[1],
+                       'cost': upgrade_cost, 'boost': upgrade[3], 'budget_remaining': budget_remaining - upgrade_cost})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/racing-car/upgrades/sell', methods=['POST'])
+@guest_or_login_required
+def sell_racing_car_upgrade():
+    """Sell an upgrade for full refund"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    data = request.get_json()
+    upgrade_id = data.get('upgrade_id')
+    
+    if not upgrade_id:
+        return jsonify({'error': 'No upgrade specified'}), 400
+    
+    try:
+        upgrade = db.session.execute(text(
+            "SELECT id, name, cost FROM car_upgrades WHERE id = :uid"
+        ), {"uid": upgrade_id}).fetchone()
+        
+        if not upgrade:
+            return jsonify({'error': 'Upgrade not found'}), 404
+        
+        upgrade_cost = upgrade[2]
+        
+        if guest_code:
+            owned = db.session.execute(text(
+                "SELECT id FROM user_car_upgrades WHERE guest_code = :code AND upgrade_id = :uid"
+            ), {"code": guest_code, "uid": upgrade_id}).fetchone()
+        else:
+            owned = db.session.execute(text(
+                "SELECT id FROM user_car_upgrades WHERE user_id = :uid AND upgrade_id = :upid"
+            ), {"uid": user_id, "upid": upgrade_id}).fetchone()
+        
+        if not owned:
+            return jsonify({'error': 'You do not own this upgrade'}), 400
+        
+        if guest_code:
+            db.session.execute(text(
+                "DELETE FROM user_car_upgrades WHERE guest_code = :code AND upgrade_id = :uid"
+            ), {"code": guest_code, "uid": upgrade_id})
+            db.session.execute(text("""
+                UPDATE user_race_cars SET upgrade_budget_used = MAX(0, upgrade_budget_used - :cost), updated_at = :now
+                WHERE guest_code = :code
+            """), {"cost": upgrade_cost, "now": datetime.utcnow(), "code": guest_code})
+        else:
+            db.session.execute(text(
+                "DELETE FROM user_car_upgrades WHERE user_id = :uid AND upgrade_id = :upid"
+            ), {"uid": user_id, "upid": upgrade_id})
+            db.session.execute(text("""
+                UPDATE user_race_cars SET upgrade_budget_used = MAX(0, upgrade_budget_used - :cost), updated_at = :now
+                WHERE user_id = :uid
+            """), {"cost": upgrade_cost, "now": datetime.utcnow(), "uid": user_id})
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': f'Sold {upgrade[1]}', 'refund': upgrade_cost})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/racing-car/upgrades/reset', methods=['POST'])
+@guest_or_login_required
+def reset_racing_car_upgrades():
+    """Reset all upgrades and refund budget"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    
+    try:
+        if guest_code:
+            db.session.execute(text("DELETE FROM user_car_upgrades WHERE guest_code = :code"), {"code": guest_code})
+            db.session.execute(text("""
+                UPDATE user_race_cars SET upgrade_budget_used = 0, updated_at = :now WHERE guest_code = :code
+            """), {"now": datetime.utcnow(), "code": guest_code})
+        else:
+            db.session.execute(text("DELETE FROM user_car_upgrades WHERE user_id = :uid"), {"uid": user_id})
+            db.session.execute(text("""
+                UPDATE user_race_cars SET upgrade_budget_used = 0, updated_at = :now WHERE user_id = :uid
+            """), {"now": datetime.utcnow(), "uid": user_id})
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'All upgrades reset!', 'budget_remaining': UPGRADE_BUDGET})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# =====================================================
+# END RACING CAR PHASE 2 ROUTES
+# =====================================================
+
+# =====================================================
+
+
+
+
+# =====================================================
+# RACING CAR PHASE 3 - WEEKLY RACES
+# =====================================================
+
+import random
+from datetime import datetime, timedelta
+
+# Points for finishing positions
+RACE_POINTS = {1: 500, 2: 350, 3: 250, 4: 180, 5: 140, 6: 110, 7: 85, 8: 65, 9: 50, 10: 25}
+
+
+def calculate_car_performance(user_id=None, guest_code=None):
+    """Calculate total car performance from upgrades"""
+    from sqlalchemy import text
+    
+    base_performance = 50  # Base from completed car
+    
+    try:
+        if guest_code:
+            result = db.session.execute(text("""
+                SELECT COALESCE(SUM(u.performance_boost), 0)
+                FROM user_car_upgrades uc
+                JOIN car_upgrades u ON uc.upgrade_id = u.id
+                WHERE uc.guest_code = :code
+            """), {"code": guest_code}).fetchone()
+        else:
+            result = db.session.execute(text("""
+                SELECT COALESCE(SUM(u.performance_boost), 0)
+                FROM user_car_upgrades uc
+                JOIN car_upgrades u ON uc.upgrade_id = u.id
+                WHERE uc.user_id = :uid
+            """), {"uid": user_id}).fetchone()
+        
+        upgrade_bonus = result[0] if result else 0
+        return base_performance + upgrade_bonus
+    except:
+        return base_performance
+
+
+def get_upgrade_breakdown(user_id=None, guest_code=None):
+    """Get performance breakdown by category"""
+    from sqlalchemy import text
+    
+    breakdown = {'driver': 0, 'aero': 0, 'engine': 0, 'tyres': 0, 'team': 0}
+    
+    try:
+        if guest_code:
+            results = db.session.execute(text("""
+                SELECT u.category, SUM(u.performance_boost)
+                FROM user_car_upgrades uc
+                JOIN car_upgrades u ON uc.upgrade_id = u.id
+                WHERE uc.guest_code = :code
+                GROUP BY u.category
+            """), {"code": guest_code}).fetchall()
+        else:
+            results = db.session.execute(text("""
+                SELECT u.category, SUM(u.performance_boost)
+                FROM user_car_upgrades uc
+                JOIN car_upgrades u ON uc.upgrade_id = u.id
+                WHERE uc.user_id = :uid
+                GROUP BY u.category
+            """), {"uid": user_id}).fetchall()
+        
+        for cat, boost in results:
+            if cat in breakdown:
+                breakdown[cat] = boost
+    except:
+        pass
+    
+    return breakdown
+
+
+def simulate_race(user_performance, user_breakdown, race, ai_drivers, is_wet):
+    """
+    Simulate a race and return results.
+    Returns list of (position, name, is_player, performance_score, highlight)
+    """
+    results = []
+    
+    # Calculate player's race score
+    player_score = calculate_race_score(
+        base_perf=user_performance,
+        breakdown=user_breakdown,
+        race=race,
+        is_wet=is_wet,
+        is_ai=False
+    )
+    results.append({
+        'name': 'YOU',
+        'is_player': True,
+        'score': player_score,
+        'team': 'Your Team',
+        'flag': '🏁'
+    })
+    
+    # Calculate AI scores
+    for ai in ai_drivers:
+        ai_breakdown = {
+            'driver': ai['base_skill'] * 0.4,
+            'aero': 30 + random.randint(-5, 5),
+            'engine': 30 + random.randint(-5, 5),
+            'tyres': ai['tyre_management'] * 0.3,
+            'team': 25 + random.randint(-5, 5)
+        }
+        
+        ai_base = 50 + (ai['base_skill'] - 80) * 2  # Scale AI skill to performance
+        
+        ai_score = calculate_race_score(
+            base_perf=ai_base,
+            breakdown=ai_breakdown,
+            race=race,
+            is_wet=is_wet,
+            is_ai=True,
+            ai_data=ai
+        )
+        
+        results.append({
+            'name': ai['name'],
+            'is_player': False,
+            'score': ai_score,
+            'team': ai['team'],
+            'flag': ai['flag'],
+            'ai_id': ai['id']
+        })
+    
+    # Sort by score (higher is better)
+    results.sort(key=lambda x: x['score'], reverse=True)
+    
+    # Assign positions and generate highlights
+    for i, r in enumerate(results):
+        r['position'] = i + 1
+        r['points'] = RACE_POINTS.get(i + 1, 10)
+        r['highlight'] = generate_highlight(r, i + 1, is_wet, race)
+    
+    return results
+
+
+def calculate_race_score(base_perf, breakdown, race, is_wet, is_ai=False, ai_data=None):
+    """Calculate race performance score"""
+    
+    # Base score from car performance
+    score = base_perf * 10
+    
+    # Apply track factors
+    score += breakdown.get('aero', 0) * race['aero_factor'] * 20
+    score += breakdown.get('engine', 0) * race['engine_factor'] * 20
+    score += breakdown.get('driver', 0) * race['driver_factor'] * 20
+    score += breakdown.get('tyres', 0) * race['tyre_factor'] * 20
+    score += breakdown.get('team', 0) * race['team_factor'] * 20
+    
+    # Weather effect
+    if is_wet:
+        if is_ai and ai_data:
+            wet_bonus = (ai_data['wet_skill'] - 80) * 3
+            score += wet_bonus
+        else:
+            # Player wet performance based on driver upgrades
+            driver_skill = breakdown.get('driver', 0)
+            wet_bonus = (driver_skill - 20) * 2
+            score += wet_bonus
+    
+    # Consistency factor (AI only)
+    if is_ai and ai_data:
+        consistency = ai_data['consistency']
+        variance = (100 - consistency) * 2
+        score += random.randint(-variance, variance)
+    
+    # Random race events (luck factor)
+    luck = random.randint(-50, 50)
+    score += luck
+    
+    # Small random variance
+    score += random.randint(-20, 20)
+    
+    return max(0, score)
+
+
+def generate_highlight(result, position, is_wet, race):
+    """Generate a race highlight text"""
+    name = result['name']
+    
+    if result['is_player']:
+        if position == 1:
+            highlights = [
+                "🏆 VICTORY! Incredible drive from start to finish!",
+                "🏆 WINNER! You dominated the {track}!",
+                "🏆 P1! A masterclass performance today!"
+            ]
+        elif position <= 3:
+            highlights = [
+                f"🥈 P{position}! Brilliant podium finish!",
+                f"🥉 P{position}! Fought hard for that podium!",
+                f"🏅 P{position}! Great result at {race['name']}!"
+            ]
+        elif position <= 6:
+            highlights = [
+                f"✓ P{position} - Solid points finish",
+                f"✓ P{position} - Good pace throughout",
+                f"✓ P{position} - Consistent drive"
+            ]
+        else:
+            highlights = [
+                f"P{position} - Struggled with pace today",
+                f"P{position} - Tough race, but finished",
+                f"P{position} - More upgrades needed!"
+            ]
+    else:
+        if position == 1:
+            highlights = [f"{name} takes victory!", f"{name} wins at {race['name']}!"]
+        elif position <= 3:
+            highlights = [f"{name} claims P{position}", f"{name} on the podium"]
+        else:
+            highlights = [f"{name} finishes P{position}", f"{name} in P{position}"]
+    
+    text = random.choice(highlights)
+    return text.format(track=race['name'])
+
+
+@app.route('/api/racing-car/race/current')
+@guest_or_login_required  
+def get_current_race():
+    """Get the current race information"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    current_year = datetime.now().year
+    
+    # TEST MODE
+    test_mode = request.args.get('test') == 'race'
+    
+    try:
+        # Get current race from calendar
+        race = db.session.execute(text("""
+            SELECT rc.id, rc.race_number, rc.name, rc.country, rc.flag, rc.track_type,
+                   rc.aero_factor, rc.engine_factor, rc.driver_factor, rc.tyre_factor, 
+                   rc.team_factor, rc.rain_chance, rc.description, rc.race_date
+            FROM race_calendar rc
+            JOIN race_season_status rs ON rc.season_year = rs.season_year
+            WHERE rc.season_year = :year AND rc.race_number = rs.current_race_number
+        """), {"year": current_year}).fetchone()
+        
+        if not race:
+            return jsonify({'error': 'No active race found', 'has_race': False})
+        
+        # Check if user already raced this
+        if guest_code:
+            existing = db.session.execute(text(
+                "SELECT id, finish_position, points_earned FROM race_results WHERE race_id = :rid AND guest_code = :code"
+            ), {"rid": race[0], "code": guest_code}).fetchone()
+        else:
+            existing = db.session.execute(text(
+                "SELECT id, finish_position, points_earned FROM race_results WHERE race_id = :rid AND user_id = :uid"
+            ), {"rid": race[0], "uid": user_id}).fetchone()
+        
+        already_raced = existing is not None
+        
+        # Get user's car performance
+        car_performance = calculate_car_performance(user_id, guest_code)
+        breakdown = get_upgrade_breakdown(user_id, guest_code)
+        
+        # Check if car is complete (or test mode)
+        if guest_code:
+            car = db.session.execute(text(
+                "SELECT parts_unlocked FROM user_race_cars WHERE guest_code = :code"
+            ), {"code": guest_code}).fetchone()
+        else:
+            car = db.session.execute(text(
+                "SELECT parts_unlocked FROM user_race_cars WHERE user_id = :uid"
+            ), {"uid": user_id}).fetchone()
+        
+        car_complete = (car and car[0] >= 50) or test_mode
+        
+        return jsonify({
+            'has_race': True,
+            'race': {
+                'id': race[0],
+                'number': race[1],
+                'name': race[2],
+                'country': race[3],
+                'flag': race[4],
+                'track_type': race[5],
+                'factors': {
+                    'aero': race[6],
+                    'engine': race[7],
+                    'driver': race[8],
+                    'tyres': race[9],
+                    'team': race[10]
+                },
+                'rain_chance': race[11],
+                'description': race[12],
+                'date': race[13]
+            },
+            'already_raced': already_raced,
+            'previous_result': {
+                'position': existing[1],
+                'points': existing[2]
+            } if existing else None,
+            'car_complete': car_complete,
+            'car_performance': car_performance,
+            'performance_breakdown': breakdown
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e), 'has_race': False})
+
+
+@app.route('/api/racing-car/race/start', methods=['POST'])
+@guest_or_login_required
+def start_race():
+    """Start/simulate a race"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    data = request.get_json()
+    
+    race_id = data.get('race_id')
+    tyre_choice = data.get('tyre_choice', 'medium')  # soft, medium, hard
+    test_mode = data.get('test_mode', False)
+    
+    if not race_id:
+        return jsonify({'error': 'No race specified'}), 400
+    
+    try:
+        # Get race details
+        race_row = db.session.execute(text("""
+            SELECT id, race_number, name, country, flag, track_type,
+                   aero_factor, engine_factor, driver_factor, tyre_factor, 
+                   team_factor, rain_chance, description
+            FROM race_calendar WHERE id = :rid
+        """), {"rid": race_id}).fetchone()
+        
+        if not race_row:
+            return jsonify({'error': 'Race not found'}), 404
+        
+        race = {
+            'id': race_row[0], 'number': race_row[1], 'name': race_row[2],
+            'country': race_row[3], 'flag': race_row[4], 'track_type': race_row[5],
+            'aero_factor': race_row[6], 'engine_factor': race_row[7],
+            'driver_factor': race_row[8], 'tyre_factor': race_row[9],
+            'team_factor': race_row[10], 'rain_chance': race_row[11],
+            'description': race_row[12]
+        }
+        
+        # Check if already raced
+        if guest_code:
+            existing = db.session.execute(text(
+                "SELECT id FROM race_results WHERE race_id = :rid AND guest_code = :code"
+            ), {"rid": race_id, "code": guest_code}).fetchone()
+        else:
+            existing = db.session.execute(text(
+                "SELECT id FROM race_results WHERE race_id = :rid AND user_id = :uid"
+            ), {"rid": race_id, "uid": user_id}).fetchone()
+        
+        if existing:
+            return jsonify({'error': 'Already raced this week!'}), 400
+        
+        # Determine weather
+        is_wet = random.randint(1, 100) <= race['rain_chance']
+        
+        # Get AI drivers
+        ai_rows = db.session.execute(text("""
+            SELECT id, name, team, nationality, flag, driving_style,
+                   base_skill, consistency, aggression, wet_skill, tyre_management
+            FROM ai_race_drivers
+        """)).fetchall()
+        
+        ai_drivers = [{
+            'id': a[0], 'name': a[1], 'team': a[2], 'nationality': a[3],
+            'flag': a[4], 'driving_style': a[5], 'base_skill': a[6],
+            'consistency': a[7], 'aggression': a[8], 'wet_skill': a[9],
+            'tyre_management': a[10]
+        } for a in ai_rows]
+        
+        # Get user's car performance
+        car_performance = calculate_car_performance(user_id, guest_code)
+        breakdown = get_upgrade_breakdown(user_id, guest_code)
+        
+        # Apply tyre choice bonus
+        tyre_bonus = {'soft': 15, 'medium': 8, 'hard': 0}
+        breakdown['tyres'] = breakdown.get('tyres', 0) + tyre_bonus.get(tyre_choice, 8)
+        
+        # Simulate the race!
+        results = simulate_race(car_performance, breakdown, race, ai_drivers, is_wet)
+        
+        # Find player result
+        player_result = next(r for r in results if r['is_player'])
+        position = player_result['position']
+        points = player_result['points']
+        highlight = player_result['highlight']
+        
+        # Save player result
+        if guest_code:
+            db.session.execute(text("""
+                INSERT INTO race_results 
+                (race_id, guest_code, finish_position, points_earned, tyre_choice, 
+                 is_wet_race, race_performance_score, highlight_text, created_at)
+                VALUES (:rid, :code, :pos, :pts, :tyre, :wet, :score, :highlight, :now)
+            """), {
+                "rid": race_id, "code": guest_code, "pos": position, "pts": points,
+                "tyre": tyre_choice, "wet": is_wet, "score": player_result['score'],
+                "highlight": highlight, "now": datetime.utcnow()
+            })
+        else:
+            db.session.execute(text("""
+                INSERT INTO race_results 
+                (race_id, user_id, finish_position, points_earned, tyre_choice, 
+                 is_wet_race, race_performance_score, highlight_text, created_at)
+                VALUES (:rid, :uid, :pos, :pts, :tyre, :wet, :score, :highlight, :now)
+            """), {
+                "rid": race_id, "uid": user_id, "pos": position, "pts": points,
+                "tyre": tyre_choice, "wet": is_wet, "score": player_result['score'],
+                "highlight": highlight, "now": datetime.utcnow()
+            })
+        
+        # Update championship standings
+        current_year = datetime.now().year
+        if guest_code:
+            db.session.execute(text("""
+                INSERT INTO championship_standings (season_year, guest_code, total_points, races_entered, wins, podiums, best_finish, last_updated)
+                VALUES (:year, :code, :pts, 1, :wins, :podiums, :pos, :now)
+                ON CONFLICT(season_year, guest_code) DO UPDATE SET
+                    total_points = total_points + :pts,
+                    races_entered = races_entered + 1,
+                    wins = wins + :wins,
+                    podiums = podiums + :podiums,
+                    best_finish = CASE WHEN :pos < best_finish OR best_finish = 0 THEN :pos ELSE best_finish END,
+                    last_updated = :now
+            """), {
+                "year": current_year, "code": guest_code, "pts": points,
+                "wins": 1 if position == 1 else 0,
+                "podiums": 1 if position <= 3 else 0,
+                "pos": position, "now": datetime.utcnow()
+            })
+        else:
+            db.session.execute(text("""
+                INSERT INTO championship_standings (season_year, user_id, total_points, races_entered, wins, podiums, best_finish, last_updated)
+                VALUES (:year, :uid, :pts, 1, :wins, :podiums, :pos, :now)
+                ON CONFLICT(season_year, user_id) DO UPDATE SET
+                    total_points = total_points + :pts,
+                    races_entered = races_entered + 1,
+                    wins = wins + :wins,
+                    podiums = podiums + :podiums,
+                    best_finish = CASE WHEN :pos < best_finish OR best_finish = 0 THEN :pos ELSE best_finish END,
+                    last_updated = :now
+            """), {
+                "year": current_year, "uid": user_id, "pts": points,
+                "wins": 1 if position == 1 else 0,
+                "podiums": 1 if position <= 3 else 0,
+                "pos": position, "now": datetime.utcnow()
+            })
+        
+        # Award points to user's total score
+        if guest_code:
+            db.session.execute(text(
+                "UPDATE guest_users SET total_score = total_score + :pts WHERE guest_code = :code"
+            ), {"pts": points, "code": guest_code})
+        else:
+            db.session.execute(text(
+                "UPDATE user_stats SET total_points = total_points + :pts WHERE user_id = :uid"
+            ), {"pts": points, "uid": user_id})
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'race_name': race['name'],
+            'is_wet': is_wet,
+            'weather': 'Wet' if is_wet else 'Dry',
+            'results': results,
+            'player_position': position,
+            'player_points': points,
+            'player_highlight': highlight,
+            'tyre_choice': tyre_choice
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/racing-car/championship')
+@guest_or_login_required
+def get_championship_standings():
+    """Get championship standings"""
+    from sqlalchemy import text
+    
+    user_id = session.get('user_id')
+    guest_code = session.get('guest_code')
+    current_year = datetime.now().year
+    
+    try:
+        # Get user's standing
+        if guest_code:
+            user_standing = db.session.execute(text("""
+                SELECT total_points, races_entered, wins, podiums, best_finish
+                FROM championship_standings
+                WHERE season_year = :year AND guest_code = :code
+            """), {"year": current_year, "code": guest_code}).fetchone()
+        else:
+            user_standing = db.session.execute(text("""
+                SELECT total_points, races_entered, wins, podiums, best_finish
+                FROM championship_standings
+                WHERE season_year = :year AND user_id = :uid
+            """), {"year": current_year, "uid": user_id}).fetchone()
+        
+        # Get race history
+        if guest_code:
+            history = db.session.execute(text("""
+                SELECT rc.name, rc.flag, rr.finish_position, rr.points_earned, rr.is_wet_race, rr.highlight_text
+                FROM race_results rr
+                JOIN race_calendar rc ON rr.race_id = rc.id
+                WHERE rr.guest_code = :code AND rc.season_year = :year
+                ORDER BY rc.race_number
+            """), {"code": guest_code, "year": current_year}).fetchall()
+        else:
+            history = db.session.execute(text("""
+                SELECT rc.name, rc.flag, rr.finish_position, rr.points_earned, rr.is_wet_race, rr.highlight_text
+                FROM race_results rr
+                JOIN race_calendar rc ON rr.race_id = rc.id
+                WHERE rr.user_id = :uid AND rc.season_year = :year
+                ORDER BY rc.race_number
+            """), {"uid": user_id, "year": current_year}).fetchall()
+        
+        return jsonify({
+            'season': current_year,
+            'standing': {
+                'total_points': user_standing[0] if user_standing else 0,
+                'races_entered': user_standing[1] if user_standing else 0,
+                'wins': user_standing[2] if user_standing else 0,
+                'podiums': user_standing[3] if user_standing else 0,
+                'best_finish': user_standing[4] if user_standing else 0
+            },
+            'race_history': [{
+                'name': h[0],
+                'flag': h[1],
+                'position': h[2],
+                'points': h[3],
+                'wet': h[4],
+                'highlight': h[5]
+            } for h in history]
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+
+@app.route('/api/racing-car/ai-drivers')
+@guest_or_login_required
+def get_ai_drivers():
+    """Get list of AI competitors"""
+    from sqlalchemy import text
+    
+    try:
+        drivers = db.session.execute(text("""
+            SELECT id, name, team, nationality, flag, driving_style, 
+                   base_skill, personality_desc, avatar_color
+            FROM ai_race_drivers
+            ORDER BY base_skill DESC
+        """)).fetchall()
+        
+        return jsonify({
+            'drivers': [{
+                'id': d[0],
+                'name': d[1],
+                'team': d[2],
+                'nationality': d[3],
+                'flag': d[4],
+                'style': d[5],
+                'skill': d[6],
+                'description': d[7],
+                'color': d[8]
+            } for d in drivers]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e), 'drivers': []})
+
+# =====================================================
+# END RACING CAR PHASE 3 ROUTES
+# =====================================================
+
+
+# =====================================================
+# REGISTER ADAPTIVE LEARNING ROUTES
+# =====================================================
+if ADAPTIVE_LEARNING_AVAILABLE:
+    register_adaptive_routes(app, db)
+
+# =====================================================
+# REGISTER ADAPTIVE QUESTION SYSTEM ROUTES
+# =====================================================
+if ADAPTIVE_GENERATOR_AVAILABLE:
+    register_adaptive_generator_routes(app, db)
+
+if ADAPTIVE_QUIZ_ENGINE_AVAILABLE:
+    register_adaptive_quiz_routes(app, db)
+
+# =====================================================
+# REGISTER TEAM PLAY ROUTES
+# =====================================================
+if TEAM_PLAY_AVAILABLE:
+    register_team_play_routes(app, db)
+
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+    app.run(debug=True)

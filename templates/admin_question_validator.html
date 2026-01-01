@@ -1,0 +1,878 @@
+<!-- Admin Question Validator -->
+<!-- Revision 1.4 - 2025-01-01 -->
+<!-- Added "Unreviewed only" toggle filter -->
+<!-- Fixed text visibility - dark colors for all text -->
+<!-- Added keyboard shortcuts (← →) for navigation -->
+<!-- Improved efficiency: filter, review, advance workflow -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Validator - AgentMath Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+            min-height: 100vh;
+        }
+        .question-preview {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .option-btn {
+            display: block;
+            width: 100%;
+            padding: 12px 16px;
+            margin: 8px 0;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            text-align: left;
+            background: white;
+            transition: all 0.2s;
+            color: #1f2937;
+        }
+        .option-btn span {
+            color: #1f2937 !important;
+        }
+        .option-btn .math-render {
+            color: #1f2937 !important;
+            font-weight: 500;
+        }
+        .option-btn:hover {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+        .option-btn.correct {
+            border-color: #22c55e;
+            background: #dcfce7;
+        }
+        .option-btn.correct span {
+            color: #166534 !important;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 16px;
+            color: white;
+        }
+        .progress-ring {
+            transform: rotate(-90deg);
+        }
+        .topic-card {
+            transition: all 0.2s;
+        }
+        .topic-card:hover {
+            transform: translateY(-2px);
+        }
+        .topic-card.validated {
+            border-left: 4px solid #22c55e;
+        }
+        .topic-card.in-progress {
+            border-left: 4px solid #f59e0b;
+        }
+        .topic-card.not-started {
+            border-left: 4px solid #6b7280;
+        }
+        .edit-field {
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 10px 14px;
+            width: 100%;
+            margin-top: 4px;
+            color: #111827 !important;
+            font-size: 15px;
+            font-weight: 400;
+        }
+        .edit-field::placeholder {
+            color: #9ca3af;
+        }
+        .edit-field:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        textarea.edit-field {
+            color: #111827 !important;
+        }
+        input.edit-field {
+            color: #111827 !important;
+        }
+        select.edit-field {
+            color: #111827 !important;
+        }
+        .math-render {
+            font-family: 'Times New Roman', serif;
+            font-size: 1.1em;
+            color: #111827;
+        }
+        .question-text {
+            color: #111827;
+        }
+    </style>
+</head>
+<body class="text-gray-100">
+    <!-- Header -->
+    <header class="bg-slate-900/80 backdrop-blur-sm border-b border-slate-700 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="/admin" class="text-slate-400 hover:text-white transition">
+                    <i class="fas fa-arrow-left text-xl"></i>
+                </a>
+                <h1 class="text-2xl font-bold text-white flex items-center gap-3">
+                    <i class="fas fa-check-double text-green-400"></i>
+                    Question Validator
+                </h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="sessionStats" class="text-sm text-slate-400"></span>
+                <button onclick="exportValidationReport()" class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg transition">
+                    <i class="fas fa-download mr-2"></i>Export Report
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Stats Overview -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+            <div class="stat-card text-center">
+                <div class="text-3xl font-bold" id="statTotal">0</div>
+                <div class="text-slate-300 text-sm">Total Questions</div>
+            </div>
+            <div class="stat-card text-center">
+                <div class="text-3xl font-bold text-green-400" id="statValidated">0</div>
+                <div class="text-slate-300 text-sm">Validated</div>
+            </div>
+            <div class="stat-card text-center">
+                <div class="text-3xl font-bold text-yellow-400" id="statEdited">0</div>
+                <div class="text-slate-300 text-sm">Edited</div>
+            </div>
+            <div class="stat-card text-center">
+                <div class="text-3xl font-bold text-red-400" id="statDeleted">0</div>
+                <div class="text-slate-300 text-sm">Deleted</div>
+            </div>
+            <div class="stat-card text-center">
+                <div class="text-3xl font-bold text-blue-400" id="statTopicsComplete">0</div>
+                <div class="text-slate-300 text-sm">Topics Complete</div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Panel: Topic Selection -->
+            <div class="lg:col-span-1">
+                <div class="bg-slate-800 rounded-xl p-4 mb-4">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-list text-blue-400"></i>
+                        Topics
+                    </h2>
+                    <!-- Strand Filter Dropdown -->
+                    <select id="strandFilter" onchange="filterTopics()" 
+                            class="w-full bg-slate-700 text-white rounded-lg px-4 py-2 mb-3 border border-slate-600">
+                        <option value="">All Strands</option>
+                    </select>
+                    <input type="text" id="topicSearch" placeholder="Search topics..." 
+                           class="w-full bg-slate-700 text-white rounded-lg px-4 py-2 mb-4"
+                           onkeyup="filterTopics()">
+                    <div class="text-xs text-slate-400 mb-2" id="topicCount">0 topics</div>
+                    <div id="topicList" class="space-y-2 max-h-96 overflow-y-auto">
+                        <!-- Topics loaded dynamically -->
+                    </div>
+                </div>
+                
+                <!-- Progress Chart -->
+                <div class="bg-slate-800 rounded-xl p-4">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i class="fas fa-chart-pie text-purple-400"></i>
+                        Validation Progress
+                    </h2>
+                    <canvas id="progressChart" height="200"></canvas>
+                </div>
+            </div>
+
+            <!-- Right Panel: Question Viewer/Editor -->
+            <div class="lg:col-span-2">
+                <!-- Topic Header -->
+                <div id="topicHeader" class="bg-slate-800 rounded-xl p-4 mb-4 hidden">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-xl font-bold" id="currentTopicName">Select a Topic</h2>
+                            <p class="text-slate-400" id="topicProgress">0 / 0 questions reviewed</p>
+                        </div>
+                        <div class="flex gap-2 items-center">
+                            <!-- Toggle for unreviewed only -->
+                            <label class="flex items-center gap-2 text-sm cursor-pointer bg-slate-700 px-3 py-2 rounded-lg hover:bg-slate-600 transition">
+                                <input type="checkbox" id="showUnreviewedOnly" onchange="applyQuestionFilter()" class="w-4 h-4 accent-blue-500">
+                                <span>Unreviewed only</span>
+                            </label>
+                            <button onclick="markTopicValidated()" id="validateTopicBtn"
+                                    class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition">
+                                <i class="fas fa-check-circle mr-2"></i>Mark Topic Validated
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Question Navigation -->
+                    <div class="flex items-center justify-between mt-4 pt-4 border-t border-slate-700">
+                        <button onclick="prevQuestion()" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg flex items-center">
+                            <i class="fas fa-arrow-left mr-2"></i>Previous
+                            <span class="text-xs text-slate-400 ml-2">(←)</span>
+                        </button>
+                        <div class="text-center">
+                            <span class="text-slate-300">
+                                Question <span id="currentIndex">0</span> of <span id="filteredCount">0</span>
+                            </span>
+                            <div class="text-xs text-slate-500">
+                                (<span id="totalQuestions">0</span> total)
+                            </div>
+                        </div>
+                        <button onclick="nextQuestion()" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg flex items-center">
+                            Next<i class="fas fa-arrow-right ml-2"></i>
+                            <span class="text-xs text-slate-400 ml-2">(→)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Question Preview (Student View) -->
+                <div id="questionPreview" class="question-preview mb-4 hidden">
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-sm text-gray-500">Student View</span>
+                        <span id="questionId" class="text-sm bg-gray-100 px-2 py-1 rounded">ID: -</span>
+                    </div>
+                    <div id="questionImage" class="mb-4 hidden">
+                        <img id="previewImage" src="" alt="Question image" class="max-w-full rounded-lg mx-auto">
+                    </div>
+                    <h3 id="questionText" class="text-xl text-gray-800 mb-6 math-render"></h3>
+                    <div id="optionsContainer" class="space-y-2">
+                        <!-- Options rendered here -->
+                    </div>
+                    <div id="explanationPreview" class="mt-6 p-4 bg-blue-50 rounded-lg hidden">
+                        <p class="text-sm text-blue-600 font-semibold mb-1">Explanation:</p>
+                        <p id="explanationText" class="text-gray-700"></p>
+                    </div>
+                </div>
+
+                <!-- Edit Form -->
+                <div id="editForm" class="bg-white rounded-xl p-6 hidden">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-edit text-blue-500"></i>
+                        Edit Question
+                    </h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="text-sm font-medium text-gray-700">Question Text</label>
+                            <textarea id="editQuestionText" rows="3" class="edit-field"></textarea>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-sm font-medium text-gray-700">Option A</label>
+                                <input type="text" id="editOptionA" class="edit-field">
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-700">Option B</label>
+                                <input type="text" id="editOptionB" class="edit-field">
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-700">Option C</label>
+                                <input type="text" id="editOptionC" class="edit-field">
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-700">Option D</label>
+                                <input type="text" id="editOptionD" class="edit-field">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="text-sm font-medium text-gray-700">Correct Answer</label>
+                            <select id="editCorrectAnswer" class="edit-field">
+                                <option value="A">A</option>
+                                <option value="B">B</option>
+                                <option value="C">C</option>
+                                <option value="D">D</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="text-sm font-medium text-gray-700">Explanation</label>
+                            <textarea id="editExplanation" rows="2" class="edit-field"></textarea>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-sm font-medium text-gray-700">Difficulty (1-5)</label>
+                                <input type="number" id="editDifficulty" min="1" max="5" class="edit-field">
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-700">Image URL (optional)</label>
+                                <input type="text" id="editImageUrl" class="edit-field" placeholder="/static/images/...">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-3 mt-6 pt-4 border-t border-gray-200">
+                        <button onclick="saveQuestion()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition">
+                            <i class="fas fa-save mr-2"></i>Save Changes
+                        </button>
+                        <button onclick="markReviewed()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition">
+                            <i class="fas fa-check mr-2"></i>Mark Reviewed & Next
+                        </button>
+                        <button onclick="deleteQuestion()" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg transition ml-auto">
+                            <i class="fas fa-trash mr-2"></i>Delete
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div id="emptyState" class="bg-slate-800 rounded-xl p-12 text-center">
+                    <i class="fas fa-mouse-pointer text-6xl text-slate-600 mb-4"></i>
+                    <h3 class="text-xl font-semibold mb-2">Select a Topic</h3>
+                    <p class="text-slate-400">Choose a topic from the list to start validating questions</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden items-center justify-center z-50">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-11/12 p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">Delete Question?</h2>
+            <p class="text-gray-600 mb-6">This action cannot be undone. The question will be permanently removed.</p>
+            <div class="flex gap-3">
+                <button onclick="confirmDelete()" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg transition">
+                    Yes, Delete
+                </button>
+                <button onclick="closeDeleteModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-6 py-2 rounded-lg transition">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let topics = [];
+        let currentTopic = null;
+        let currentSourceTable = 'questions';
+        let questions = [];
+        let filteredQuestions = [];  // Questions after filter applied
+        let currentQuestionIndex = 0;  // Index into filteredQuestions
+        let validationStats = {
+            totalQuestions: 0,
+            validated: 0,
+            edited: 0,
+            deleted: 0,
+            topicsComplete: 0,
+            sessionEdits: 0,
+            sessionDeletes: 0
+        };
+        let progressChart = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTopics();
+            loadValidationStats();
+        });
+
+        // Load topics with validation status
+        async function loadTopics() {
+            try {
+                const response = await fetch('/api/admin/question-validator/topics');
+                const data = await response.json();
+                topics = data.topics || [];
+                
+                // Populate strand dropdown
+                populateStrandDropdown();
+                
+                renderTopicList();
+                updateProgressChart();
+            } catch (error) {
+                console.error('Error loading topics:', error);
+            }
+        }
+        
+        // Populate strand filter dropdown
+        function populateStrandDropdown() {
+            const strands = [...new Set(topics.map(t => t.strand))].sort();
+            const dropdown = document.getElementById('strandFilter');
+            
+            // Keep "All Strands" option
+            dropdown.innerHTML = '<option value="">All Strands (' + topics.length + ' topics)</option>';
+            
+            // Add strand options with counts
+            strands.forEach(strand => {
+                const count = topics.filter(t => t.strand === strand).length;
+                const option = document.createElement('option');
+                option.value = strand;
+                option.textContent = `${strand} (${count} topics)`;
+                dropdown.appendChild(option);
+            });
+        }
+
+        // Load validation statistics
+        async function loadValidationStats() {
+            try {
+                const response = await fetch('/api/admin/question-validator/stats');
+                const data = await response.json();
+                validationStats = { ...validationStats, ...data };
+                updateStatsDisplay();
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Render topic list
+        function renderTopicList() {
+            const container = document.getElementById('topicList');
+            const searchTerm = document.getElementById('topicSearch').value.toLowerCase();
+            const selectedStrand = document.getElementById('strandFilter').value;
+            
+            let filtered = topics;
+            
+            // Filter by strand first
+            if (selectedStrand) {
+                filtered = filtered.filter(t => t.strand === selectedStrand);
+            }
+            
+            // Then filter by search term
+            if (searchTerm) {
+                filtered = filtered.filter(t => 
+                    t.name.toLowerCase().includes(searchTerm) || 
+                    t.display_name.toLowerCase().includes(searchTerm) ||
+                    t.strand.toLowerCase().includes(searchTerm)
+                );
+            }
+            
+            // Update topic count
+            document.getElementById('topicCount').textContent = `${filtered.length} topics`;
+            
+            container.innerHTML = filtered.map(topic => {
+                const statusClass = topic.validated ? 'validated' : 
+                                   (topic.reviewed_count > 0 ? 'in-progress' : 'not-started');
+                const statusIcon = topic.validated ? 'fa-check-circle text-green-400' :
+                                  (topic.reviewed_count > 0 ? 'fa-clock text-yellow-400' : 'fa-circle text-gray-400');
+                const sourceLabel = topic.source_table === 'questions_adaptive' ? '📊' : '📝';
+                
+                return `
+                    <div class="topic-card bg-slate-700 rounded-lg p-3 cursor-pointer ${statusClass}"
+                         onclick="selectTopic('${topic.name}', '${topic.source_table}')">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <div class="font-medium">${sourceLabel} ${topic.display_name || topic.name}</div>
+                                <div class="text-xs text-slate-500">${topic.strand}</div>
+                                <div class="text-sm text-slate-400">
+                                    ${topic.question_count} questions
+                                    ${topic.edited_count > 0 ? `• <span class="text-yellow-400">${topic.edited_count} edited</span>` : ''}
+                                    ${topic.deleted_count > 0 ? `• <span class="text-red-400">${topic.deleted_count} deleted</span>` : ''}
+                                </div>
+                            </div>
+                            <i class="fas ${statusIcon}"></i>
+                        </div>
+                        <div class="mt-2 bg-slate-600 rounded-full h-2">
+                            <div class="bg-green-500 h-2 rounded-full" style="width: ${(topic.reviewed_count / topic.question_count * 100) || 0}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Filter topics
+        function filterTopics() {
+            renderTopicList();
+        }
+
+        // Select topic and load questions
+        async function selectTopic(topicName, sourceTable = 'questions') {
+            currentTopic = topics.find(t => t.name === topicName && t.source_table === sourceTable);
+            if (!currentTopic) {
+                currentTopic = topics.find(t => t.name === topicName);
+            }
+            if (!currentTopic) return;
+            
+            currentSourceTable = sourceTable;
+            
+            document.getElementById('currentTopicName').textContent = currentTopic.display_name || currentTopic.name;
+            document.getElementById('topicHeader').classList.remove('hidden');
+            document.getElementById('emptyState').classList.add('hidden');
+            
+            // Reset filter checkbox
+            document.getElementById('showUnreviewedOnly').checked = false;
+            
+            // Load questions for topic
+            try {
+                const response = await fetch(`/api/admin/question-validator/questions?topic=${encodeURIComponent(topicName)}&source=${sourceTable}`);
+                const data = await response.json();
+                questions = data.questions || [];
+                
+                // Initialize filtered questions (all questions initially)
+                applyQuestionFilter();
+                
+                document.getElementById('totalQuestions').textContent = questions.length;
+                updateTopicProgress();
+                
+                if (filteredQuestions.length > 0) {
+                    showQuestion(0);
+                } else {
+                    document.getElementById('questionPreview').classList.add('hidden');
+                    document.getElementById('editForm').classList.add('hidden');
+                }
+            } catch (error) {
+                console.error('Error loading questions:', error);
+            }
+        }
+        
+        // Apply question filter (unreviewed only toggle)
+        function applyQuestionFilter() {
+            const showUnreviewedOnly = document.getElementById('showUnreviewedOnly').checked;
+            
+            if (showUnreviewedOnly) {
+                filteredQuestions = questions.filter(q => !q.reviewed);
+            } else {
+                filteredQuestions = [...questions];
+            }
+            
+            // Update filtered count display
+            document.getElementById('filteredCount').textContent = filteredQuestions.length;
+            
+            // Reset to first question in filtered list
+            currentQuestionIndex = 0;
+            
+            if (filteredQuestions.length > 0) {
+                showQuestion(0);
+                document.getElementById('questionPreview').classList.remove('hidden');
+                document.getElementById('editForm').classList.remove('hidden');
+            } else {
+                document.getElementById('questionPreview').classList.add('hidden');
+                document.getElementById('editForm').classList.add('hidden');
+                // Show message that all questions are reviewed
+                if (showUnreviewedOnly && questions.length > 0) {
+                    showToast('All questions in this topic have been reviewed! 🎉', 'success');
+                }
+            }
+        }
+
+        // Show question at index
+        function showQuestion(index) {
+            if (index < 0 || index >= filteredQuestions.length) return;
+            
+            currentQuestionIndex = index;
+            const q = filteredQuestions[index];
+            
+            document.getElementById('currentIndex').textContent = index + 1;
+            document.getElementById('questionId').textContent = `ID: ${q.id}${q.reviewed ? ' ✓' : ''}`;
+            
+            // Preview
+            document.getElementById('questionText').innerHTML = q.question_text;
+            
+            // Image
+            const imageDiv = document.getElementById('questionImage');
+            if (q.image_url) {
+                document.getElementById('previewImage').src = q.image_url;
+                imageDiv.classList.remove('hidden');
+            } else {
+                imageDiv.classList.add('hidden');
+            }
+            
+            // Options
+            const options = ['A', 'B', 'C', 'D'];
+            const optionTexts = [q.option_a, q.option_b, q.option_c, q.option_d];
+            document.getElementById('optionsContainer').innerHTML = options.map((opt, i) => `
+                <button class="option-btn ${q.correct_answer === opt ? 'correct' : ''}">
+                    <span class="font-bold text-blue-600 mr-3">${opt}.</span>
+                    <span class="math-render">${optionTexts[i] || ''}</span>
+                    ${q.correct_answer === opt ? '<i class="fas fa-check text-green-500 float-right mt-1"></i>' : ''}
+                </button>
+            `).join('');
+            
+            // Explanation
+            if (q.explanation) {
+                document.getElementById('explanationText').textContent = q.explanation;
+                document.getElementById('explanationPreview').classList.remove('hidden');
+            } else {
+                document.getElementById('explanationPreview').classList.add('hidden');
+            }
+            
+            // Edit form
+            document.getElementById('editQuestionText').value = q.question_text || '';
+            document.getElementById('editOptionA').value = q.option_a || '';
+            document.getElementById('editOptionB').value = q.option_b || '';
+            document.getElementById('editOptionC').value = q.option_c || '';
+            document.getElementById('editOptionD').value = q.option_d || '';
+            document.getElementById('editCorrectAnswer').value = q.correct_answer || 'A';
+            document.getElementById('editExplanation').value = q.explanation || '';
+            document.getElementById('editDifficulty').value = q.difficulty || 1;
+            document.getElementById('editImageUrl').value = q.image_url || '';
+            
+            document.getElementById('questionPreview').classList.remove('hidden');
+            document.getElementById('editForm').classList.remove('hidden');
+        }
+
+        // Navigation
+        function prevQuestion() {
+            if (currentQuestionIndex > 0) {
+                showQuestion(currentQuestionIndex - 1);
+            }
+        }
+
+        function nextQuestion() {
+            if (currentQuestionIndex < filteredQuestions.length - 1) {
+                showQuestion(currentQuestionIndex + 1);
+            } else {
+                // At end of filtered list
+                showToast('End of questions reached', 'info');
+            }
+        }
+
+        // Save question
+        async function saveQuestion() {
+            const q = filteredQuestions[currentQuestionIndex];
+            const updates = {
+                question_text: document.getElementById('editQuestionText').value,
+                option_a: document.getElementById('editOptionA').value,
+                option_b: document.getElementById('editOptionB').value,
+                option_c: document.getElementById('editOptionC').value,
+                option_d: document.getElementById('editOptionD').value,
+                correct_answer: document.getElementById('editCorrectAnswer').value,
+                explanation: document.getElementById('editExplanation').value,
+                difficulty: parseInt(document.getElementById('editDifficulty').value) || 1,
+                image_url: document.getElementById('editImageUrl').value || null,
+                source_table: currentSourceTable
+            };
+            
+            try {
+                const response = await fetch(`/api/admin/question-validator/question/${q.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                });
+                
+                if (response.ok) {
+                    // Update local data
+                    Object.assign(q, updates);
+                    showQuestion(currentQuestionIndex); // Refresh preview
+                    
+                    validationStats.sessionEdits++;
+                    updateSessionStats();
+                    
+                    showToast('Question saved successfully', 'success');
+                } else {
+                    showToast('Error saving question', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving:', error);
+                showToast('Error saving question', 'error');
+            }
+        }
+
+        // Mark reviewed and go to next
+        async function markReviewed() {
+            const q = filteredQuestions[currentQuestionIndex];
+            
+            try {
+                await fetch(`/api/admin/question-validator/question/${q.id}/reviewed`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_table: currentSourceTable })
+                });
+                
+                // Mark as reviewed in both arrays (they reference same objects)
+                q.reviewed = true;
+                
+                // Also update in main questions array
+                const mainIndex = questions.findIndex(mq => mq.id === q.id);
+                if (mainIndex >= 0) {
+                    questions[mainIndex].reviewed = true;
+                }
+                
+                updateTopicProgress();
+                
+                // If filter is on "unreviewed only", refilter and stay at same index
+                const showUnreviewedOnly = document.getElementById('showUnreviewedOnly').checked;
+                if (showUnreviewedOnly) {
+                    // Reapply filter - this will remove the just-reviewed question
+                    const oldIndex = currentQuestionIndex;
+                    filteredQuestions = questions.filter(q => !q.reviewed);
+                    document.getElementById('filteredCount').textContent = filteredQuestions.length;
+                    
+                    if (filteredQuestions.length === 0) {
+                        document.getElementById('questionPreview').classList.add('hidden');
+                        document.getElementById('editForm').classList.add('hidden');
+                        showToast('All questions reviewed! 🎉', 'success');
+                    } else {
+                        // Stay at same index position (or end if we were at last)
+                        currentQuestionIndex = Math.min(oldIndex, filteredQuestions.length - 1);
+                        showQuestion(currentQuestionIndex);
+                    }
+                } else {
+                    // Just advance to next question
+                    nextQuestion();
+                }
+            } catch (error) {
+                console.error('Error marking reviewed:', error);
+            }
+        }
+
+        // Delete question
+        function deleteQuestion() {
+            document.getElementById('deleteModal').classList.remove('hidden');
+            document.getElementById('deleteModal').classList.add('flex');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.add('hidden');
+            document.getElementById('deleteModal').classList.remove('flex');
+        }
+
+        async function confirmDelete() {
+            const q = filteredQuestions[currentQuestionIndex];
+            
+            try {
+                const response = await fetch(`/api/admin/question-validator/question/${q.id}?source=${currentSourceTable}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    // Remove from main questions array
+                    const mainIndex = questions.findIndex(mq => mq.id === q.id);
+                    if (mainIndex >= 0) {
+                        questions.splice(mainIndex, 1);
+                    }
+                    
+                    // Remove from filtered array
+                    filteredQuestions.splice(currentQuestionIndex, 1);
+                    
+                    document.getElementById('totalQuestions').textContent = questions.length;
+                    document.getElementById('filteredCount').textContent = filteredQuestions.length;
+                    
+                    validationStats.sessionDeletes++;
+                    updateSessionStats();
+                    
+                    if (filteredQuestions.length === 0) {
+                        document.getElementById('questionPreview').classList.add('hidden');
+                        document.getElementById('editForm').classList.add('hidden');
+                    } else if (currentQuestionIndex >= filteredQuestions.length) {
+                        showQuestion(filteredQuestions.length - 1);
+                    } else {
+                        showQuestion(currentQuestionIndex);
+                    }
+                    
+                    closeDeleteModal();
+                    showToast('Question deleted', 'success');
+                    loadTopics(); // Refresh counts
+                }
+            } catch (error) {
+                console.error('Error deleting:', error);
+                showToast('Error deleting question', 'error');
+            }
+        }
+
+        // Mark topic as validated
+        async function markTopicValidated() {
+            if (!currentTopic) return;
+            
+            try {
+                const response = await fetch(`/api/admin/question-validator/topic/${currentTopic.name}/validate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_table: currentSourceTable })
+                });
+                
+                if (response.ok) {
+                    currentTopic.validated = true;
+                    loadTopics();
+                    loadValidationStats();
+                    showToast('Topic marked as validated', 'success');
+                }
+            } catch (error) {
+                console.error('Error validating topic:', error);
+            }
+        }
+
+        // Update displays
+        function updateStatsDisplay() {
+            document.getElementById('statTotal').textContent = validationStats.totalQuestions || 0;
+            document.getElementById('statValidated').textContent = validationStats.validated || 0;
+            document.getElementById('statEdited').textContent = validationStats.edited || 0;
+            document.getElementById('statDeleted').textContent = validationStats.deleted || 0;
+            document.getElementById('statTopicsComplete').textContent = validationStats.topicsComplete || 0;
+            updateSessionStats();
+        }
+
+        function updateSessionStats() {
+            document.getElementById('sessionStats').textContent = 
+                `Session: ${validationStats.sessionEdits} edits, ${validationStats.sessionDeletes} deletes`;
+        }
+
+        function updateTopicProgress() {
+            const reviewed = questions.filter(q => q.reviewed).length;
+            document.getElementById('topicProgress').textContent = 
+                `${reviewed} / ${questions.length} questions reviewed`;
+        }
+
+        // Progress chart
+        function updateProgressChart() {
+            const validated = topics.filter(t => t.validated).length;
+            const inProgress = topics.filter(t => !t.validated && t.reviewed_count > 0).length;
+            const notStarted = topics.length - validated - inProgress;
+            
+            const ctx = document.getElementById('progressChart').getContext('2d');
+            
+            if (progressChart) {
+                progressChart.destroy();
+            }
+            
+            progressChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Validated', 'In Progress', 'Not Started'],
+                    datasets: [{
+                        data: [validated, inProgress, notStarted],
+                        backgroundColor: ['#22c55e', '#f59e0b', '#6b7280'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#fff' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Export report
+        function exportValidationReport() {
+            window.location.href = '/api/admin/question-validator/export';
+        }
+
+        // Toast notification
+        function showToast(message, type) {
+            const toast = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-green-600' : 
+                           type === 'info' ? 'bg-blue-600' : 'bg-red-600';
+            toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg text-white ${bgColor} shadow-lg z-50`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            
+            if (e.key === 'ArrowLeft') prevQuestion();
+            if (e.key === 'ArrowRight') nextQuestion();
+            if (e.key === 's' && e.ctrlKey) { e.preventDefault(); saveQuestion(); }
+        });
+    </script>
+</body>
+</html>

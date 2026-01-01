@@ -1,0 +1,4348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Math Master - Student</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Quiz Milestone Celebration System -->
+    <script src="{{ url_for('static', filename='quiz_milestones.js') }}"></script>
+    <style>
+        .number-line-container {
+            margin: 20px 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .number-line {
+            position: relative;
+            margin: 30px 20px;
+            height: 80px;
+        }
+
+        .number-line-base {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: #4a5568;
+            transform: translateY(-50%);
+        }
+
+        .number-line-tick {
+            position: absolute;
+            top: 50%;
+            width: 2px;
+            height: 20px;
+            background: #4a5568;
+            transform: translate(-50%, -50%);
+        }
+
+        .number-line-label {
+            position: absolute;
+            top: 70%;
+            transform: translateX(-50%);
+            font-size: 14px;
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .number-line-arc {
+            position: absolute;
+            top: 15%;
+            border: 3px solid #667eea;
+            border-bottom: none;
+            border-radius: 50px 50px 0 0;
+            height: 25px;
+        }
+
+        .number-line-arrow {
+            position: absolute;
+            font-size: 24px;
+            color: #667eea;
+            animation: bounce 0.8s infinite;
+        }
+
+        .number-line-start-dot {
+            position: absolute;
+            top: 50%;
+            width: 12px;
+            height: 12px;
+            background: #48bb78;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
+
+        .number-line-end-dot {
+            position: absolute;
+            top: 50%;
+            width: 16px;
+            height: 16px;
+            background: #f56565;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            border: 3px solid white;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+            z-index: 10;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        /* Badge Widget Styles */
+        .badge-summary-widget {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 25px;
+            color: white;
+            margin: 20px auto 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-width: 1200px;
+        }
+
+        .badge-summary-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .badge-summary-title {
+            font-size: 1.8em;
+            font-weight: bold;
+            margin: 0;
+        }
+
+        .view-badges-btn {
+            background: white;
+            color: #667eea;
+            padding: 10px 25px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        .view-badges-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+        }
+
+        .badge-summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+        }
+
+        .badge-stat-box {
+            text-align: center;
+            background: rgba(255,255,255,0.2);
+            padding: 20px 15px;
+            border-radius: 12px;
+            transition: all 0.3s;
+            /* backdrop-filter: blur(10px); */ /* REMOVED */
+        }
+
+        .badge-stat-box:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-3px);
+        }
+
+        .badge-stat-value {
+            font-size: 2.2em;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .badge-stat-label {
+            font-size: 0.9em;
+            opacity: 0.95;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .recent-badge-mini {
+            display: inline-block;
+            background: rgba(255,255,255,0.25);
+            padding: 8px 16px;
+            border-radius: 20px;
+            margin: 5px;
+            font-size: 0.9em;
+            /* backdrop-filter: blur(5px); */ /* REMOVED */
+        }
+
+        .badge-widget-loading {
+            text-align: center;
+            padding: 20px;
+            opacity: 0.8;
+        }
+
+        @media (max-width: 640px) {
+            .badge-summary-stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .badge-summary-title {
+                font-size: 1.4em;
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.1); }
+        }
+
+        .number-line-instruction {
+            text-align: center;
+            color: #4a5568;
+            font-size: 14px;
+            margin-top: 10px;
+            font-weight: 500;
+        }
+
+        /* ============ Mastery Indicator Styles ============ */
+        .mastery-badge {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 50%;
+            font-size: 28px;
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.6);
+            animation: shine 2s infinite;
+            z-index: 10;
+            line-height: 1;
+        }
+
+        .difficulty-mastery {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: linear-gradient(135deg, #FFD700, #FFA500);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            box-shadow: 0 3px 10px rgba(255, 215, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            z-index: 10;
+            line-height: 1.2;
+        }
+
+        .difficulty-mastery .trophy {
+            font-size: 20px;
+        }
+
+        .difficulty-mastery .score {
+            font-size: 10px;
+            letter-spacing: 0.3px;
+            font-weight: 700;
+        }
+
+        @keyframes shine {
+            0%, 100% {
+                box-shadow: 0 4px 15px rgba(255, 215, 0, 0.6);
+                transform: scale(1);
+            }
+            50% {
+                box-shadow: 0 6px 25px rgba(255, 215, 0, 0.9);
+                transform: scale(1.05);
+            }
+        }
+
+        .topic-card, .difficulty-button {
+            position: relative;
+        }
+
+        /* Learning Path Styles */
+        .learning-path-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 24px;
+            padding: 32px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .learning-path-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: shimmer 10s infinite;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(180deg); }
+        }
+
+        .path-header {
+            text-align: center;
+            margin-bottom: 32px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .path-number {
+            display: inline-block;
+            background: rgba(255,255,255,0.3);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+
+        .path-title {
+            color: white;
+            font-size: 32px;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+
+        .path-description {
+            color: rgba(255,255,255,0.9);
+            font-size: 16px;
+        }
+
+        .path-flow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .flow-topic-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px 20px;
+            min-width: 140px;
+            max-width: 160px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            position: relative;
+            border: 3px solid transparent;
+        }
+
+        .flow-topic-card:hover {
+            transform: translateY(-8px) scale(1.05);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.2);
+            border-color: #667eea;
+        }
+
+        .flow-topic-card.mastered {
+            border-color: #48bb78;
+            background: linear-gradient(135deg, #f0fff4 0%, #c6f6d5 100%);
+        }
+
+        .flow-topic-card .icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .flow-topic-card .title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #2d3748;
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+
+        .flow-topic-card .mastery-star {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #48bb78;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            animation: starPulse 2s infinite;
+        }
+
+        @keyframes starPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .flow-arrow {
+            color: white;
+            font-size: 32px;
+            opacity: 0.6;
+            animation: arrowFloat 2s ease-in-out infinite;
+        }
+
+        @keyframes arrowFloat {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(8px); }
+        }
+
+        .flow-topic-card .progress-ring {
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .path-flow {
+                flex-direction: column;
+            }
+
+            .flow-arrow {
+                transform: rotate(90deg);
+            }
+
+            .flow-topic-card {
+                width: 100%;
+                max-width: 280px;
+            }
+        }
+
+        .best-score-display {
+            margin-top: 8px;
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .mastery-notification {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            z-index: 9999;
+            text-align: center;
+            animation: popIn 0.5s ease-out;
+        }
+
+        @keyframes popIn {
+            0% {
+                transform: translate(-50%, -50%) scale(0.5);
+                opacity: 0;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* ==================== GUEST MODE STYLES ==================== */
+        .guest-banner {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            color: white;
+            padding: 16px;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(72, 187, 120, 0.3);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            border-bottom: 3px solid #2f855a;
+        }
+
+        .guest-banner-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .guest-banner-text {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .guest-banner h3 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .guest-banner p {
+            margin: 0;
+            font-size: 14px;
+            opacity: 0.95;
+        }
+
+        .guest-banner-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .guest-register-btn {
+            background: white;
+            color: #38a169;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .guest-register-btn:hover {
+            background: #f7fafc;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .guest-login-btn {
+            background: transparent;
+            color: white;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            border: 2px solid white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .guest-login-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        @media (max-width: 640px) {
+            .guest-banner-content {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .guest-banner-actions {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        /* Guest Result Modal Styles */
+        .guest-result-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.75);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            padding: 20px;
+        }
+
+        .guest-result-modal {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .guest-result-modal h2 {
+            color: #2d3748;
+            font-size: 28px;
+            margin-bottom: 16px;
+        }
+
+        .guest-result-modal .score-display {
+            font-size: 48px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 20px 0;
+        }
+
+        .guest-result-modal .message {
+            color: #4a5568;
+            font-size: 16px;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        .guest-result-modal .benefits {
+            background: #f7fafc;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .guest-result-modal .benefits h3 {
+            color: #2d3748;
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+
+        .guest-result-modal .benefits ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .guest-result-modal .benefits li {
+            color: #4a5568;
+            padding: 6px 0;
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        .guest-result-modal .benefits li::before {
+            content: '✓';
+            color: #48bb78;
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 18px;
+        }
+
+        .guest-result-modal .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .guest-result-modal .primary-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 32px;
+            border-radius: 12px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .guest-result-modal .primary-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .guest-result-modal .secondary-btn {
+            background: #e2e8f0;
+            color: #2d3748;
+            padding: 16px 32px;
+            border-radius: 12px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .guest-result-modal .secondary-btn:hover {
+            background: #cbd5e0;
+        }
+
+        /* ========================================
+           MILESTONE CELEBRATION SYSTEM 
+           ======================================== */
+        
+        .milestone-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        .milestone-modal {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: slideIn 0.5s ease-out;
+            position: relative;
+        }
+
+        .milestone-modal.perfect-score {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .milestone-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: bounce 1s ease-in-out infinite;
+        }
+
+        .milestone-title {
+            color: white;
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .milestone-subtitle {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+
+        .milestone-badges-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .milestone-badge {
+            background: rgba(255, 255, 255, 1.0);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            /* backdrop-filter: blur(10px); */ /* REMOVED - CAUSED BLUR */
+            transition: transform 0.2s;
+        }
+
+        .milestone-badge:hover {
+            transform: scale(1.02);
+        }
+
+        .milestone-badge-icon {
+            font-size: 40px;
+            margin-bottom: 5px;
+        }
+
+        .milestone-badge-name {
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .milestone-badge-description {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+        }
+
+        .milestone-badge-points {
+            color: #ffd700;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+
+        .milestone-continue-btn {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .milestone-continue-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .confetti-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+            from { 
+                transform: translateY(-50px) scale(0.8);
+                opacity: 0;
+            }
+            to { 
+                transform: translateY(0) scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.1); }
+        }
+
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 min-h-screen">
+    <!-- Guest Mode Banner (shown only for guest users) -->
+    <div id="guestBanner" class="guest-banner" style="display: none;">
+        <div class="guest-banner-content">
+            <div class="guest-banner-text">
+                <h3>🎯 Guest Mode - Try Unlimited Quizzes!</h3>
+                <p>Register to save your progress, earn badges, and track your learning journey</p>
+            </div>
+            <div class="guest-banner-actions">
+                <a href="/register" class="guest-register-btn">Create Free Account</a>
+                <a href="/" class="guest-login-btn">Login</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header with User Info -->
+    <div class="bg-white shadow-md">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-gray-800">🎓 Math Master</h1>
+            <div class="flex items-center gap-4">
+                <span class="text-gray-700" id="userName"></span>
+                <button onclick="openPasswordModal()" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-all">
+                    <i class="fas fa-key mr-2"></i>Change Password
+                </button>
+                <button onclick="logout()" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-all">
+                    <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="app" class="container mx-auto px-4 py-8">
+        <!-- Badge Summary Widget -->
+        <div id="badge-widget" class="badge-summary-widget" style="display: none;">
+            <div class="badge-summary-header">
+                <h2 class="badge-summary-title">🏆 Your Progress</h2>
+                <a href="/student/badges" class="view-badges-btn">View All Badges →</a>
+            </div>
+
+            <div class="badge-summary-stats">
+                <div class="badge-stat-box">
+                    <span id="stat-level" class="badge-stat-value">-</span>
+                    <div class="badge-stat-label">Level</div>
+                </div>
+                <div class="badge-stat-box">
+                    <span id="stat-points" class="badge-stat-value">-</span>
+                    <div class="badge-stat-label">Points</div>
+                </div>
+                <div class="badge-stat-box">
+                    <span id="stat-badges" class="badge-stat-value">-</span>
+                    <div class="badge-stat-label">Badges</div>
+                </div>
+                <div class="badge-stat-box">
+                    <span id="stat-quizzes" class="badge-stat-value">-</span>
+                    <div class="badge-stat-label">Quizzes</div>
+                </div>
+                <div class="badge-stat-box">
+                    <span id="stat-streak" class="badge-stat-value">-</span>
+                    <div class="badge-stat-label">🔥 Streak</div>
+                </div>
+                <div class="badge-stat-box">
+                    <span id="stat-accuracy" class="badge-stat-value">-</span>
+                    <div class="badge-stat-label">Accuracy</div>
+                </div>
+            </div>
+
+            <div id="recent-badges-container" style="margin-top: 15px; display: none;">
+                <div style="opacity: 0.9; margin-bottom: 8px; font-size: 0.9em;">Recent Badges:</div>
+                <div id="recent-badges"></div>
+            </div>
+        </div>
+
+        <!-- Loading Screen -->
+        <div id="loadingScreen" class="text-center py-20">
+            <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto"></div>
+            <p class="mt-4 text-xl text-gray-700">Loading...</p>
+        </div>
+
+        <!-- Topic Selection Screen -->
+        <div id="topicScreen" class="hidden">
+            <div class="text-center mb-12">
+                <h2 class="text-5xl font-bold text-gray-800 mb-4">🚀 Your Learning Journey</h2>
+                <p class="text-xl text-gray-600">Choose your path and master mathematics!</p>
+            </div>
+
+            <!-- Learning Paths Container (Dynamically generated by Junior Cycle strands) -->
+            <div class="space-y-12" id="learningPathsContainer">
+                <!-- Strand cards will be generated dynamically based on database strands -->
+            </div>
+
+            <!-- Progress Summary -->
+            <div class="bg-white rounded-2xl p-6 shadow-lg">
+                <h3 class="text-2xl font-bold text-gray-800 mb-4">📊 Your Progress</h3>
+                <div id="progressSummary" class="text-gray-600">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Difficulty Selection Screen -->
+        <div id="difficultyScreen" class="hidden">
+            <div class="max-w-4xl mx-auto">
+                <button onclick="backToTopics()" class="mb-6 bg-white text-gray-700 px-6 py-2 rounded-lg shadow hover:shadow-md transition-all">
+                    ← Back to Topics
+                </button>
+
+                <div class="text-center mb-12">
+                    <h2 id="selectedTopicTitle" class="text-4xl font-bold text-gray-800 mb-4"></h2>
+                    <p class="text-xl text-gray-600">Select your level</p>
+                </div>
+
+                <div id="difficultyButtonsContainer" class="grid md:grid-cols-3 gap-6">
+                    <!-- Difficulty buttons will be generated dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Quiz Screen -->
+        <div id="quizScreen" class="hidden max-w-3xl mx-auto">
+            <div class="mb-6 flex justify-between items-center">
+                <button onclick="backToDifficulty()" class="bg-white text-gray-700 px-6 py-2 rounded-lg shadow hover:shadow-md transition-all">
+                    ← Back
+                </button>
+                <div class="bg-white px-6 py-2 rounded-lg shadow">
+                    <span class="font-semibold text-gray-700">Score: <span id="score">0</span>/<span id="total">20</span></span>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl p-8 shadow-2xl">
+                <div class="mb-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 id="quizTopicTitle" class="text-2xl font-bold text-gray-800"></h2>
+                        <span class="bg-purple-100 text-purple-700 px-4 py-2 rounded-full font-semibold">
+                            Question <span id="currentQuestion">1</span>/<span id="totalQuestions">20</span>
+                        </span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-3 mb-4">
+                        <div id="progressBar" class="bg-gradient-to-r from-purple-500 to-pink-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="mb-8">
+                    <h3 id="questionText" class="text-3xl font-semibold text-gray-800 mb-6" style="white-space: pre-wrap; line-height: 1.8;"></h3>
+                    <div id="optionsContainer" class="space-y-3"></div>
+                </div>
+
+                <div id="feedbackContainer" class="hidden mb-6"></div>
+
+                <button id="nextButton" onclick="nextQuestion()" class="hidden w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-4 rounded-xl font-bold text-lg hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg">
+                    Next Question →
+                </button>
+            </div>
+        </div>
+
+        <!-- Results Screen -->
+        <div id="resultsScreen" class="hidden max-w-2xl mx-auto">
+            <div class="bg-white rounded-2xl p-8 shadow-2xl text-center">
+                <i class="fas fa-trophy text-yellow-500 text-8xl mb-6"></i>
+                <h2 class="text-4xl font-bold text-gray-800 mb-4">Quiz Complete!</h2>
+                <div id="percentage" class="text-6xl font-bold text-purple-600 mb-4"></div>
+                <p id="scoreText" class="text-2xl text-gray-700 mb-8"></p>
+                <div id="performanceMessage" class="text-xl font-semibold mb-6"></div>
+
+                <div class="space-y-4">
+                    <button onclick="retryQuiz()" class="w-full bg-purple-600 text-white py-4 rounded-xl font-semibold hover:bg-purple-700 transition-colors">
+                        Try Again
+                    </button>
+                    <button onclick="backToTopics()" class="w-full bg-gray-200 text-gray-800 py-4 rounded-xl font-semibold hover:bg-gray-300 transition-colors">
+                        Choose Another Topic
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTopic = '';
+        let currentDifficulty = '';
+        let questions = [];
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let answered = false;
+        let startTime = null;
+        
+        // Milestone Tracking (Client-Side for ALL users)
+        let consecutiveCorrect = 0;
+        let maxConsecutiveCorrect = 0;
+        let questionsAnsweredInQuiz = 0;
+        let shownMilestones = new Set(); // Track which milestones shown this quiz
+        
+        let masteryData = {}; // Stores mastery status for all topics/difficulties
+
+        const iconMap = {
+            'calculator': 'fa-calculator',
+            'divide': 'fa-divide',
+            'book': 'fa-book',
+            'chart': 'fa-chart-line',
+            'dice': 'fa-dice',
+            'layers': 'fa-layer-group'
+        };
+
+        // Load mastery data from API
+        async function loadMasteryData() {
+            try {
+                const response = await fetch('/api/student/mastery');
+                masteryData = await response.json();
+                console.log('✨ Mastery data loaded:', masteryData);
+            } catch (error) {
+                console.error('Error loading mastery data:', error);
+                masteryData = {};
+            }
+        }
+
+        window.onload = async function() {
+            await loadCurrentUser();
+            await loadMasteryData(); // Load mastery data BEFORE topics
+            await loadTopics();
+            await loadProgress();
+            await loadBadgeWidget(); // Load badge widget
+        };
+
+        // Generate BLANK number line (for questions - no solution shown)
+        function generateBlankNumberLine(questionText) {
+            const match = questionText.match(/(\d+)\s*([+\-])\s*(\d+)/);
+            if (!match) return null;
+
+            const num1 = parseInt(match[1]);
+            const num2 = parseInt(match[3]);
+            const operation = match[2] === '+' ? 'addition' : 'subtraction';
+            const result = operation === 'addition' ? num1 + num2 : num1 - num2;
+
+            // Determine range
+            let minNum, maxNum, stepSize;
+            if (Math.max(num1, num2, result) > 30) {
+                if (num2 <= 10) {
+                    minNum = Math.max(0, Math.min(num1, result) - 3);
+                    maxNum = Math.max(num1, result) + 3;
+                    stepSize = 1;
+                } else if (num2 <= 20) {
+                    minNum = Math.max(0, Math.min(num1, result) - 5);
+                    maxNum = Math.max(num1, result) + 5;
+                    stepSize = 2;
+                } else {
+                    const padding = Math.ceil(num2 * 0.2);
+                    minNum = Math.max(0, Math.floor((Math.min(num1, result) - padding) / 5) * 5);
+                    maxNum = Math.ceil((Math.max(num1, result) + padding) / 5) * 5;
+                    stepSize = (maxNum - minNum > 50) ? 10 : 5;
+                }
+            } else {
+                minNum = Math.max(0, Math.min(num1, result) - 2);
+                maxNum = Math.max(num1, result) + 2;
+                stepSize = 1;
+            }
+
+            const range = maxNum - minNum;
+
+            // Generate BLANK number line (no solution)
+            let html = '<div class="number-line-container">';
+            html += '<div class="number-line"><div class="number-line-base"></div>';
+
+            for (let i = minNum; i <= maxNum; i += stepSize) {
+                const position = ((i - minNum) / range) * 100;
+                html += `<div class="number-line-tick" style="left: ${position}%"></div>`;
+                html += `<div class="number-line-label" style="left: ${position}%">${i}</div>`;
+            }
+
+            html += '</div>';
+            html += `<div class="number-line-instruction">💡 Use the number line to help solve: ${questionText}</div>`;
+            html += '</div>';
+
+            return html;
+        }
+
+        // Generate SOLUTION number line (for explanations - shows complete solution)
+        function generateSolutionNumberLine(questionText) {
+            const match = questionText.match(/(\d+)\s*([+\-])\s*(\d+)/);
+            if (!match) return null;
+
+            const num1 = parseInt(match[1]);
+            const num2 = parseInt(match[3]);
+            const operation = match[2] === '+' ? 'addition' : 'subtraction';
+            const result = operation === 'addition' ? num1 + num2 : num1 - num2;
+
+            // Same range logic as blank version
+            let minNum, maxNum, stepSize;
+            if (Math.max(num1, num2, result) > 30) {
+                if (num2 <= 10) {
+                    minNum = Math.max(0, Math.min(num1, result) - 3);
+                    maxNum = Math.max(num1, result) + 3;
+                    stepSize = 1;
+                } else if (num2 <= 20) {
+                    minNum = Math.max(0, Math.min(num1, result) - 5);
+                    maxNum = Math.max(num1, result) + 5;
+                    stepSize = 2;
+                } else {
+                    const padding = Math.ceil(num2 * 0.2);
+                    minNum = Math.max(0, Math.floor((Math.min(num1, result) - padding) / 5) * 5);
+                    maxNum = Math.ceil((Math.max(num1, result) + padding) / 5) * 5;
+                    stepSize = (maxNum - minNum > 50) ? 10 : 5;
+                }
+            } else {
+                minNum = Math.max(0, Math.min(num1, result) - 2);
+                maxNum = Math.max(num1, result) + 2;
+                stepSize = 1;
+            }
+
+            const range = maxNum - minNum;
+            const startPos = ((num1 - minNum) / range) * 100;
+            const endPos = ((result - minNum) / range) * 100;
+
+            // Generate SOLUTION number line (with answer)
+            let html = '<div class="number-line-container" style="margin-top:16px;background:linear-gradient(135deg,#f0f9ff 0%,#e0f2fe 100%);">';
+            html += '<div class="number-line"><div class="number-line-base"></div>';
+
+            // Ticks and labels
+            for (let i = minNum; i <= maxNum; i += stepSize) {
+                const position = ((i - minNum) / range) * 100;
+                html += `<div class="number-line-tick" style="left:${position}%"></div>`;
+                html += `<div class="number-line-label" style="left:${position}%">${i}</div>`;
+            }
+
+            // Special ticks for start and end
+            if (num1 % stepSize !== 0 && num1 >= minNum && num1 <= maxNum) {
+                const position = ((num1 - minNum) / range) * 100;
+                html += `<div class="number-line-tick" style="left:${position}%;height:15px"></div>`;
+                html += `<div class="number-line-label" style="left:${position}%;font-weight:bold">${num1}</div>`;
+            }
+            if (result % stepSize !== 0 && result >= minNum && result <= maxNum) {
+                const position = ((result - minNum) / range) * 100;
+                html += `<div class="number-line-tick" style="left:${position}%;height:15px"></div>`;
+                html += `<div class="number-line-label" style="left:${position}%;font-weight:bold;color:#48bb78">${result}</div>`;
+            }
+
+            // Dots
+            html += `<div class="number-line-start-dot" style="left:${startPos}%"></div>`;
+            html += `<div class="number-line-end-dot" style="left:${endPos}%"></div>`;
+
+            // Arc and arrow
+            if (operation === 'addition') {
+                const arcWidth = ((num2) / range) * 100;
+                html += `<div class="number-line-arc" style="left:${startPos}%;width:${arcWidth}%"></div>`;
+                const arrowPos = startPos + arcWidth / 2;
+                html += `<div class="number-line-arrow" style="left:${arrowPos}%;top:5%">→</div>`;
+                html += '</div>';
+                html += `<div class="number-line-instruction" style="background:rgba(72,187,120,0.1);border-left:4px solid #48bb78;padding:12px">`;
+                html += `✅ <strong>Solution:</strong> Start at <strong>${num1}</strong> (🟢), add <strong>${num2}</strong> by jumping forward → to reach <strong>${result}</strong> (🔴)`;
+                html += '</div>';
+            } else {
+                const arcWidth = ((num2) / range) * 100;
+                html += `<div class="number-line-arc" style="left:${startPos - arcWidth}%;width:${arcWidth}%;border-color:#f56565"></div>`;
+                const arrowPos = startPos - arcWidth / 2;
+                html += `<div class="number-line-arrow" style="left:${arrowPos}%;top:5%;color:#f56565">←</div>`;
+                html += '</div>';
+                html += `<div class="number-line-instruction" style="background:rgba(72,187,120,0.1);border-left:4px solid #48bb78;padding:12px">`;
+                html += `✅ <strong>Solution:</strong> Start at <strong>${num1}</strong> (🟢), subtract <strong>${num2}</strong> by jumping back ← to reach <strong>${result}</strong> (🔴)`;
+                html += '</div>';
+            }
+
+            html += '</div>';
+            return html;
+        }
+
+        async function loadCurrentUser() {
+            try {
+                const response = await fetch('/api/current-user');
+                const user = await response.json();
+                
+                // Check if user is a guest
+                if (user.is_guest) {
+                    document.getElementById('userName').textContent = 'Guest User';
+                    
+                    // Show guest banner
+                    const guestBanner = document.getElementById('guestBanner');
+                    if (guestBanner) {
+                        guestBanner.style.display = 'block';
+                    }
+                    
+                    // Hide features not available for guests
+                    const changePasswordBtn = document.querySelector('button[onclick="openPasswordModal()"]');
+                    if (changePasswordBtn) {
+                        changePasswordBtn.style.display = 'none';
+                    }
+                    
+                    // Hide badge widget for guests
+                    const badgeWidget = document.getElementById('badge-widget');
+                    if (badgeWidget) {
+                        badgeWidget.style.display = 'none';
+                    }
+                } else {
+                    document.getElementById('userName').textContent = user.full_name;
+                }
+            } catch (error) {
+                console.error('Error loading user:', error);
+            }
+        }
+
+        async function loadTopics() {
+            try {
+                const response = await fetch('/api/topics');
+                const data = await response.json();
+                topics = data.topics;
+                const strands = data.strands || {};
+                const strandInfo = data.strand_info || {};
+
+                // Get mastery data
+                const masteryResponse = await fetch('/api/student/mastery');
+                masteryData = await masteryResponse.json();
+
+                // Icon mapping
+                const iconMap = {
+                    'calculator': 'fa-calculator',
+                    'divide': 'fa-divide',
+                    'percent': 'fa-percent',
+                    'x': 'fa-xmark',
+                    'hash': 'fa-hashtag',
+                    'book': 'fa-book',
+                    'chart': 'fa-chart-line',
+                    'dice': 'fa-dice',
+                    'layers': 'fa-layer-group',
+                    'radical': 'fa-square-root-alt',
+                    'infinity': 'fa-infinity',
+                    'rotate': 'fa-rotate'
+                };
+
+                // Clear and build strands dynamically
+                const container = document.getElementById('learningPathsContainer');
+                container.innerHTML = '';
+
+                // Iterate through strands in order
+                Object.entries(strands).forEach(([strandName, strandTopics], strandIndex) => {
+                    const info = strandInfo[strandName] || {
+                        icon: '📚',
+                        color: '#667eea',
+                        description: 'Learn and master these topics'
+                    };
+
+                    // Create strand card
+                    const strandCard = document.createElement('div');
+                    strandCard.className = 'learning-path-card';
+                    strandCard.style.borderTop = `4px solid ${info.color}`;
+
+                    // Strand header
+                    const header = document.createElement('div');
+                    header.className = 'path-header';
+                    header.innerHTML = `
+                        <div class="path-number" style="background: ${info.color}">${strandName.includes('Senior Cycle') ? 'Senior Cycle' : (strandName.includes('Senior Cycle') ? 'Senior Cycle' : 'Junior Cycle')}</div>
+                        <h3 class="path-title">${info.icon} ${strandName}</h3>
+                        <p class="path-description">${info.description}</p>
+                    `;
+                    strandCard.appendChild(header);
+
+                    // Topics flow container
+                    const flow = document.createElement('div');
+                    flow.className = 'path-flow';
+
+                    strandTopics.forEach((topicKey, index) => {
+                        if (topics[topicKey]) {
+                            const topic = topics[topicKey];
+                            const iconClass = iconMap[topic.icon] || 'fa-book';
+                            const topicMastered = masteryData[topicKey]?.topic_mastered || false;
+
+                            const card = document.createElement('div');
+                            card.className = `flow-topic-card ${topicMastered ? 'mastered' : ''}`;
+                            card.onclick = () => selectTopic(topicKey, topic.title);
+
+                            card.innerHTML = `
+                                ${topicMastered ? '<div class="mastery-star">⭐</div>' : ''}
+                                <i class="fas ${iconClass} icon" style="color: ${info.color}"></i>
+                                <div class="title">${topic.title}</div>
+                            `;
+
+                            flow.appendChild(card);
+
+                            // Add arrow between topics (except after last one)
+                            if (index < strandTopics.length - 1) {
+                                const arrow = document.createElement('div');
+                                arrow.className = 'flow-arrow';
+                                arrow.innerHTML = '→';
+                                flow.appendChild(arrow);
+                            }
+                        }
+                    });
+
+                    strandCard.appendChild(flow);
+                    container.appendChild(strandCard);
+                });
+
+                // Show verification in console
+                console.log('✅ Student dashboard loaded successfully');
+
+                document.getElementById('loadingScreen').classList.add('hidden');
+                document.getElementById('topicScreen').classList.remove('hidden');
+            } catch (error) {
+                console.error('Error loading topics:', error);
+            }
+        }
+
+        // Helper function to get consistent icon colors
+        function getIconColor(topicKey) {
+            const colors = {
+                'arithmetic': '#ef4444',
+                'multiplication_division': '#3b82f6',
+                'number_systems': '#06b6d4',
+                'bodmas': '#10b981',
+                'fractions': '#f59e0b',
+                'decimals': '#14b8a6',
+                'probability': '#eab308',
+                'descriptive_statistics': '#06b6d4',
+                'patterns': '#8b5cf6',
+                'sets': '#f97316',
+                'functions': '#8b5cf6',
+                'surds': '#a855f7',
+                'complex_numbers_intro': '#ec4899',
+                'complex_numbers_expanded': '#d946ef'
+            };
+            return colors[topicKey] || '#6b7280';
+        }
+
+        async function loadProgress() {
+            try {
+                const response = await fetch('/api/my-progress');
+                const attempts = await response.json();
+
+                const summary = document.getElementById('progressSummary');
+                if (attempts.length === 0) {
+                    summary.innerHTML = '<p>No quizzes completed yet. Start learning!</p>';
+                } else {
+                    const total = attempts.length;
+                    const avgScore = (attempts.reduce((sum, a) => sum + a.percentage, 0) / total).toFixed(1);
+
+                    summary.innerHTML = `
+                        <div class="grid grid-cols-3 gap-4 text-center">
+                            <div>
+                                <div class="text-3xl font-bold text-purple-600">${total}</div>
+                                <div class="text-sm">Quizzes Completed</div>
+                            </div>
+                            <div>
+                                <div class="text-3xl font-bold text-green-600">${avgScore}%</div>
+                                <div class="text-sm">Average Score</div>
+                            </div>
+                            <div>
+                                <div class="text-3xl font-bold text-blue-600">${attempts[0].topic}</div>
+                                <div class="text-sm">Last Topic</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading progress:', error);
+            }
+        }
+
+        async function loadBadgeWidget() {
+            try {
+                // Fetch badge and stats data in parallel
+                const [badgesResponse, statsResponse] = await Promise.all([
+                    fetch('/api/student/badges'),
+                    fetch('/api/student/stats')
+                ]);
+
+                const badgesData = await badgesResponse.json();
+                const statsData = await statsResponse.json();
+
+                // Update widget values
+                document.getElementById('stat-level').textContent = badgesData.level;
+                document.getElementById('stat-points').textContent = badgesData.total_points;
+                document.getElementById('stat-badges').textContent = badgesData.earned.length + '/' + (badgesData.earned.length + badgesData.available.length);
+                document.getElementById('stat-quizzes').textContent = statsData.stats.total_quizzes;
+                document.getElementById('stat-streak').textContent = statsData.stats.current_streak_days;
+                document.getElementById('stat-accuracy').textContent = statsData.stats.overall_accuracy + '%';
+
+                // Show recent badges if any
+                if (badgesData.earned.length > 0) {
+                    const recentBadges = badgesData.earned.slice(-3).reverse(); // Last 3 badges
+                    const recentBadgesHtml = recentBadges.map(badge => {
+                        const emoji = getBadgeEmoji(badge.icon);
+                        return `<span class="recent-badge-mini">${emoji} ${badge.name}</span>`;
+                    }).join('');
+
+                    document.getElementById('recent-badges').innerHTML = recentBadgesHtml;
+                    document.getElementById('recent-badges-container').style.display = 'block';
+                }
+
+                // Show the widget
+                document.getElementById('badge-widget').style.display = 'block';
+
+            } catch (error) {
+                console.error('Error loading badge widget:', error);
+                // Hide widget if there's an error
+                document.getElementById('badge-widget').style.display = 'none';
+            }
+        }
+
+        function getBadgeEmoji(iconClass) {
+            const iconMap = {
+                'fa-star': '⭐', 'fa-book': '📚', 'fa-graduation-cap': '🎓',
+                'fa-heart': '❤️', 'fa-trophy': '🏆', 'fa-bullseye': '🎯',
+                'fa-crown': '👑', 'fa-medal': '🥈', 'fa-gem': '💎',
+                'fa-fire': '🔥', 'fa-bolt': '⚡', 'fa-rocket': '🚀',
+                'fa-certificate': '📜', 'fa-brain': '🧠', 'fa-infinity': '♾️'
+            };
+            return iconMap[iconClass] || '🏅';
+        }
+
+        function selectTopic(topic, title) {
+            currentTopic = topic;
+            document.getElementById('selectedTopicTitle').textContent = title;
+
+            // Generate difficulty/section buttons based on topic
+            const container = document.getElementById('difficultyButtonsContainer');
+            container.innerHTML = '';
+
+            // All topics now use standard 3 difficulty levels
+            const difficulties = [
+                {level: 'beginner', title: 'Beginner', icon: 'fa-seedling', color: 'bg-green-500', desc: 'Start with the basics'},
+                {level: 'intermediate', title: 'Intermediate', icon: 'fa-chart-line', color: 'bg-yellow-500', desc: 'Challenge yourself more'},
+                {level: 'advanced', title: 'Advanced', icon: 'fa-trophy', color: 'bg-red-500', desc: 'Master the topic'}
+            ];
+
+            // Use 3-column grid for standard difficulties
+            container.className = 'grid md:grid-cols-3 gap-6';
+
+            difficulties.forEach(diff => {
+                const button = document.createElement('button');
+                button.onclick = () => startQuiz(diff.level);
+                button.className = `difficulty-button ${diff.color} hover:opacity-90 text-white rounded-2xl p-8 shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all`;
+
+                // Check if this difficulty is mastered (>80%)
+                const difficultyData = masteryData[topic]?.difficulties?.[diff.level];
+                const isMastered = difficultyData?.mastered || false;
+                const bestScore = difficultyData?.best_score || 0;
+
+                // Add trophy badge if mastered
+                const masteryBadge = isMastered ? `
+                    <div class="difficulty-mastery" title="Mastered with ${bestScore}%!">
+                        <div class="trophy">🏆</div>
+                        <div class="score">${bestScore}%</div>
+                    </div>
+                ` : '';
+
+                // Show best score if attempted but not mastered
+                const scoreDisplay = (bestScore > 0 && !isMastered) ?
+                    `<div class="best-score-display">Best: ${bestScore}%</div>` : '';
+
+                button.innerHTML = `
+                    ${masteryBadge}
+                    <i class="fas ${diff.icon} text-6xl mb-4"></i>
+                    <h3 class="text-2xl font-bold mb-2">${diff.title}</h3>
+                    <p class="text-white text-opacity-90">${diff.desc}</p>
+                    <p class="mt-2 text-sm">25 questions</p>
+                    ${scoreDisplay}
+                `;
+                container.appendChild(button);
+            });
+
+            document.getElementById('topicScreen').classList.add('hidden');
+            document.getElementById('difficultyScreen').classList.remove('hidden');
+        }
+
+        async function startQuiz(difficulty) {
+            currentDifficulty = difficulty;
+            currentQuestionIndex = 0;
+            score = 0;
+            answered = false;
+            startTime = Date.now();
+
+            // Reset milestone tracking for new quiz
+            consecutiveCorrect = 0;
+            maxConsecutiveCorrect = 0;
+            questionsAnsweredInQuiz = 0;
+            shownMilestones.clear();
+            console.log('✅ Milestone tracking reset for new quiz');
+
+            document.getElementById('difficultyScreen').classList.add('hidden');
+            document.getElementById('loadingScreen').classList.remove('hidden');
+
+            try {
+                const response = await fetch(`/api/questions/${currentTopic}/${difficulty}`);
+                questions = await response.json();
+
+                document.getElementById('loadingScreen').classList.add('hidden');
+                document.getElementById('quizScreen').classList.remove('hidden');
+
+                document.getElementById('quizTopicTitle').textContent = currentTopic.charAt(0).toUpperCase() + currentTopic.slice(1);
+                document.getElementById('total').textContent = questions.length;
+                document.getElementById('totalQuestions').textContent = questions.length;
+
+                // Initialize tutorial system for ALL topics (shows splash screen on first visit, help button on subsequent)
+                const tutorialTopics = [
+                    'introductory_algebra', 'solving_equations', 'simplifying_expressions',
+                    'expanding_factorising', 'functions', 'patterns', 'arithmetic',
+                    'bodmas', 'fractions', 'decimals', 'multiplication_division',
+                    'number_systems', 'surds', 'complex_numbers_intro', 'complex_numbers_expanded',
+                    'descriptive_statistics', 'probability', 'sets'
+                ];
+                
+                if (tutorialTopics.includes(currentTopic)) {
+                    initTutorial(currentTopic, difficulty);
+                }
+
+                showQuestion();
+            } catch (error) {
+                console.error('Error loading questions:', error);
+                alert('Error loading questions. Please try again.');
+                backToDifficulty();
+            }
+        }
+
+        function showQuestion() {
+            const question = questions[currentQuestionIndex];
+            answered = false;
+
+            document.getElementById('questionText').innerHTML = question.question;
+            document.getElementById('currentQuestion').textContent = currentQuestionIndex + 1;
+            document.getElementById('score').textContent = score;
+
+            const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
+            document.getElementById('progressBar').style.width = progress + '%';
+
+            const optionsContainer = document.getElementById('optionsContainer');
+            optionsContainer.innerHTML = '';
+
+            // Add number line ONLY for arithmetic questions (addition/subtraction)
+            // Do NOT show number line for complex numbers or other topics
+            if (currentTopic === 'arithmetic') {
+                const numberLineHtml = generateBlankNumberLine(question.question);
+                if (numberLineHtml) {
+                    const numberLineDiv = document.createElement('div');
+                    numberLineDiv.innerHTML = numberLineHtml;
+                    optionsContainer.appendChild(numberLineDiv);
+                }
+            }
+
+            // Add answer options
+            question.options.forEach((option, index) => {
+                const button = document.createElement('button');
+                button.className = 'w-full p-4 rounded-xl text-left text-lg font-medium transition-all bg-gray-50 hover:bg-purple-50 border-2 border-gray-200 hover:border-purple-300 text-gray-800';
+                button.textContent = option;
+                button.onclick = () => handleAnswer(index);
+                optionsContainer.appendChild(button);
+            });
+
+            // Add flag button
+            const flagButton = document.createElement('button');
+            flagButton.className = 'w-full mt-4 p-3 rounded-lg text-center text-sm font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 transition-all';
+            flagButton.innerHTML = '<i class="fas fa-flag mr-2"></i>Report an issue with this question';
+            flagButton.onclick = () => showFlagQuestionModal(question.id);
+            optionsContainer.appendChild(flagButton);
+
+            document.getElementById('feedbackContainer').classList.add('hidden');
+            document.getElementById('nextButton').classList.add('hidden');
+        }
+
+        function handleAnswer(selectedIndex) {
+            if (answered) return;
+            answered = true;
+
+            const question = questions[currentQuestionIndex];
+            const correct = selectedIndex === question.correct;
+
+            // Track answer for milestone detection
+            questionsAnsweredInQuiz++;
+            if (correct) {
+                consecutiveCorrect++;
+                maxConsecutiveCorrect = Math.max(maxConsecutiveCorrect, consecutiveCorrect);
+                console.log(`✅ Correct! Streak: ${consecutiveCorrect}`);
+                
+                // Check for "10 in a Row" milestone
+                if (consecutiveCorrect === 10 && !shownMilestones.has('ten_streak')) {
+                    shownMilestones.add('ten_streak');
+                    setTimeout(() => {
+                        showAchievementPopup({
+                            icon: '🔥',
+                            title: '10 in a Row!',
+                            description: "Incredible! You've answered 10 questions correctly in a row!",
+                            points: 50
+                        });
+                    }, 800);
+                }
+            } else {
+                consecutiveCorrect = 0; // Reset streak on wrong answer
+                console.log(`❌ Incorrect. Streak reset.`);
+            }
+
+            // Check for "20 Questions Completed" milestone
+            if (questionsAnsweredInQuiz === 20 && !shownMilestones.has('twenty_questions')) {
+                shownMilestones.add('twenty_questions');
+                setTimeout(() => {
+                    showAchievementPopup({
+                        icon: '🎯',
+                        title: '20 Questions!',
+                        description: "You've answered 20 questions! Keep up the excellent work!",
+                        points: 30
+                    });
+                }, 800);
+            }
+
+            if (correct) {
+                score++;
+                document.getElementById('score').textContent = score;
+            }
+
+            const allChildren = document.getElementById('optionsContainer').children;
+
+            // CRITICAL FIX: Find the offset by checking if first child is number line
+            // Number line div doesn't have onclick, buttons do
+            let buttonOffset = 0;
+            if (allChildren.length > 0 && !allChildren[0].onclick) {
+                buttonOffset = 1; // First child is number line, so buttons start at index 1
+            }
+
+            // Calculate where option buttons end (before flag button)
+            // There are always 4 option buttons, plus potentially 1 number line at start
+            const optionButtonCount = 4;
+            const optionButtonsEnd = buttonOffset + optionButtonCount;
+
+            // Now loop through actual option buttons only (NOT the flag button at the end)
+            for (let i = buttonOffset; i < optionButtonsEnd; i++) {
+                const button = allChildren[i];
+                const optionIndex = i - buttonOffset; // Convert container index to option index
+
+                button.disabled = true;
+
+                if (optionIndex === question.correct) {
+                    button.className = 'w-full p-4 rounded-xl text-left text-lg font-medium bg-green-100 border-2 border-green-500 text-green-800';
+                    button.innerHTML += ' <i class="fas fa-check float-right text-green-600"></i>';
+                } else if (optionIndex === selectedIndex && !correct) {
+                    button.className = 'w-full p-4 rounded-xl text-left text-lg font-medium bg-red-100 border-2 border-red-500 text-red-800';
+                    button.innerHTML += ' <i class="fas fa-times float-right text-red-600"></i>';
+                } else if (button.onclick) { // Only style actual option buttons
+                    button.className = 'w-full p-4 rounded-xl text-left text-lg font-medium bg-gray-100 text-gray-600';
+                }
+            }
+
+            // Keep the flag button enabled and clickable (it's the last child)
+            // No need to disable it - students should be able to report issues after seeing the answer
+
+            // Generate solution number line for arithmetic questions
+            let solutionNumberLine = '';
+            if (currentTopic === 'arithmetic') {
+                solutionNumberLine = generateSolutionNumberLine(question.question) || '';
+            }
+
+            const feedback = document.getElementById('feedbackContainer');
+            feedback.className = correct ? 'mb-6 p-6 rounded-xl bg-green-50 border-2 border-green-200' : 'mb-6 p-6 rounded-xl bg-blue-50 border-2 border-blue-200';
+            feedback.innerHTML = `
+                <div class="flex items-start">
+                    <i class="fas ${correct ? 'fa-check' : 'fa-book'} ${correct ? 'text-green-600' : 'text-blue-600'} text-2xl mr-3 mt-1"></i>
+                    <div>
+                        <p class="font-bold text-lg mb-2 ${correct ? 'text-green-800' : 'text-blue-800'}">
+                            ${correct ? '🎉 Correct!' : '📖 Let\'s learn from this!'}
+                        </p>
+                        <p class="text-gray-700">${question.explanation}</p>
+                        ${solutionNumberLine}
+                    </div>
+                </div>
+            `;
+            feedback.classList.remove('hidden');
+
+            document.getElementById('nextButton').classList.remove('hidden');
+        }
+
+        function nextQuestion() {
+            currentQuestionIndex++;
+            if (currentQuestionIndex < questions.length) {
+                showQuestion();
+            } else {
+                submitAndShowResults();
+            }
+        }
+
+        function showGuestResultModal(score, total, percentage) {
+            const performanceMessages = {
+                100: { emoji: '🏆', title: 'Perfect Score!', message: 'Outstanding! You got every question right!' },
+                90: { emoji: '⭐', title: 'Excellent Work!', message: 'You scored 90% or higher - fantastic!' },
+                70: { emoji: '👍', title: 'Good Job!', message: 'You\'re doing well! Keep practicing!' },
+                50: { emoji: '💪', title: 'Keep Trying!', message: 'You\'re learning! Practice makes perfect!' },
+                0: { emoji: '📚', title: 'Room to Grow', message: 'Don\'t give up! Every expert was once a beginner.' }
+            };
+
+            const messageKey = Object.keys(performanceMessages)
+                .map(Number)
+                .reverse()
+                .find(threshold => percentage >= threshold) || 0;
+            
+            const performance = performanceMessages[messageKey];
+
+            const modal = document.createElement('div');
+            modal.className = 'guest-result-overlay';
+            modal.innerHTML = `
+                <div class="guest-result-modal">
+                    <div style="text-align: center;">
+                        <div style="font-size: 64px; margin-bottom: 16px;">${performance.emoji}</div>
+                        <h2>${performance.title}</h2>
+                        <div class="score-display">${percentage}%</div>
+                        <div class="message">${performance.message}</div>
+                        <div class="message">You got <strong>${score} out of ${total}</strong> questions correct!</div>
+                    </div>
+
+                    <div class="benefits">
+                        <h3>🌟 Create a free account to:</h3>
+                        <ul>
+                            <li>Save your quiz scores and progress</li>
+                            <li>Earn badges and achievements</li>
+                            <li>Track your learning journey</li>
+                            <li>Compete on leaderboards</li>
+                            <li>Get detailed performance analytics</li>
+                        </ul>
+                    </div>
+
+                    <div class="button-group">
+                        <a href="/register" class="primary-btn">Create Free Account</a>
+                        <button onclick="closeGuestModal()" class="secondary-btn">Continue as Guest</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+            
+            // Close modal when clicking outside
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeGuestModal();
+                }
+            });
+        }
+
+        function closeGuestModal() {
+            const modal = document.querySelector('.guest-result-overlay');
+            if (modal) {
+                modal.remove();
+            }
+            backToTopics();
+        }
+
+        async function submitAndShowResults() {
+            const percentage = Math.round((score / questions.length) * 100);
+            const timeTaken = Math.floor((Date.now() - startTime) / 1000);
+
+            // Check for quiz completion milestones (FOR ALL USERS including guests)
+            const milestones = [];
+
+            // Perfect Score
+            if (percentage === 100 && !shownMilestones.has('perfect_score')) {
+                milestones.push({
+                    icon: '💯',
+                    title: 'Perfect Score!',
+                    description: 'Flawless! You got every single question correct!',
+                    points: 100
+                });
+                shownMilestones.add('perfect_score');
+            }
+
+            // First Quiz (always show for first quiz of session)
+            if (!shownMilestones.has('first_quiz')) {
+                milestones.push({
+                    icon: '🌟',
+                    title: 'First Quiz Complete!',
+                    description: 'Congratulations on completing your first quiz!',
+                    points: 25
+                });
+                shownMilestones.add('first_quiz');
+            }
+
+            // Quick Learner (under 5 minutes with 80%+)
+            const timeInMinutes = timeTaken / 60;
+            if (timeInMinutes < 5 && percentage >= 80 && !shownMilestones.has('quick_learner')) {
+                milestones.push({
+                    icon: '⚡',
+                    title: 'Quick Learner!',
+                    description: 'Amazing! You completed this quiz in under 5 minutes with a great score!',
+                    points: 40
+                });
+                shownMilestones.add('quick_learner');
+            }
+
+            // Show milestones if any were earned (with delays between multiple milestones)
+            if (milestones.length > 0) {
+                console.log('🎉 Quiz completion milestones earned:', milestones);
+                for (let i = 0; i < milestones.length; i++) {
+                    setTimeout(() => {
+                        showAchievementPopup(milestones[i]);
+                    }, i * 2500); // Show each milestone 2.5 seconds apart
+                }
+            }
+
+            // Submit to backend
+            try {
+                const response = await fetch('/api/submit-quiz', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        topic: currentTopic,
+                        difficulty: currentDifficulty,
+                        score: score,
+                        total_questions: questions.length,
+                        percentage: percentage,
+                        time_taken: timeTaken
+                    })
+                });
+
+                const result = await response.json();
+                
+                // Check if user is a guest
+                if (result.is_guest || result.prompt_register) {
+                    // Show guest modal with registration prompt
+                    showGuestResultModal(score, questions.length, percentage);
+                    return;
+                }
+                
+                // ✨ NEW: Show milestone celebration if badges were earned
+                if (result.newly_earned_badges && result.newly_earned_badges.length > 0) {
+                    console.log('🎉 Badges earned:', result.newly_earned_badges);
+                    // Show milestone modal BEFORE results screen
+                    showMilestoneModal(result.newly_earned_badges);
+                    
+                    // Wait a moment for user to see the celebration
+                    // The user will click "Continue" to proceed
+                } else {
+                    console.log('No new badges earned this time');
+                }
+                
+                // Regular user - reload progress and show results
+                await loadProgress();
+                await loadBadgeWidget();
+                
+            } catch (error) {
+                console.error('Error submitting quiz:', error);
+            }
+
+            showResults(percentage);
+        }
+
+        function showResults(percentage) {
+            document.getElementById('quizScreen').classList.add('hidden');
+            document.getElementById('resultsScreen').classList.remove('hidden');
+
+            document.getElementById('percentage').textContent = percentage + '%';
+            document.getElementById('scoreText').textContent = `You scored ${score} out of ${questions.length}`;
+
+            const messageEl = document.getElementById('performanceMessage');
+            if (percentage === 100) {
+                messageEl.className = 'text-xl text-green-600 font-semibold mb-6';
+                messageEl.textContent = '🌟 Perfect score! Amazing work!';
+            } else if (percentage >= 80) {
+                messageEl.className = 'text-xl text-blue-600 font-semibold mb-6';
+                messageEl.textContent = '🎉 Great job! You\'re really getting it!';
+            } else if (percentage >= 60) {
+                messageEl.className = 'text-xl text-orange-600 font-semibold mb-6';
+                messageEl.textContent = '👍 Good effort! Keep practicing!';
+            } else {
+                messageEl.className = 'text-xl text-red-600 font-semibold mb-6';
+                messageEl.textContent = '💪 Keep trying! Practice makes perfect!';
+            }
+        }
+
+        function retryQuiz() {
+            document.getElementById('resultsScreen').classList.add('hidden');
+            startQuiz(currentDifficulty);
+        }
+
+        function backToTopics() {
+            document.getElementById('difficultyScreen').classList.add('hidden');
+            document.getElementById('resultsScreen').classList.add('hidden');
+            document.getElementById('quizScreen').classList.add('hidden');
+            document.getElementById('topicScreen').classList.remove('hidden');
+            loadProgress(); // Refresh progress
+        }
+
+        function backToDifficulty() {
+            document.getElementById('quizScreen').classList.add('hidden');
+            document.getElementById('difficultyScreen').classList.remove('hidden');
+        }
+
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+                window.location.href = '/';
+            } catch (error) {
+                console.error('Error logging out:', error);
+            }
+        }
+
+        // ==================== QUESTION FLAGGING ====================
+
+        let currentFlagQuestionId = null;
+
+        function showFlagQuestionModal(questionId) {
+            currentFlagQuestionId = questionId;
+            const question = questions[currentQuestionIndex];
+
+            document.getElementById('flagQuestionText').textContent = question.question;
+            document.getElementById('flagQuestionModal').classList.remove('hidden');
+            document.getElementById('flagQuestionModal').classList.add('flex');
+
+            document.getElementById('flagForm').reset();
+        }
+
+        function hideFlagModal() {
+            document.getElementById('flagQuestionModal').classList.add('hidden');
+            document.getElementById('flagQuestionModal').classList.remove('flex');
+            currentFlagQuestionId = null;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const flagForm = document.getElementById('flagForm');
+            if (flagForm) {
+                flagForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+
+                    const flagType = document.getElementById('flagType').value;
+                    const description = document.getElementById('flagDescription').value;
+
+                    if (!flagType || !description.trim()) {
+                        alert('Please fill in all fields');
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/api/student/flag-question', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                question_id: currentFlagQuestionId,
+                                flag_type: flagType,
+                                description: description
+                            })
+                        });
+
+                        const data = await response.json();
+
+                        if (response.ok) {
+                            alert('Thank you! Your report has been submitted to the administrator.');
+                            hideFlagModal();
+                        } else {
+                            alert(data.error || 'Failed to submit report');
+                        }
+                    } catch (error) {
+                        console.error('Error submitting flag:', error);
+                        alert('Error submitting report. Please try again.');
+                    }
+                });
+            }
+        });
+    </script>
+
+    <!-- Flag Question Modal -->
+    <div id="flagQuestionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-8 max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold">Report Question Issue</h2>
+                <button onclick="hideFlagModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+
+            <div id="flagQuestionContent" class="mb-6">
+                <p class="text-gray-700 mb-4" id="flagQuestionText"></p>
+            </div>
+
+            <form id="flagForm" class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 font-semibold mb-2">Issue Type:</label>
+                    <select id="flagType" required class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        <option value="">-- Select issue type --</option>
+                        <option value="incorrect">Incorrect Answer</option>
+                        <option value="ambiguous">Ambiguous/Unclear Question</option>
+                        <option value="typo">Typo or Grammar Error</option>
+                        <option value="other">Other Issue</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 font-semibold mb-2">Description:</label>
+                    <textarea id="flagDescription" required rows="4"
+                              class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              placeholder="Please describe the issue in detail..."></textarea>
+                </div>
+
+                <div class="flex gap-4">
+                    <button type="submit" class="flex-1 bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 font-semibold">
+                        <i class="fas fa-flag mr-2"></i>Submit Report
+                    </button>
+                    <button type="button" onclick="hideFlagModal()" class="flex-1 bg-gray-300 text-gray-800 py-3 rounded-lg hover:bg-gray-400 font-semibold">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- Password Change Modal -->
+    <div id="passwordModal" class="password-modal hidden">
+        <div class="password-modal-content">
+            <div class="password-modal-header">
+                <h2><i class="fas fa-key mr-2"></i>Change Password</h2>
+                <button onclick="closePasswordModal()" class="close-btn">&times;</button>
+            </div>
+            <form id="passwordForm" onsubmit="changePassword(event)" class="password-form">
+                <div class="form-group">
+                    <label for="currentPassword">
+                        <i class="fas fa-lock mr-2"></i>Current Password
+                    </label>
+                    <input
+                        type="password"
+                        id="currentPassword"
+                        required
+                        minlength="6"
+                        class="form-input"
+                        placeholder="Enter current password"
+                    >
+                </div>
+                <div class="form-group">
+                    <label for="newPassword">
+                        <i class="fas fa-key mr-2"></i>New Password
+                    </label>
+                    <input
+                        type="password"
+                        id="newPassword"
+                        required
+                        minlength="6"
+                        class="form-input"
+                        placeholder="Enter new password (min 6 characters)"
+                    >
+                    <small class="form-hint">Minimum 6 characters</small>
+                </div>
+                <div class="form-group">
+                    <label for="confirmPassword">
+                        <i class="fas fa-check-circle mr-2"></i>Confirm New Password
+                    </label>
+                    <input
+                        type="password"
+                        id="confirmPassword"
+                        required
+                        minlength="6"
+                        class="form-input"
+                        placeholder="Confirm new password"
+                    >
+                </div>
+                <div id="passwordError" class="error-message hidden"></div>
+                <div id="passwordSuccess" class="success-message hidden"></div>
+                <div class="form-actions">
+                    <button type="button" onclick="closePasswordModal()" class="btn-cancel">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn-submit">
+                        <i class="fas fa-check mr-2"></i>Change Password
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <style>
+        /* Password Modal Styles */
+        .password-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            /* backdrop-filter: blur(4px); */ /* REMOVED */
+        }
+
+        .password-modal.hidden {
+            display: none;
+        }
+
+        .password-modal-content {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            animation: modalSlideIn 0.3s ease-out;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .password-modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+            border-radius: 20px 20px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .password-modal-header h2 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .close-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            font-size: 32px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
+        .close-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: rotate(90deg);
+        }
+
+        .password-form {
+            padding: 32px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+            box-sizing: border-box;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-hint {
+            display: block;
+            margin-top: 6px;
+            font-size: 12px;
+            color: #718096;
+        }
+
+        .error-message {
+            background: #fee;
+            border: 2px solid #fcc;
+            color: #c33;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .error-message::before {
+            content: "⚠️";
+            font-size: 18px;
+        }
+
+        .success-message {
+            background: #efe;
+            border: 2px solid #cfc;
+            color: #3c3;
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .success-message::before {
+            content: "✓";
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .error-message.hidden,
+        .success-message.hidden {
+            display: none;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 32px;
+        }
+
+        .btn-cancel,
+        .btn-submit {
+            flex: 1;
+            padding: 14px 24px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: none;
+        }
+
+        .btn-cancel {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+
+        .btn-cancel:hover {
+            background: #cbd5e0;
+        }
+
+        .btn-submit {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-submit:active {
+            transform: translateY(0);
+        }
+
+        /* ========================================
+           MILESTONE CELEBRATION SYSTEM 
+           ======================================== */
+        
+        .milestone-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        .milestone-modal {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: slideIn 0.5s ease-out;
+            position: relative;
+        }
+
+        .milestone-modal.perfect-score {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .milestone-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: bounce 1s ease-in-out infinite;
+        }
+
+        .milestone-title {
+            color: white;
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .milestone-subtitle {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+
+        .milestone-badges-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .milestone-badge {
+            background: rgba(255, 255, 255, 1.0);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 15px;
+            /* backdrop-filter: blur(10px); */ /* REMOVED - CAUSED BLUR */
+            transition: transform 0.2s;
+        }
+
+        .milestone-badge:hover {
+            transform: scale(1.02);
+        }
+
+        .milestone-badge-icon {
+            font-size: 40px;
+            margin-bottom: 5px;
+        }
+
+        .milestone-badge-name {
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .milestone-badge-description {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+        }
+
+        .milestone-badge-points {
+            color: #ffd700;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 8px;
+        }
+
+        .milestone-continue-btn {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .milestone-continue-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .confetti-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+            from { 
+                transform: translateY(-50px) scale(0.8);
+                opacity: 0;
+            }
+            to { 
+                transform: translateY(0) scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.1); }
+        }
+
+    </style>
+
+    <script>
+        // Password Modal Functions
+        function openPasswordModal() {
+            document.getElementById('passwordModal').classList.remove('hidden');
+            document.getElementById('currentPassword').focus();
+        }
+
+        function closePasswordModal() {
+            document.getElementById('passwordModal').classList.add('hidden');
+            document.getElementById('passwordForm').reset();
+            document.getElementById('passwordError').classList.add('hidden');
+            document.getElementById('passwordSuccess').classList.add('hidden');
+        }
+
+        async function changePassword(event) {
+            event.preventDefault();
+
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+
+            const errorDiv = document.getElementById('passwordError');
+            const successDiv = document.getElementById('passwordSuccess');
+
+            // Clear previous messages
+            errorDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
+
+            // Validate passwords match
+            if (newPassword !== confirmPassword) {
+                errorDiv.textContent = 'New passwords do not match';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            // Validate password length
+            if (newPassword.length < 6) {
+                errorDiv.textContent = 'Password must be at least 6 characters long';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword,
+                        confirm_password: confirmPassword
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    successDiv.textContent = data.message;
+                    successDiv.classList.remove('hidden');
+                    document.getElementById('passwordForm').reset();
+
+                    // Auto-close after 2 seconds
+                    setTimeout(() => {
+                        closePasswordModal();
+                    }, 2000);
+                } else {
+                    errorDiv.textContent = data.error || 'Failed to change password';
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error changing password:', error);
+                errorDiv.textContent = 'An error occurred. Please try again.';
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('click', function(event) {
+            const modal = document.getElementById('passwordModal');
+            if (event.target === modal) {
+                closePasswordModal();
+            }
+        });
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                const modal = document.getElementById('passwordModal');
+                if (!modal.classList.contains('hidden')) {
+                    closePasswordModal();
+                }
+            }
+        });
+
+        // ========================================
+        // MILESTONE CELEBRATION SYSTEM
+        // ========================================
+
+        function createConfetti(container) {
+            const canvas = document.createElement('canvas');
+            canvas.className = 'confetti-canvas';
+            canvas.width = container.offsetWidth;
+            canvas.height = container.offsetHeight;
+            
+            const ctx = canvas.getContext('2d');
+            const pieces = [];
+            const numberOfPieces = 100;
+            const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#feca57', '#ee5a6f', '#c7ecee', '#ffd700', '#ff85c0'];
+            
+            class ConfettiPiece {
+                constructor() {
+                    this.x = Math.random() * canvas.width;
+                    this.y = Math.random() * canvas.height - canvas.height;
+                    this.size = Math.random() * 8 + 4;
+                    this.speedY = Math.random() * 3 + 2;
+                    this.speedX = Math.random() * 2 - 1;
+                    this.color = colors[Math.floor(Math.random() * colors.length)];
+                    this.rotation = Math.random() * 360;
+                    this.rotationSpeed = Math.random() * 10 - 5;
+                }
+                
+                update() {
+                    this.y += this.speedY;
+                    this.x += this.speedX;
+                    this.rotation += this.rotationSpeed;
+                    
+                    if (this.y > canvas.height) {
+                        this.y = -10;
+                        this.x = Math.random() * canvas.width;
+                    }
+                }
+                
+                draw() {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.rotate(this.rotation * Math.PI / 180);
+                    ctx.fillStyle = this.color;
+                    ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
+                    ctx.restore();
+                }
+            }
+            
+            for (let i = 0; i < numberOfPieces; i++) {
+                pieces.push(new ConfettiPiece());
+            }
+            
+            let animationId;
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                pieces.forEach(piece => {
+                    piece.update();
+                    piece.draw();
+                });
+                animationId = requestAnimationFrame(animate);
+            }
+            
+            animate();
+            
+            // Stop after 5 seconds
+            setTimeout(() => {
+                cancelAnimationFrame(animationId);
+                canvas.remove();
+            }, 5000);
+            
+            return canvas;
+        }
+
+        function showMilestoneModal(badges) {
+            if (!badges || badges.length === 0) return;
+            
+            console.log('🎉 Showing milestone modal for badges:', badges);
+            
+            // Create overlay
+            const overlay = document.createElement('div');
+            overlay.className = 'milestone-overlay';
+            overlay.id = 'milestone-overlay';
+            
+            // Create modal
+            const modal = document.createElement('div');
+            modal.className = 'milestone-modal';
+            
+            // Check if this is a special achievement (perfect score, mastery, etc)
+            const isSpecial = badges.some(b => 
+                b.name.includes('Perfect') || 
+                b.name.includes('Flawless') ||
+                b.name.includes('Master') || 
+                b.name.includes('Genius') ||
+                b.name.includes('Excellence')
+            );
+            
+            if (isSpecial) {
+                modal.classList.add('perfect-score');
+            }
+            
+            // Get appropriate icon
+            const getIcon = (badge) => {
+                if (badge.icon && badge.icon !== 'null') return badge.icon;
+                // Default icons based on badge name
+                if (badge.name.includes('Perfect') || badge.name.includes('Flawless')) return '💯';
+                if (badge.name.includes('Master') || badge.name.includes('Genius')) return '🎓';
+                if (badge.name.includes('Streak') || badge.name.includes('Warrior')) return '🔥';
+                if (badge.name.includes('First')) return '🌟';
+                if (badge.name.includes('Sharp')) return '🎯';
+                return '🏆';
+            };
+            
+            const mainIcon = badges.length === 1 ? getIcon(badges[0]) : (badges.length > 1 ? '🎉' : '🏆');
+            
+            // Build modal content
+            modal.innerHTML = `
+                <div class="milestone-icon">${mainIcon}</div>
+                <div class="milestone-title">
+                    ${badges.length === 1 ? 'Achievement Unlocked!' : badges.length + ' Achievements!'}
+                </div>
+                <div class="milestone-subtitle">
+                    You've earned ${badges.length === 1 ? 'a new badge' : badges.length + ' new badges'}!
+                </div>
+                
+                <div class="milestone-badges-container">
+                    ${badges.map(badge => `
+                        <div class="milestone-badge">
+                            <div class="milestone-badge-icon">${getIcon(badge)}</div>
+                            <div class="milestone-badge-name">${badge.name}</div>
+                            <div class="milestone-badge-description">${badge.description}</div>
+                            <div class="milestone-badge-points">+${badge.points} points</div>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <button class="milestone-continue-btn" onclick="closeMilestoneModal()">
+                    Continue
+                </button>
+            `;
+            
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+            
+            // Add confetti for special achievements
+            if (isSpecial) {
+                const confettiCanvas = createConfetti(modal);
+                modal.insertBefore(confettiCanvas, modal.firstChild);
+            }
+            
+            // Play achievement sound (optional)
+            playAchievementSound();
+        }
+
+        function closeMilestoneModal() {
+            const overlay = document.getElementById('milestone-overlay');
+            if (overlay) {
+                overlay.style.animation = 'fadeIn 0.3s ease-out reverse';
+                setTimeout(() => overlay.remove(), 300);
+            }
+        }
+
+        function playAchievementSound() {
+            // Optional: Add achievement sound
+            // You can add an audio file and play it here
+            try {
+                // const audio = new Audio('/static/achievement.mp3');
+                // audio.volume = 0.3;
+                // audio.play().catch(e => console.log('Could not play sound:', e));
+            } catch (e) {
+                // Sound playback failed, that's okay
+            }
+        }
+
+        // ==================== CLIENT-SIDE ACHIEVEMENT POPUPS ====================
+        // High-contrast celebration popups for ALL users (guests and logged-in)
+
+        function showAchievementPopup(achievement) {
+            console.log('🎉 Showing achievement popup:', achievement);
+            
+            // Create overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.85);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+                animation: fadeIn 0.3s ease-out;
+            `;
+            
+            // Create modal
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 20px;
+                padding: 40px;
+                max-width: 500px;
+                width: 90%;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+                text-align: center;
+                position: relative;
+                animation: slideUp 0.5s ease-out;
+                color: #ffffff;
+            `;
+            
+            modal.innerHTML = `
+                <div style="font-size: 80px; margin-bottom: 20px; animation: bounce 1s ease-in-out infinite;">
+                    ${achievement.icon}
+                </div>
+                <h2 style="
+                    color: #ffffff;
+                    font-size: 32px;
+                    font-weight: bold;
+                    margin: 20px 0;
+                    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+                ">
+                    ${achievement.title}
+                </h2>
+                <p style="
+                    color: #ffffff;
+                    font-size: 18px;
+                    margin: 15px 0;
+                    line-height: 1.6;
+                    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+                ">
+                    ${achievement.description}
+                </p>
+                <div style="
+                    background: rgba(255, 255, 255, 0.2);
+                    border-radius: 10px;
+                    padding: 15px;
+                    margin: 20px 0;
+                ">
+                    <div style="
+                        color: #ffffff;
+                        font-size: 16px;
+                        font-weight: 600;
+                        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+                    ">
+                        Achievement Points
+                    </div>
+                    <div style="
+                        color: #ffd700;
+                        font-size: 36px;
+                        font-weight: bold;
+                        margin-top: 5px;
+                        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+                    ">
+                        +${achievement.points}
+                    </div>
+                </div>
+                <button onclick="this.closest('.achievement-overlay').remove()" style="
+                    background: rgba(255, 255, 255, 0.9);
+                    color: #667eea;
+                    border: none;
+                    padding: 12px 30px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    border-radius: 25px;
+                    cursor: pointer;
+                    margin-top: 10px;
+                    transition: all 0.3s ease;
+                    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+                " 
+                onmouseover="this.style.background='#ffffff'; this.style.transform='scale(1.05)';"
+                onmouseout="this.style.background='rgba(255, 255, 255, 0.9)'; this.style.transform='scale(1)';">
+                    Awesome! ✨
+                </button>
+            `;
+            
+            overlay.className = 'achievement-overlay';
+            overlay.appendChild(modal);
+            
+            // Add confetti
+            createAchievementConfetti(overlay);
+            
+            document.body.appendChild(overlay);
+            
+            // Add animations if not already added
+            if (!document.getElementById('achievement-animations')) {
+                const style = document.createElement('style');
+                style.id = 'achievement-animations';
+                style.textContent = `
+                    @keyframes fadeIn {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                    }
+                    @keyframes slideUp {
+                        from {
+                            transform: translateY(50px);
+                            opacity: 0;
+                        }
+                        to {
+                            transform: translateY(0);
+                            opacity: 1;
+                        }
+                    }
+                    @keyframes bounce {
+                        0%, 100% { transform: translateY(0); }
+                        50% { transform: translateY(-20px); }
+                    }
+                    @keyframes confettiFall {
+                        to {
+                            transform: translateY(100vh) rotate(360deg);
+                            opacity: 0;
+                        }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+
+        function createAchievementConfetti(container) {
+            const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#ff9ff3'];
+            const confettiCount = 50;
+            
+            for (let i = 0; i < confettiCount; i++) {
+                const confetti = document.createElement('div');
+                confetti.style.cssText = `
+                    position: fixed;
+                    width: 10px;
+                    height: 10px;
+                    background: ${colors[Math.floor(Math.random() * colors.length)]};
+                    top: -10px;
+                    left: ${Math.random() * 100}%;
+                    opacity: ${Math.random() * 0.7 + 0.3};
+                    animation: confettiFall ${Math.random() * 3 + 2}s linear forwards;
+                    animation-delay: ${Math.random() * 0.5}s;
+                    border-radius: ${Math.random() > 0.5 ? '50%' : '0'};
+                    z-index: 9999;
+                `;
+                container.appendChild(confetti);
+                
+                // Remove confetti after animation
+                setTimeout(() => confetti.remove(), 5000);
+            }
+        }
+
+        console.log('✅ Client-side achievement system loaded!');
+
+    </script>
+
+
+
+<!-- ========================================== -->
+<!-- TUTORIAL SYSTEM - Added for splash screens -->
+<!-- ========================================== -->
+
+<!-- Tutorial Data -->
+<script>
+/**
+ * TUTORIAL DATA STRUCTURE
+ * 
+ * This file contains all tutorial content for topics.
+ * To add a new topic tutorial, simply add a new entry to the TUTORIALS object.
+ * 
+ * Structure:
+ * TUTORIALS = {
+ *   'topic_name': {
+ *     'beginner': { title, introduction, principles, examples, tips },
+ *     'intermediate': { ... },
+ *     'advanced': { ... }
+ *   }
+ * }
+ */
+
+const TUTORIALS = {
+    // Introductory Algebra Tutorial Content
+    'introductory_algebra': {
+        'beginner': {
+            title: 'Collecting Like Terms',
+            introduction: 'In this level, you\'ll learn to <strong>collect like terms</strong> - combining terms that have the same letter.',
+            
+            principles: [
+                {
+                    title: 'Like Terms',
+                    content: '<strong>Like terms</strong> have exactly the same letter part.<br>• 3x and 5x are like terms (both have \'x\')<br>• 4y and 2y are like terms (both have \'y\')<br>• 3x and 5y are NOT like terms (different letters)'
+                },
+                {
+                    title: 'How to Collect',
+                    content: 'Think of it like fruit: 3 apples + 5 apples = 8 apples<br>Just add the numbers, keep the letter!'
+                }
+            ],
+            
+            examples: [
+                {
+                    question: 'Simplify: 4x + 3x',
+                    steps: [
+                        'Both terms have \'x\' - they are like terms ✓',
+                        'Add the numbers: 4 + 3 = 7',
+                        'Keep the letter: x'
+                    ],
+                    answer: '7x'
+                },
+                {
+                    question: 'Simplify: 5y + 2y',
+                    steps: [
+                        'Both terms have \'y\' - they are like terms ✓',
+                        'Add the numbers: 5 + 2 = 7',
+                        'Keep the letter: y'
+                    ],
+                    answer: '7y'
+                }
+            ],
+            
+            tips: [
+                '✅ Always keep the letter - it doesn\'t change!',
+                '✅ Just add the numbers - ignore the letters when adding',
+                '⚠️ Don\'t forget the letter: 4x + 3x = 7x (not 7)',
+                '⚠️ Don\'t multiply: 2y + 3y = 5y (not 6y)'
+            ]
+        },
+        
+        'intermediate': {
+            title: 'Substitution (One Variable)',
+            introduction: 'In this level, you\'ll learn <strong>substitution</strong> - finding the value of expressions when you know what x equals.',
+            
+            principles: [
+                {
+                    title: 'What is Substitution?',
+                    content: '<strong>Substitution</strong> means replacing a letter with its number value.<br>Example: If x = 5, then x + 3 means 5 + 3 = 8'
+                },
+                {
+                    title: 'Use Brackets!',
+                    content: 'Always use brackets when substituting.<br>If x = 4, write 3(4) not 34'
+                }
+            ],
+            
+            examples: [
+                {
+                    question: 'If x = 4, find the value of x + 7',
+                    steps: [
+                        'Write the expression: x + 7',
+                        'Replace x with 4: (4) + 7',
+                        'Calculate: 4 + 7'
+                    ],
+                    answer: '11'
+                },
+                {
+                    question: 'If x = 5, find the value of 2x',
+                    steps: [
+                        'Write the expression: 2x (means 2 times x)',
+                        'Replace x with 5 (use brackets!): 2(5)',
+                        'Calculate: 2 × 5'
+                    ],
+                    answer: '10'
+                }
+            ],
+            
+            tips: [
+                '✅ Always use brackets when substituting',
+                '✅ Remember 2x means 2 × x (multiply!)',
+                '✅ Follow BOMDAS - multiply before adding',
+                '⚠️ Don\'t just stick numbers together: 3x when x=4 is 12, not 34'
+            ]
+        },
+        
+        'advanced': {
+            title: 'Substitution (Two Variables)',
+            introduction: 'In this level, you\'ll substitute <strong>two different variables</strong> (like x and y) in the same expression.',
+            
+            principles: [
+                {
+                    title: 'Multiple Variables',
+                    content: 'Each letter can represent a different number!<br>Example: If x = 3 and y = 5, then x + y means 3 + 5 = 8'
+                },
+                {
+                    title: 'Multiply First',
+                    content: 'When you see 2x or 3y, multiply BEFORE adding/subtracting (BOMDAS!)'
+                }
+            ],
+            
+            examples: [
+                {
+                    question: 'If x = 4 and y = 3, find x + y',
+                    steps: [
+                        'Write: x + y',
+                        'Replace both letters: (4) + (3)',
+                        'Calculate: 4 + 3'
+                    ],
+                    answer: '7'
+                },
+                {
+                    question: 'If x = 5 and y = 4, find 2x + y',
+                    steps: [
+                        'Write: 2x + y',
+                        'Replace: 2(5) + (4)',
+                        'Multiply first: 10 + 4',
+                        'Then add: 14'
+                    ],
+                    answer: '14'
+                }
+            ],
+            
+            tips: [
+                '✅ Keep track of which value goes with which letter',
+                '✅ Use brackets for both variables',
+                '✅ Multiply before you add/subtract (BOMDAS!)',
+                '⚠️ Don\'t mix up the values: x=4, y=3 means x+y = 4+3, not 3+4... well, same answer, but you get the idea!'
+            ]
+        }
+    },
+    
+    // ============================================
+    // SOLVING EQUATIONS
+    // ============================================
+    'solving_equations': {
+        'beginner': {
+            title: 'One-Step Equations',
+            introduction: 'Learn to solve <strong>one-step equations</strong> like x + 5 = 12. You\'ll discover how to "undo" addition to find the value of x.',
+            
+            principles: [
+                {
+                    title: 'What is an Equation?',
+                    content: 'An <strong>equation</strong> is like a balance scale - both sides must be equal.<br>Example: x + 3 = 10 means "something plus 3 equals 10"<br>Our job is to find what that "something" (x) is!'
+                },
+                {
+                    title: 'The Golden Rule',
+                    content: '<strong>Whatever you do to one side, do to the other!</strong><br>Think of it like a seesaw - if you take weight off one side, you must take the same weight off the other side to keep it balanced.'
+                },
+                {
+                    title: 'Undoing Addition',
+                    content: 'To solve x + 3 = 10, we need to <strong>undo</strong> the +3<br>• Addition is undone by subtraction<br>• Subtract 3 from BOTH sides<br>• x + 3 - 3 = 10 - 3<br>• x = 7'
+                }
+            ],
+            
+            examples: [
+                {
+                    question: 'Solve: x + 3 = 10',
+                    steps: [
+                        'We need to get x by itself (isolate x)',
+                        'The +3 is attached to x, so we undo it',
+                        'Subtract 3 from BOTH sides: x + 3 - 3 = 10 - 3',
+                        'Left side: x + 3 - 3 = x (the 3s cancel out!)',
+                        'Right side: 10 - 3 = 7',
+                        'Therefore: x = 7'
+                    ],
+                    answer: 'x = 7'
+                },
+                {
+                    question: 'Solve: x + 9 = 29',
+                    steps: [
+                        'We need to remove the +9 to isolate x',
+                        'Subtract 9 from BOTH sides: x + 9 - 9 = 29 - 9',
+                        'Left side: x + 9 - 9 = x',
+                        'Right side: 29 - 9 = 20',
+                        'Therefore: x = 20'
+                    ],
+                    answer: 'x = 20'
+                },
+                {
+                    question: 'Solve: x + 14 = 18',
+                    steps: [
+                        'Subtract 14 from BOTH sides: x + 14 - 14 = 18 - 14',
+                        'Left side simplifies to: x',
+                        'Right side: 18 - 14 = 4',
+                        'Therefore: x = 4'
+                    ],
+                    answer: 'x = 4'
+                }
+            ],
+            
+            tips: [
+                '✅ Always do the SAME thing to both sides of the equation',
+                '✅ Check your answer by substituting back: if x = 7, does 7 + 3 = 10? Yes! ✓',
+                '✅ Think: "What number + [this number] = [that number]?"',
+                '⚠️ Don\'t just subtract from the right side - do BOTH sides!',
+                '⚠️ Remember to actually subtract - don\'t just remove the number'
+            ]
+        },
+        
+        'intermediate': {
+            title: 'Two-Step Equations',
+            introduction: 'Master <strong>two-step equations</strong> like 2x + 4 = 18. These need TWO operations to solve - but don\'t worry, we\'ll take it step by step!',
+            
+            principles: [
+                {
+                    title: 'Two Steps to Freedom!',
+                    content: 'In 2x + 4 = 18, x is trapped by TWO operations:<br>1. It\'s being <strong>multiplied</strong> by 2<br>2. Then 4 is being <strong>added</strong><br><br>We need to undo BOTH operations to free x!'
+                },
+                {
+                    title: 'Order Matters - Work Backwards!',
+                    content: 'Use <strong>reverse BOMDAS</strong>:<br>• Addition/Subtraction was done LAST, so undo it FIRST<br>• Multiplication/Division was done FIRST, so undo it LAST<br><br>Think of getting dressed: you put socks on first, then shoes. To undress, you take shoes off FIRST, then socks!'
+                },
+                {
+                    title: 'The Two-Step Process',
+                    content: '<strong>Step 1:</strong> Undo addition/subtraction (get 2x = something)<br><strong>Step 2:</strong> Undo multiplication/division (get x = something)'
+                }
+            ],
+            
+            examples: [
+                {
+                    question: 'Solve: 2x + 4 = 18',
+                    steps: [
+                        '<strong>STEP 1 - Remove the +4:</strong>',
+                        'Subtract 4 from both sides: 2x + 4 - 4 = 18 - 4',
+                        'Simplifies to: 2x = 14',
+                        '',
+                        '<strong>STEP 2 - Remove the ×2:</strong>',
+                        'Divide both sides by 2: 2x ÷ 2 = 14 ÷ 2',
+                        'Simplifies to: x = 7',
+                        '',
+                        '<strong>CHECK:</strong> Does 2(7) + 4 = 18? → 14 + 4 = 18 ✓'
+                    ],
+                    answer: 'x = 7'
+                },
+                {
+                    question: 'Solve: 6x + 6 = 72',
+                    steps: [
+                        '<strong>STEP 1 - Remove the +6:</strong>',
+                        'Subtract 6 from both sides: 6x + 6 - 6 = 72 - 6',
+                        'Simplifies to: 6x = 66',
+                        '',
+                        '<strong>STEP 2 - Remove the ×6:</strong>',
+                        'Divide both sides by 6: 6x ÷ 6 = 66 ÷ 6',
+                        'Simplifies to: x = 11',
+                        '',
+                        '<strong>CHECK:</strong> Does 6(11) + 6 = 72? → 66 + 6 = 72 ✓'
+                    ],
+                    answer: 'x = 11'
+                },
+                {
+                    question: 'Solve: 4x + 1 = 45',
+                    steps: [
+                        '<strong>STEP 1:</strong> Subtract 1 from both sides',
+                        '4x = 44',
+                        '',
+                        '<strong>STEP 2:</strong> Divide both sides by 4',
+                        'x = 11',
+                        '',
+                        '<strong>CHECK:</strong> 4(11) + 1 = 44 + 1 = 45 ✓'
+                    ],
+                    answer: 'x = 11'
+                }
+            ],
+            
+            tips: [
+                '✅ ALWAYS do addition/subtraction FIRST, multiplication/division SECOND',
+                '✅ Write out each step clearly - rushing causes mistakes!',
+                '✅ Check your answer by substituting back into the original equation',
+                '⚠️ Don\'t divide before subtracting - order matters!',
+                '⚠️ Remember: "Undo" means do the opposite operation'
+            ]
+        },
+        
+        'advanced': {
+            title: 'Equations with Brackets',
+            introduction: 'Tackle <strong>equations with brackets</strong> like 2(x + 3) = 14. You\'ll learn to expand brackets first, then solve the resulting two-step equation.',
+            
+            principles: [
+                {
+                    title: 'Brackets First - Always!',
+                    content: 'When you see brackets like 2(x + 3), you MUST expand them first.<br><strong>Expanding</strong> means multiplying everything inside the bracket by the number outside.<br>2(x + 3) becomes 2×x + 2×3 = 2x + 6'
+                },
+                {
+                    title: 'The Three-Step Process',
+                    content: '<strong>Step 1:</strong> Expand the brackets (multiply out)<br><strong>Step 2:</strong> Subtract/add to isolate the x term<br><strong>Step 3:</strong> Divide/multiply to find x'
+                },
+                {
+                    title: 'Expanding Brackets',
+                    content: 'Multiply the number OUTSIDE by EVERY term inside:<br>• 2(x + 3) = 2×x + 2×3 = 2x + 6<br>• 5(x + 2) = 5×x + 5×2 = 5x + 10<br>• 4(x + 1) = 4×x + 4×1 = 4x + 4'
+                }
+            ],
+            
+            examples: [
+                {
+                    question: 'Solve: 2(x + 3) = 14',
+                    steps: [
+                        '<strong>STEP 1 - Expand the brackets:</strong>',
+                        'Multiply 2 by everything inside: 2×x + 2×3',
+                        'This gives us: 2x + 6 = 14',
+                        '',
+                        '<strong>STEP 2 - Remove the +6:</strong>',
+                        'Subtract 6 from both sides: 2x + 6 - 6 = 14 - 6',
+                        'Simplifies to: 2x = 8',
+                        '',
+                        '<strong>STEP 3 - Remove the ×2:</strong>',
+                        'Divide both sides by 2: 2x ÷ 2 = 8 ÷ 2',
+                        'Therefore: x = 4',
+                        '',
+                        '<strong>CHECK:</strong> Does 2(4 + 3) = 14? → 2(7) = 14 ✓'
+                    ],
+                    answer: 'x = 4'
+                },
+                {
+                    question: 'Solve: 5(x + 2) = 20',
+                    steps: [
+                        '<strong>STEP 1 - Expand brackets:</strong>',
+                        '5×x + 5×2 = 5x + 10',
+                        'Equation becomes: 5x + 10 = 20',
+                        '',
+                        '<strong>STEP 2 - Subtract 10:</strong>',
+                        '5x + 10 - 10 = 20 - 10',
+                        '5x = 10',
+                        '',
+                        '<strong>STEP 3 - Divide by 5:</strong>',
+                        'x = 2',
+                        '',
+                        '<strong>CHECK:</strong> 5(2 + 2) = 5(4) = 20 ✓'
+                    ],
+                    answer: 'x = 2'
+                },
+                {
+                    question: 'Solve: 4(x + 1) = 32',
+                    steps: [
+                        '<strong>STEP 1:</strong> Expand: 4x + 4 = 32',
+                        '',
+                        '<strong>STEP 2:</strong> Subtract 4: 4x = 28',
+                        '',
+                        '<strong>STEP 3:</strong> Divide by 4: x = 7',
+                        '',
+                        '<strong>CHECK:</strong> 4(7 + 1) = 4(8) = 32 ✓'
+                    ],
+                    answer: 'x = 7'
+                }
+            ],
+            
+            tips: [
+                '✅ ALWAYS expand brackets FIRST - this is the most important step!',
+                '✅ Multiply the outside number by EVERY term inside the brackets',
+                '✅ After expanding, you have a two-step equation - follow the two-step process',
+                '✅ Check by substituting your answer back into the ORIGINAL equation (with brackets)',
+                '⚠️ Don\'t forget to multiply the number outside by BOTH terms inside',
+                '⚠️ Common mistake: 2(x + 3) ≠ 2x + 3 (you must multiply the 3 too!)'
+            ]
+        }
+    },
+    
+    // ============================================
+    // 3. SIMPLIFYING EXPRESSIONS  
+    // ============================================
+    'simplifying_expressions': {
+        'beginner': {
+            title: 'Collecting Like Terms',
+            introduction: 'Learn to <strong>combine like terms</strong> by adding terms with the same variable: 6x + 9x = 15x',
+            principles: [
+                {title: 'Like Terms', content: 'Terms with the same letter can be combined. 6x and 9x are like terms.'},
+                {title: 'How to Combine', content: 'Add the numbers, keep the letter: 6x + 9x = 15x'}
+            ],
+            examples: [
+                {question: 'Simplify: 6x + 9x', steps: ['Both have x','Add: 6 + 9 = 15', 'Keep x'], answer: '15x'},
+                {question: 'Simplify: 5x + 5x', steps: ['Add: 5 + 5 = 10'], answer: '10x'}
+            ],
+            tips: ['✅ Only combine same letters', '⚠️ Keep the letter in answer']
+        },
+        'intermediate': {
+            title: 'Variables and Constants',
+            introduction: 'Simplify expressions with <strong>both variables and numbers</strong>: 5x + 4 + 2x + 2',
+            principles: [
+                {title: 'Two Types', content: 'Variable terms (5x) and constants (4). Collect each separately.'}
+            ],
+            examples: [
+                {question: '5x + 4 + 2x + 2', steps: ['x terms: 5x + 2x = 7x', 'Constants: 4 + 2 = 6'], answer: '7x + 6'}
+            ],
+            tips: ['✅ Keep variables and numbers separate']
+        },
+        'advanced': {
+            title: 'Expressions with Powers',
+            introduction: 'Simplify expressions with <strong>x²</strong> terms: 4x² + 7x + 2x²',
+            principles: [
+                {title: 'Different Powers', content: 'x² and x are different! Combine x² with x², x with x.'}
+            ],
+            examples: [
+                {question: '4x² + 7x + 2x² + 1x', steps: ['x²: 4x² + 2x² = 6x²', 'x: 7x + 1x = 8x'], answer: '6x² + 8x'}
+            ],
+            tips: ['✅ x² and x are NOT the same', '✅ Write highest power first']
+        }
+    },
+    
+    // ============================================
+    // 4. EXPANDING & FACTORISING
+    // ============================================
+    'expanding_factorising': {
+        'beginner': {
+            title: 'Expanding Brackets',
+            introduction: 'Multiply everything inside by the outside number: 6(x + 9) = 6x + 54',
+            principles: [
+                {title: 'Distribution', content: 'Multiply outside number by EACH term inside'}
+            ],
+            examples: [
+                {question: '6(x + 9)', steps: ['6 × x = 6x', '6 × 9 = 54'], answer: '6x + 54'}
+            ],
+            tips: ['✅ Multiply ALL terms inside']
+        },
+        'intermediate': {
+            title: 'Factorising',
+            introduction: 'Find common factor and put outside brackets: 8x + 80 = 8(x + 10)',
+            principles: [
+                {title: 'Common Factor', content: 'Find biggest number that divides both terms'}
+            ],
+            examples: [
+                {question: '8x + 80', steps: ['Common factor: 8', '8x ÷ 8 = x', '80 ÷ 8 = 10'], answer: '8(x + 10)'}
+            ],
+            tips: ['✅ Check by expanding back']
+        },
+        'advanced': {
+            title: 'Double Brackets (FOIL)',
+            introduction: 'Expand using FOIL method: (x + 1)(x + 4) = x² + 5x + 4',
+            principles: [
+                {title: 'FOIL', content: 'First, Outer, Inner, Last - multiply all combinations'}
+            ],
+            examples: [
+                {question: '(x + 1)(x + 4)', steps: ['F: x×x = x²', 'O: x×4 = 4x', 'I: 1×x = 1x', 'L: 1×4 = 4', 'Combine: x² + 5x + 4'], answer: 'x² + 5x + 4'}
+            ],
+            tips: ['✅ Combine middle terms']
+        }
+    },
+    
+    // ============================================
+    // 5. FUNCTIONS
+    // ============================================
+    'functions': {
+        'beginner': {
+            title: 'Function Notation',
+            introduction: 'Learn what f(x) means. If f(x) = x + 5, find f(3).',
+            principles: [
+                {title: 'Functions', content: 'f(x) is a rule. f(3) means substitute 3 for x'}
+            ],
+            examples: [
+                {question: 'f(x) = x + 5, find f(3)', steps: ['Replace x with 3', 'f(3) = 3 + 5 = 8'], answer: '8'}
+            ],
+            tips: ['✅ Replace ALL x with the number']
+        },
+        'intermediate': {
+            title: 'Evaluating Functions',
+            introduction: 'Evaluate functions with multiplication: f(x) = 2x + 3',
+            principles: [
+                {title: 'BOMDAS', content: 'Multiply before adding'}
+            ],
+            examples: [
+                {question: 'f(x) = 2x + 3, find f(4)', steps: ['f(4) = 2(4) + 3', '= 8 + 3 = 11'], answer: '11'}
+            ],
+            tips: ['✅ Use brackets when substituting']
+        },
+        'advanced': {
+            title: 'Complex Functions',
+            introduction: 'Functions with powers: f(x) = x² + 2x - 3',
+            principles: [
+                {title: 'Multiple Terms', content: 'Calculate each term separately'}
+            ],
+            examples: [
+                {question: 'f(x) = x² + 2x - 3, find f(-1)', steps: ['f(-1) = (-1)² + 2(-1) - 3', '= 1 - 2 - 3 = -4'], answer: '-4'}
+            ],
+            tips: ['✅ Use brackets for negative numbers']
+        }
+    },
+    
+    // ============================================
+    // 6. PATTERNS
+    // ============================================
+    'patterns': {
+        'beginner': {
+            title: 'Visual Patterns',
+            introduction: 'Identify and continue patterns: 🌟 🌙 🌟 🌙 ?',
+            principles: [
+                {title: 'Repeating Patterns', content: 'Look for what repeats'}
+            ],
+            examples: [
+                {question: '🌟 🌙 🌟 🌙 ?', steps: ['Pattern alternates', 'After 🌙 comes 🌟'], answer: '🌟'}
+            ],
+            tips: ['✅ Look for repeats']
+        },
+        'intermediate': {
+            title: 'Number Sequences',
+            introduction: 'Find the pattern in number sequences: 3, 7, 11, 15...',
+            principles: [
+                {title: 'Common Difference', content: 'What do you add each time?'}
+            ],
+            examples: [
+                {question: '3, 7, 11, 15, ?', steps: ['Difference: +4 each time', '15 + 4 = 19'], answer: '19'}
+            ],
+            tips: ['✅ Check the difference between terms']
+        },
+        'advanced': {
+            title: 'nth Term Formula',
+            introduction: 'Find patterns in special sequences: 1, 4, 9, 16...',
+            principles: [
+                {title: 'Special Sequences', content: 'Square numbers: 1², 2², 3², 4²...'}
+            ],
+            examples: [
+                {question: '1, 4, 9, 16, ?', steps: ['These are squares', '1², 2², 3², 4², 5²', 'Next: 5² = 25'], answer: '25'}
+            ],
+            tips: ['✅ Look for squares, doubles, triangular numbers']
+        }
+    },
+    
+    // ============================================
+    // 7. ARITHMETIC
+    // ============================================
+    'arithmetic': {
+        'beginner': {
+            title: 'Basic Addition',
+            introduction: 'Master basic addition: 8 + 4 = 12',
+            principles: [
+                {title: 'Adding', content: 'Count forward from the first number'}
+            ],
+            examples: [
+                {question: '8 + 4', steps: ['Start at 8', 'Count forward 4: 9, 10, 11, 12'], answer: '12'}
+            ],
+            tips: ['✅ Count carefully']
+        },
+        'intermediate': {
+            title: 'Adding Negative Numbers',
+            introduction: 'Add positive and negative: -7 + 14',
+            principles: [
+                {title: 'Negatives', content: 'Adding negative = subtracting'}
+            ],
+            examples: [
+                {question: '-7 + 14', steps: ['14 - 7 = 7'], answer: '7'}
+            ],
+            tips: ['✅ Think of it as subtraction']
+        },
+        'advanced': {
+            title: 'Adding Two Negatives',
+            introduction: 'Add two negative numbers: (-5) + (-12)',
+            principles: [
+                {title: 'Two Negatives', content: 'Result gets more negative'}
+            ],
+            examples: [
+                {question: '(-5) + (-12)', steps: ['Add magnitudes: 5 + 12 = 17', 'Make negative: -17'], answer: '-17'}
+            ],
+            tips: ['✅ Both negative = more negative result']
+        }
+    },
+    
+    // ============================================
+    // 8. BODMAS
+    // ============================================
+    'bodmas': {
+        'beginner': {
+            title: 'Order of Operations Basics',
+            introduction: 'Learn BODMAS: Brackets, Order, Multiply/Divide, Add/Subtract',
+            principles: [
+                {title: 'BODMAS', content: 'Multiply before you add'}
+            ],
+            examples: [
+                {question: '5 + 3 × 2', steps: ['Multiply first: 3 × 2 = 6', 'Then add: 5 + 6 = 11'], answer: '11'}
+            ],
+            tips: ['✅ Always multiply/divide before add/subtract']
+        },
+        'intermediate': {
+            title: 'Multiple Operations',
+            introduction: 'Handle complex expressions: 20 - 4 × 3 + 2',
+            principles: [
+                {title: 'Order Matters', content: 'Follow BODMAS strictly'}
+            ],
+            examples: [
+                {question: '20 - 4 × 3 + 2', steps: ['Multiply: 4 × 3 = 12', '20 - 12 + 2', 'Left to right: 10'], answer: '10'}
+            ],
+            tips: ['✅ Multiplication first']
+        },
+        'advanced': {
+            title: 'With Powers',
+            introduction: 'BODMAS with indices: 3 + 2² × 5',
+            principles: [
+                {title: 'Powers First', content: 'After brackets, do powers (Order)'}
+            ],
+            examples: [
+                {question: '3 + 2² × 5', steps: ['Power: 2² = 4', 'Multiply: 4 × 5 = 20', 'Add: 3 + 20 = 23'], answer: '23'}
+            ],
+            tips: ['✅ Powers before multiplication']
+        }
+    },
+    
+    // ============================================
+    // 9. FRACTIONS
+    // ============================================
+    'fractions': {
+        'beginner': {
+            title: 'Adding Fractions',
+            introduction: 'Add fractions with same denominator: 1/4 + 1/4',
+            principles: [
+                {title: 'Same Denominator', content: 'Add numerators, keep denominator'}
+            ],
+            examples: [
+                {question: '1/4 + 1/4', steps: ['Add tops: 1 + 1 = 2', 'Keep bottom: 4', 'Result: 2/4 = 1/2'], answer: '1/2'}
+            ],
+            tips: ['✅ Simplify answer']
+        },
+        'intermediate': {
+            title: 'Multiplying Fractions',
+            introduction: 'Multiply fractions: 2/3 × 3/4',
+            principles: [
+                {title: 'Multiply Across', content: 'Top × top, bottom × bottom'}
+            ],
+            examples: [
+                {question: '2/3 × 3/4', steps: ['2 × 3 = 6', '3 × 4 = 12', '6/12 = 1/2'], answer: '1/2'}
+            ],
+            tips: ['✅ Simplify final answer']
+        },
+        'advanced': {
+            title: 'Complex Fraction Operations',
+            introduction: 'Combine operations with fractions',
+            principles: [
+                {title: 'BODMAS with Fractions', content: 'Follow operation order'}
+            ],
+            examples: [
+                {question: '(2/3 + 1/4) × 3/5', steps: ['Brackets first: 2/3 + 1/4 = 11/12', '11/12 × 3/5 = 11/20'], answer: '11/20'}
+            ],
+            tips: ['✅ Brackets first']
+        }
+    },
+    
+    // ============================================
+    // 10. DECIMALS
+    // ============================================
+    'decimals': {
+        'beginner': {
+            title: 'Adding Decimals',
+            introduction: 'Add decimal numbers: 4.5 + 1.0',
+            principles: [
+                {title: 'Line Up Points', content: 'Decimal points must line up vertically'}
+            ],
+            examples: [
+                {question: '4.5 + 1.0', steps: ['Line up: 4.5', '       + 1.0', '       = 5.5'], answer: '5.5'}
+            ],
+            tips: ['✅ Always line up decimal points']
+        },
+        'intermediate': {
+            title: 'Multiplying Decimals',
+            introduction: 'Multiply decimals by whole numbers: 4.9 × 6',
+            principles: [
+                {title: 'Multiply Normally', content: 'Then place decimal point'}
+            ],
+            examples: [
+                {question: '4.9 × 6', steps: ['49 × 6 = 294', 'One decimal place: 29.4'], answer: '29.4'}
+            ],
+            tips: ['✅ Count decimal places']
+        },
+        'advanced': {
+            title: 'Decimal × Decimal',
+            introduction: 'Multiply two decimals: 6.0 × 0.8',
+            principles: [
+                {title: 'Count Places', content: 'Total decimal places in answer'}
+            ],
+            examples: [
+                {question: '6.0 × 0.8', steps: ['60 × 8 = 480', 'Two places total: 4.80 = 4.8'], answer: '4.8'}
+            ],
+            tips: ['✅ Add up all decimal places']
+        }
+    },
+    
+    // ============================================
+    // 11. MULTIPLICATION & DIVISION
+    // ============================================
+    'multiplication_division': {
+        'beginner': {
+            title: 'Basic Multiplication',
+            introduction: 'Master times tables: 2 × 5 = 10',
+            principles: [
+                {title: 'Multiplication', content: 'Repeated addition'}
+            ],
+            examples: [
+                {question: '2 × 5', steps: ['2 + 2 + 2 + 2 + 2 = 10'], answer: '10'}
+            ],
+            tips: ['✅ Learn times tables']
+        },
+        'intermediate': {
+            title: 'Negative Number Rules',
+            introduction: 'Multiply and divide with negatives',
+            principles: [
+                {title: 'Sign Rules', content: 'Positive × Negative = Negative<br>Negative × Negative = Positive'}
+            ],
+            examples: [
+                {question: '-4 × 5', steps: ['Different signs = negative', 'Answer: -20'], answer: '-20'}
+            ],
+            tips: ['✅ Remember sign rules']
+        },
+        'advanced': {
+            title: 'Two Negatives',
+            introduction: 'Multiply two negative numbers',
+            principles: [
+                {title: 'Negative × Negative', content: 'Always gives positive'}
+            ],
+            examples: [
+                {question: '(-17) × (-18)', steps: ['17 × 18 = 306', 'Both negative = positive'], answer: '306'}
+            ],
+            tips: ['✅ Negative × Negative = Positive']
+        }
+    },
+    
+    // ============================================
+    // 12. NUMBER SYSTEMS
+    // ============================================
+    'number_systems': {
+        'beginner': {
+            title: 'Natural Numbers',
+            introduction: 'Learn about natural numbers: 1, 2, 3, 4...',
+            principles: [
+                {title: 'Natural Numbers', content: 'Counting numbers starting from 1'}
+            ],
+            examples: [
+                {question: 'Smallest natural number?', steps: ['Natural numbers: 1, 2, 3...', 'Smallest is 1'], answer: '1'}
+            ],
+            tips: ['✅ Start from 1']
+        },
+        'intermediate': {
+            title: 'Integers and Operations',
+            introduction: 'Work with positive and negative integers',
+            principles: [
+                {title: 'Integers', content: 'Include negative numbers, zero, positives'}
+            ],
+            examples: [
+                {question: 'What is -8 + (-5)?', steps: ['Both negative', 'Add magnitudes: 8 + 5 = 13', 'Make negative: -13'], answer: '-13'}
+            ],
+            tips: ['✅ Watch signs carefully']
+        },
+        'advanced': {
+            title: 'Temperature Problems',
+            introduction: 'Apply integers to real situations',
+            principles: [
+                {title: 'Real Applications', content: 'Temperature can go below zero'}
+            ],
+            examples: [
+                {question: '3° colder than -5°C?', steps: ['-5 - 3 = -8'], answer: '-8°C'}
+            ],
+            tips: ['✅ Colder = subtract']
+        }
+    },
+    
+    // ============================================
+    // 13. SURDS
+    // ============================================
+    'surds': {
+        'beginner': {
+            title: 'Multiplying Surds',
+            introduction: 'Multiply square roots: √7 × √5',
+            principles: [
+                {title: 'Multiplication', content: '√a × √b = √(a×b)'}
+            ],
+            examples: [
+                {question: '√7 × √5', steps: ['√7 × √5 = √(7×5)', '= √35'], answer: '√35'}
+            ],
+            tips: ['✅ Multiply under the root']
+        },
+        'intermediate': {
+            title: 'Surds with Coefficients',
+            introduction: 'Multiply surds with numbers: 3√2 × 2√2',
+            principles: [
+                {title: 'Multiply Separately', content: 'Numbers together, surds together'}
+            ],
+            examples: [
+                {question: '3√2 × 2√2', steps: ['3 × 2 = 6', '√2 × √2 = 2', '6 × 2 = 12'], answer: '12'}
+            ],
+            tips: ['✅ √2 × √2 = 2']
+        },
+        'advanced': {
+            title: 'Expanding with Surds',
+            introduction: 'Use FOIL with surds: (3 + √2)(5 + √2)',
+            principles: [
+                {title: 'FOIL Method', content: 'Multiply all combinations'}
+            ],
+            examples: [
+                {question: '(3 + √2)(5 + √2)', steps: ['F: 3×5 = 15', 'O: 3×√2 = 3√2', 'I: √2×5 = 5√2', 'L: √2×√2 = 2', 'Sum: 17 + 8√2'], answer: '17 + 8√2'}
+            ],
+            tips: ['✅ Remember √2 × √2 = 2']
+        }
+    },
+    
+    // ============================================
+    // 14. COMPLEX NUMBERS INTRO
+    // ============================================
+    'complex_numbers_intro': {
+        'beginner': {
+            title: 'Imaginary Unit',
+            introduction: 'Meet i, the imaginary unit: i = √(-1)',
+            principles: [
+                {title: 'Definition', content: 'i is defined as √(-1)<br>i² = -1'}
+            ],
+            examples: [
+                {question: 'What is i²?', steps: ['By definition', 'i² = -1'], answer: '-1'}
+            ],
+            tips: ['✅ i² always equals -1']
+        },
+        'intermediate': {
+            title: 'Adding Complex Numbers',
+            introduction: 'Add complex numbers: (2 + 3i) + (4 + 5i)',
+            principles: [
+                {title: 'Add Parts', content: 'Add real parts, add imaginary parts separately'}
+            ],
+            examples: [
+                {question: '(2 + 3i) + (4 + 5i)', steps: ['Real: 2 + 4 = 6', 'Imaginary: 3i + 5i = 8i'], answer: '6 + 8i'}
+            ],
+            tips: ['✅ Keep real and imaginary separate']
+        },
+        'advanced': {
+            title: 'Dividing Complex Numbers',
+            introduction: 'Divide complex numbers',
+            principles: [
+                {title: 'Simplification', content: 'Divide real and imaginary parts'}
+            ],
+            examples: [
+                {question: '(6 + 3i) ÷ 3', steps: ['6/3 = 2', '3i/3 = i'], answer: '2 + i'}
+            ],
+            tips: ['✅ Divide each part']
+        }
+    },
+    
+    // ============================================
+    // 15. COMPLEX NUMBERS EXPANDED
+    // ============================================
+    'complex_numbers_expanded': {
+        'beginner': {
+            title: 'Argand Diagram',
+            introduction: 'Plot complex numbers on Argand diagram',
+            principles: [
+                {title: 'Axes', content: 'Horizontal = real, Vertical = imaginary'}
+            ],
+            examples: [
+                {question: 'Which axis is real?', steps: ['Real = horizontal (x-axis)'], answer: 'x-axis'}
+            ],
+            tips: ['✅ x = real, y = imaginary']
+        },
+        'intermediate': {
+            title: 'Multiplication by i',
+            introduction: 'Understand i × (complex number)',
+            principles: [
+                {title: 'Rotation', content: 'Multiplying by i rotates 90° counterclockwise'}
+            ],
+            examples: [
+                {question: 'i × (1 + 0i)', steps: ['i × 1 = i'], answer: 'i'}
+            ],
+            tips: ['✅ i rotates 90°']
+        },
+        'advanced': {
+            title: 'Conjugates',
+            introduction: 'Find conjugate of complex numbers',
+            principles: [
+                {title: 'Conjugate', content: 'Change sign of imaginary part'}
+            ],
+            examples: [
+                {question: 'Conjugate of 4 + 7i?', steps: ['Change imaginary sign', '4 - 7i'], answer: '4 - 7i'}
+            ],
+            tips: ['✅ Flip imaginary sign only']
+        }
+    },
+    
+    // ============================================
+    // 16. DESCRIPTIVE STATISTICS
+    // ============================================
+    'descriptive_statistics': {
+        'beginner': {
+            title: 'Finding the Mean (Simple)',
+            introduction: 'Calculate the mean (average) of small datasets',
+            principles: [
+                {title: 'Mean Formula', content: 'Add all numbers, divide by how many there are'}
+            ],
+            examples: [
+                {question: 'Mean of: 2, 2, 5, 12, 17', steps: ['Sum: 2+2+5+12+17 = 38', 'Count: 5 numbers', 'Mean: 38 ÷ 5 = 7.6'], answer: '7.6'}
+            ],
+            tips: ['✅ Add all, then divide by count']
+        },
+        'intermediate': {
+            title: 'Mean of Larger Datasets',
+            introduction: 'Calculate mean with more numbers',
+            principles: [
+                {title: 'Same Process', content: 'Still add and divide, just more numbers'}
+            ],
+            examples: [
+                {question: 'Mean of: 20, 27, 30, 34, 36, 39, 58', steps: ['Sum = 244', 'Count = 7', 'Mean = 244 ÷ 7 = 34.9'], answer: '34.9'}
+            ],
+            tips: ['✅ Be careful adding larger numbers']
+        },
+        'advanced': {
+            title: 'Mean with Decimals',
+            introduction: 'Calculate mean of decimal numbers',
+            principles: [
+                {title: 'Decimal Data', content: 'Same method, careful with decimal arithmetic'}
+            ],
+            examples: [
+                {question: 'Mean of: 12.1, 15.8, 20.0, 21.8, 41.8', steps: ['Sum = 111.5', 'Count = 5', 'Mean = 22.3'], answer: '22.3'}
+            ],
+            tips: ['✅ Use calculator for decimal sums']
+        }
+    },
+    
+    // ============================================
+    // 17. PROBABILITY
+    // ============================================
+    'probability': {
+        'beginner': {
+            title: 'Simple Probability',
+            introduction: 'Calculate basic probabilities: coin flips, dice',
+            principles: [
+                {title: 'Probability', content: 'P = favorable outcomes / total outcomes'}
+            ],
+            examples: [
+                {question: 'P(heads on coin flip)?', steps: ['Favorable: 1 (heads)', 'Total: 2 (heads or tails)', 'P = 1/2'], answer: '1/2'}
+            ],
+            tips: ['✅ Count carefully']
+        },
+        'intermediate': {
+            title: 'Compound Probability',
+            introduction: 'Two or more events: multiply probabilities',
+            principles: [
+                {title: 'AND Rule', content: 'P(A and B) = P(A) × P(B)'}
+            ],
+            examples: [
+                {question: 'Two heads in a row?', steps: ['P(H) = 1/2', 'P(H and H) = 1/2 × 1/2 = 1/4'], answer: '1/4'}
+            ],
+            tips: ['✅ Multiply for "and"']
+        },
+        'advanced': {
+            title: 'Conditional Probability',
+            introduction: 'Probability that depends on previous events',
+            principles: [
+                {title: 'Without Replacement', content: 'Probability changes after first draw'}
+            ],
+            examples: [
+                {question: 'Two aces without replacement', steps: ['P(1st ace) = 4/52', 'P(2nd ace) = 3/51', 'P(both) = 4/52 × 3/51 = 1/221'], answer: '1/221'}
+            ],
+            tips: ['✅ Update probabilities after each event']
+        }
+    },
+    
+    // ============================================
+    // 18. SETS
+    // ============================================
+    'sets': {
+        'beginner': {
+            title: 'Union and Intersection',
+            introduction: 'Combine sets or find common elements',
+            principles: [
+                {title: 'Union (∪)', content: 'All elements from both sets'},
+                {title: 'Intersection (∩)', content: 'Only common elements'}
+            ],
+            examples: [
+                {question: '{1,2,3} ∪ {3,4,5}?', steps: ['Combine all', 'Remove duplicates'], answer: '{1,2,3,4,5}'},
+                {question: '{1,2,3} ∩ {3,4,5}?', steps: ['Only common'], answer: '{3}'}
+            ],
+            tips: ['✅ Union = all, Intersection = common']
+        },
+        'intermediate': {
+            title: 'Set Difference',
+            introduction: 'Elements in A but not in B: A - B',
+            principles: [
+                {title: 'Difference', content: 'In first set but not second'}
+            ],
+            examples: [
+                {question: 'A={1,2,3,4}, B={3,4,5,6}, A-B?', steps: ['In A: 1,2,3,4', 'Remove what is in B: remove 3,4'], answer: '{1,2}'}
+            ],
+            tips: ['✅ Start with first set, remove second']
+        },
+        'advanced': {
+            title: 'Cardinality Formulas',
+            introduction: 'Count elements using formulas',
+            principles: [
+                {title: 'Formula', content: '|A ∪ B| = |A| + |B| - |A ∩ B|'}
+            ],
+            examples: [
+                {question: '|A|=5, |B|=7, |A∩B|=3, |A∪B|?', steps: ['5 + 7 - 3 = 9'], answer: '9'}
+            ],
+            tips: ['✅ Subtract intersection to avoid double counting']
+        }
+    }
+    
+    // FUTURE TOPICS - Just add them here following the same structure:
+    /*
+    'patterns': {
+        'beginner': { ... },
+        'intermediate': { ... },
+        'advanced': { ... }
+    },
+    'functions': {
+        'beginner': { ... },
+        'intermediate': { ... },
+        'advanced': { ... }
+    }
+    */
+};
+
+// Export for use in other scripts
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = TUTORIALS;
+}
+
+</script>
+
+<!-- TUTORIAL MODAL COMPONENT -->
+<!-- Add this to student_app.html, just before the closing </body> tag -->
+
+<!-- Tutorial Splash Screen Modal -->
+<div id="tutorialModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" style="display: none;">
+    <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center">
+                <i class="fas fa-book-open text-2xl mr-3"></i>
+                <h2 id="tutorialTitle" class="text-2xl font-bold">Tutorial</h2>
+            </div>
+            <button onclick="closeTutorial()" class="text-white hover:text-gray-200 text-2xl">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <!-- Content (Scrollable) -->
+        <div class="flex-1 overflow-y-auto p-6">
+            <!-- Introduction -->
+            <div id="tutorialIntro" class="mb-6 p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+                <!-- Dynamic content -->
+            </div>
+            
+            <!-- Key Principles -->
+            <div class="mb-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-3 flex items-center">
+                    <i class="fas fa-lightbulb text-yellow-500 mr-2"></i>
+                    Key Principles
+                </h3>
+                <div id="tutorialPrinciples" class="space-y-3">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+            
+            <!-- Worked Examples -->
+            <div class="mb-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-3 flex items-center">
+                    <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                    Worked Examples
+                </h3>
+                <div id="tutorialExamples" class="space-y-4">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+            
+            <!-- Tips -->
+            <div class="mb-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-3 flex items-center">
+                    <i class="fas fa-star text-purple-500 mr-2"></i>
+                    Quick Tips
+                </h3>
+                <div id="tutorialTips" class="space-y-2">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="bg-gray-50 px-6 py-4 border-t">
+            <div class="flex items-center justify-between">
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" id="dontShowAgain" class="mr-2 w-4 h-4">
+                    <span class="text-sm text-gray-600">Don't show this automatically again</span>
+                </label>
+                <button onclick="startTutorialQuiz()" class="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:shadow-lg transition-all">
+                    Got It - Start Quiz! 🚀
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Floating Help Button (shown during quiz) -->
+<button id="tutorialHelpBtn" class="fixed bottom-6 right-6 bg-purple-600 text-white px-4 py-3 rounded-full shadow-lg hover:shadow-xl transition-all z-40 hidden" onclick="showTutorialModal()">
+    <i class="fas fa-book-open mr-2"></i>
+    Need Help?
+</button>
+
+<style>
+/* Tutorial Modal Styles */
+#tutorialModal.flex {
+    display: flex !important;
+}
+
+.tutorial-principle {
+    background: white;
+    border-left: 4px solid #9333ea;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.tutorial-example {
+    background: #f0fdf4;
+    border: 2px solid #86efac;
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+}
+
+.tutorial-example-question {
+    font-weight: 600;
+    color: #047857;
+    margin-bottom: 0.75rem;
+    font-size: 1.1rem;
+}
+
+.tutorial-example-steps {
+    background: white;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin: 0.75rem 0;
+}
+
+.tutorial-example-step {
+    padding: 0.5rem 0;
+    padding-left: 1.5rem;
+    position: relative;
+    color: #374151;
+}
+
+.tutorial-example-step:before {
+    content: "→";
+    position: absolute;
+    left: 0;
+    color: #9333ea;
+    font-weight: bold;
+}
+
+.tutorial-example-answer {
+    background: #dcfce7;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    font-weight: 700;
+    color: #047857;
+    text-align: center;
+    font-size: 1.1rem;
+}
+
+.tutorial-tip {
+    padding: 0.75rem;
+    padding-left: 2.5rem;
+    background: white;
+    border-radius: 0.5rem;
+    position: relative;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.tutorial-tip:before {
+    content: attr(data-icon);
+    position: absolute;
+    left: 0.75rem;
+    font-size: 1.2rem;
+}
+
+/* Floating Help Button Animation */
+#tutorialHelpBtn {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    #tutorialModal > div {
+        max-width: 100%;
+        margin: 1rem;
+    }
+}
+</style>
+
+
+<!-- Tutorial Manager -->
+<script>
+/**
+ * TUTORIAL MANAGER
+ * 
+ * Handles showing/hiding tutorials based on topic and difficulty.
+ * Uses localStorage to remember user preferences.
+ * 
+ * HOW TO USE:
+ * 1. Include tutorial_data.js first
+ * 2. Include this script
+ * 3. Call initTutorial(topic, difficulty) when starting a quiz
+ * 
+ * Example: initTutorial('introductory_algebra', 'beginner')
+ */
+
+class TutorialManager {
+    constructor() {
+        this.currentTopic = null;
+        this.currentDifficulty = null;
+        this.storageKey = 'mathmaster_tutorial_prefs';
+    }
+    
+    /**
+     * Initialize tutorial for a topic/difficulty
+     * Shows tutorial if user hasn't disabled it
+     */
+    initTutorial(topic, difficulty) {
+        this.currentTopic = topic;
+        this.currentDifficulty = difficulty;
+        
+        // Check if tutorial exists for this topic/difficulty
+        if (!TUTORIALS[topic] || !TUTORIALS[topic][difficulty]) {
+            console.log(`No tutorial available for ${topic} - ${difficulty}`);
+            return;
+        }
+        
+        // Check if user has disabled auto-show for this combination
+        if (!this.shouldShowAuto(topic, difficulty)) {
+            console.log(`Tutorial auto-show disabled for ${topic} - ${difficulty}`);
+            this.showHelpButton(); // Still show the help button
+            return;
+        }
+        
+        // Show the tutorial
+        this.showTutorial(topic, difficulty);
+    }
+    
+    /**
+     * Check if tutorial should auto-show
+     */
+    shouldShowAuto(topic, difficulty) {
+        const prefs = this.getPreferences();
+        const key = `${topic}_${difficulty}`;
+        return !prefs[key]; // Show if NOT in preferences (not disabled)
+    }
+    
+    /**
+     * Get user preferences from localStorage
+     */
+    getPreferences() {
+        const stored = localStorage.getItem(this.storageKey);
+        return stored ? JSON.parse(stored) : {};
+    }
+    
+    /**
+     * Save preference to not show tutorial auto for this topic/difficulty
+     */
+    savePreference(topic, difficulty, dontShow) {
+        const prefs = this.getPreferences();
+        const key = `${topic}_${difficulty}`;
+        
+        if (dontShow) {
+            prefs[key] = true;
+        } else {
+            delete prefs[key];
+        }
+        
+        localStorage.setItem(this.storageKey, JSON.stringify(prefs));
+    }
+    
+    /**
+     * Show the tutorial modal
+     */
+    showTutorial(topic, difficulty) {
+        topic = topic || this.currentTopic;
+        difficulty = difficulty || this.currentDifficulty;
+        
+        const tutorialData = TUTORIALS[topic][difficulty];
+        if (!tutorialData) {
+            console.error(`No tutorial data found for ${topic} - ${difficulty}`);
+            return;
+        }
+        
+        // Populate modal content
+        this.populateModal(tutorialData);
+        
+        // Show modal
+        const modal = document.getElementById('tutorialModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        
+        // Hide help button while modal is open
+        this.hideHelpButton();
+    }
+    
+    /**
+     * Populate the modal with tutorial content
+     */
+    populateModal(data) {
+        // Title
+        document.getElementById('tutorialTitle').textContent = data.title;
+        
+        // Introduction
+        document.getElementById('tutorialIntro').innerHTML = `
+            <p class="text-gray-700">${data.introduction}</p>
+        `;
+        
+        // Principles
+        const principlesHTML = data.principles.map(principle => `
+            <div class="tutorial-principle">
+                <h4 class="font-semibold text-purple-700 mb-2">${principle.title}</h4>
+                <p class="text-gray-700">${principle.content}</p>
+            </div>
+        `).join('');
+        document.getElementById('tutorialPrinciples').innerHTML = principlesHTML;
+        
+        // Examples
+        const examplesHTML = data.examples.map((example, idx) => `
+            <div class="tutorial-example">
+                <div class="tutorial-example-question">
+                    Example ${idx + 1}: ${example.question}
+                </div>
+                <div class="tutorial-example-steps">
+                    ${example.steps.map(step => `
+                        <div class="tutorial-example-step">${step}</div>
+                    `).join('')}
+                </div>
+                <div class="tutorial-example-answer">
+                    Answer: ${example.answer}
+                </div>
+            </div>
+        `).join('');
+        document.getElementById('tutorialExamples').innerHTML = examplesHTML;
+        
+        // Tips
+        const tipsHTML = data.tips.map(tip => {
+            const icon = tip.startsWith('✅') ? '✅' : '⚠️';
+            return `<div class="tutorial-tip" data-icon="${icon}">${tip.substring(2)}</div>`;
+        }).join('');
+        document.getElementById('tutorialTips').innerHTML = tipsHTML;
+    }
+    
+    /**
+     * Close the tutorial modal
+     */
+    closeTutorial() {
+        // Check if "don't show again" is checked
+        const dontShowAgain = document.getElementById('dontShowAgain').checked;
+        if (dontShowAgain && this.currentTopic && this.currentDifficulty) {
+            this.savePreference(this.currentTopic, this.currentDifficulty, true);
+        }
+        
+        // Hide modal
+        const modal = document.getElementById('tutorialModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        
+        // Show help button
+        this.showHelpButton();
+    }
+    
+    /**
+     * Start the quiz (close tutorial and begin)
+     */
+    startQuiz() {
+        this.closeTutorial();
+        // The quiz should already be loaded, just hidden behind modal
+    }
+    
+    /**
+     * Show the floating help button
+     */
+    showHelpButton() {
+        if (this.currentTopic && this.currentDifficulty) {
+            document.getElementById('tutorialHelpBtn').classList.remove('hidden');
+        }
+    }
+    
+    /**
+     * Hide the floating help button
+     */
+    hideHelpButton() {
+        document.getElementById('tutorialHelpBtn').classList.add('hidden');
+    }
+    
+    /**
+     * Reset all preferences (for testing)
+     */
+    resetAllPreferences() {
+        localStorage.removeItem(this.storageKey);
+        console.log('All tutorial preferences cleared');
+    }
+}
+
+// Create global instance
+const tutorialManager = new TutorialManager();
+
+// Global functions for onclick handlers
+function showTutorialModal() {
+    tutorialManager.showTutorial();
+}
+
+function closeTutorial() {
+    tutorialManager.closeTutorial();
+}
+
+function startTutorialQuiz() {
+    tutorialManager.startQuiz();
+}
+
+function initTutorial(topic, difficulty) {
+    tutorialManager.initTutorial(topic, difficulty);
+}
+
+// For debugging/testing
+function resetTutorialPreferences() {
+    tutorialManager.resetAllPreferences();
+}
+
+console.log('Tutorial Manager initialized');
+
+</script>
+
+<!-- ========================================== -->
+<!-- END TUTORIAL SYSTEM -->
+<!-- ========================================== -->
+
+</body>
+</html>

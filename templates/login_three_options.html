@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentMath.app - Welcome</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 900px;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 36px;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .header .emoji {
+            font-size: 48px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .option-card {
+            background: #f8f9ff;
+            border: 3px solid #e0e7ff;
+            border-radius: 16px;
+            padding: 30px 20px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .option-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+            border-color: #667eea;
+        }
+
+        .option-card.active {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+        }
+
+        .option-icon {
+            font-size: 56px;
+            margin-bottom: 16px;
+        }
+
+        .option-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .option-desc {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .form-section {
+            display: none;
+            animation: fadeIn 0.3s;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #e0e7ff;
+        }
+
+        .form-section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        input[type="email"],
+        input[type="password"],
+        input[type="text"] {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e0e7ff;
+            border-radius: 10px;
+            font-size: 15px;
+            transition: all 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        input::placeholder {
+            color: #999;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .btn-outline:hover:not(:disabled) {
+            background: #f0f3ff;
+        }
+
+        .error-message,
+        .success-message {
+            padding: 14px 18px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+            animation: shake 0.5s;
+        }
+
+        @keyframes shake {
+            0%, 100% {
+                transform: translateX(0);
+            }
+            25% {
+                transform: translateX(-10px);
+            }
+            75% {
+                transform: translateX(10px);
+            }
+        }
+
+        .error-message {
+            background: #fef2f2;
+            border: 2px solid #fecaca;
+            color: #dc2626;
+        }
+
+        .success-message {
+            background: #d1fae5;
+            border: 2px solid #6ee7b7;
+            color: #047857;
+        }
+
+        .code-display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 16px;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .code-display h3 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            opacity: 0.9;
+        }
+
+        .guest-code {
+            font-size: 48px;
+            font-weight: 800;
+            letter-spacing: 4px;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+            text-transform: uppercase;
+        }
+
+        .code-warning {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 16px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .code-warning strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .link-text {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .link-text a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .link-text a:hover {
+            text-decoration: underline;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .back-btn {
+            margin-bottom: 20px;
+            padding: 10px 20px;
+            background: #f3f4f6;
+            border: none;
+            border-radius: 8px;
+            color: #667eea;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .back-btn:hover {
+            background: #e5e7eb;
+        }
+
+        .info-box {
+            background: #eff6ff;
+            border: 2px solid #bfdbfe;
+            border-radius: 10px;
+            padding: 16px;
+            margin-top: 20px;
+            font-size: 13px;
+            color: #1e40af;
+        }
+
+        .info-box strong {
+            display: block;
+            margin-bottom: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><span class="emoji">🎓</span> AgentMath.app</h1>
+            <p>Choose how you'd like to get started</p>
+        </div>
+
+        <div id="errorMessage" class="error-message"></div>
+        <div id="successMessage" class="success-message"></div>
+
+        <!-- Option Selection -->
+        <div id="optionSelection">
+            <div class="options-grid">
+                <!-- Casual Guest Option -->
+                <div class="option-card" onclick="selectOption('casual')">
+                    <div class="option-icon">🎭</div>
+                    <div class="option-title">Quick Try</div>
+                    <div class="option-desc">
+                        Try instantly, no code needed.
+                        <br><br>
+                        ⚠️ Progress not saved
+                    </div>
+                </div>
+
+                <!-- Repeat Guest Option -->
+                <div class="option-card" onclick="selectOption('repeat')">
+                    <div class="option-icon">🔑</div>
+                    <div class="option-title">Get a Code</div>
+                    <div class="option-desc">
+                        Get an anonymous code to save progress.
+                        <br><br>
+                        ✅ Progress saved!
+                    </div>
+                </div>
+
+                <!-- Full Account Option -->
+                <div class="option-card" onclick="selectOption('full')">
+                    <div class="option-icon">👤</div>
+                    <div class="option-title">Full Account</div>
+                    <div class="option-desc">
+                        Login with email & password.
+                        <br><br>
+                        ✅ All features
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-box">
+                <strong>💡 Which should I choose?</strong>
+                <strong>Quick Try:</strong> Perfect for a first look. No signup, but progress disappears when you close your browser.<br>
+                <strong>Get a Code:</strong> Get a unique animal code (like "panda42") to save your progress. Return anytime!<br>
+                <strong>Full Account:</strong> Best for regular use. Login from any device, unlock all features.
+            </div>
+        </div>
+
+        <!-- Casual Guest Form -->
+        <div id="casualForm" class="form-section">
+            <button class="back-btn" onclick="backToOptions()">← Back</button>
+            <h2 style="margin-bottom: 20px; color: #333;">🎭 Quick Try Mode</h2>
+            <p style="color: #666; margin-bottom: 20px;">
+                You'll be able to try all our quizzes instantly. Your progress will be temporary and will disappear when you close your browser.
+            </p>
+            <button class="btn btn-primary" onclick="startCasualGuest()">
+                <span>Start Trying</span>
+            </button>
+            <div class="link-text" style="margin-top: 20px;">
+                Want to save your progress? <a href="#" onclick="selectOption('repeat'); return false;">Get a code instead</a>
+            </div>
+        </div>
+
+        <!-- Repeat Guest - Generate Code -->
+        <div id="repeatGenerateForm" class="form-section">
+            <button class="back-btn" onclick="backToOptions()">← Back</button>
+            <h2 style="margin-bottom: 20px; color: #333;">🔑 Get Your Code</h2>
+            <p style="color: #666; margin-bottom: 20px;">
+                We'll give you a unique animal code (like <strong>panda42</strong>) that you can use to save your progress. No email or personal info needed!
+            </p>
+            <button class="btn btn-success" onclick="generateGuestCode()">
+                <span>Generate My Code</span>
+            </button>
+            <div class="link-text" style="margin-top: 20px;">
+                Already have a code? <a href="#" onclick="showRepeatLogin(); return false;">Login here</a>
+            </div>
+        </div>
+
+        <!-- Repeat Guest - Code Display -->
+        <div id="codeDisplay" class="form-section">
+            <h2 style="margin-bottom: 20px; color: #333; text-align: center;">🎉 Your Code is Ready!</h2>
+            <div class="code-display">
+                <h3>Your Unique Guest Code:</h3>
+                <div class="guest-code" id="displayedCode">---</div>
+                <button class="btn btn-outline" onclick="copyCode()" style="max-width: 200px; margin: 0 auto;">
+                    📋 Copy Code
+                </button>
+                <div class="code-warning">
+                    <strong>⚠️ Important:</strong>
+                    Save this code! You'll need it to access your progress.
+                    <br>
+                    Write it down, screenshot it, or save it somewhere safe.
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="continueWithCode()">
+                Continue to AgentMath.app →
+            </button>
+        </div>
+
+        <!-- Repeat Guest - Login Form -->
+        <div id="repeatLoginForm" class="form-section">
+            <button class="back-btn" onclick="backToOptions()">← Back</button>
+            <h2 style="margin-bottom: 20px; color: #333;">🔑 Login with Code</h2>
+            <form id="guestLoginForm">
+                <div class="form-group">
+                    <label for="guestCode">Enter Your Guest Code</label>
+                    <input type="text" 
+                           id="guestCode" 
+                           placeholder="e.g., panda42" 
+                           required
+                           autocomplete="off"
+                           style="text-transform: lowercase;">
+                    <small style="color: #666; font-size: 12px; margin-top: 6px; display: block;">
+                        Your code looks like: <strong>panda42</strong> (animal + number)
+                    </small>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <span>Continue</span>
+                </button>
+            </form>
+            <div class="link-text" style="margin-top: 20px;">
+                Don't have a code? <a href="#" onclick="showRepeatGenerate(); return false;">Get one here</a>
+            </div>
+        </div>
+
+        <!-- Full Account Login Form -->
+        <div id="fullAccountForm" class="form-section">
+            <button class="back-btn" onclick="backToOptions()">← Back</button>
+            <h2 style="margin-bottom: 20px; color: #333;">👤 Full Account Login</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" placeholder="your.email@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" placeholder="Enter your password" required>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <span>Login</span>
+                </button>
+            </form>
+            <div class="link-text">
+                <a href="/reset-password">Forgot your password?</a>
+            </div>
+            <div class="link-text" style="margin-top: 15px;">
+                Don't have an account? <a href="/register">Register here</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let generatedCode = null;
+
+        // Show/hide sections
+        function selectOption(type) {
+            // Hide all forms
+            document.querySelectorAll('.form-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('optionSelection').style.display = 'none';
+            
+            // Clear messages
+            hideMessages();
+            
+            // Show selected form
+            if (type === 'casual') {
+                document.getElementById('casualForm').classList.add('active');
+            } else if (type === 'repeat') {
+                document.getElementById('repeatGenerateForm').classList.add('active');
+            } else if (type === 'full') {
+                document.getElementById('fullAccountForm').classList.add('active');
+            }
+        }
+
+        function backToOptions() {
+            document.querySelectorAll('.form-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('optionSelection').style.display = 'block';
+            hideMessages();
+        }
+
+        function showRepeatLogin() {
+            document.querySelectorAll('.form-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('repeatLoginForm').classList.add('active');
+        }
+
+        function showRepeatGenerate() {
+            document.querySelectorAll('.form-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('repeatGenerateForm').classList.add('active');
+        }
+
+        function hideMessages() {
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('successMessage').style.display = 'none';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            errorDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            successDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // Casual Guest
+        async function startCasualGuest() {
+            hideMessages();
+            const btn = event.target.closest('.btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span> <span>Starting...</span>';
+
+            try {
+                const response = await fetch('/api/casual-guest-start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    window.location.href = data.redirect || '/student';
+                } else {
+                    showError(data.error || 'Failed to start. Please try again.');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>Start Trying</span>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('An error occurred. Please try again.');
+                btn.disabled = false;
+                btn.innerHTML = '<span>Start Trying</span>';
+            }
+        }
+
+        // Repeat Guest - Generate Code
+        async function generateGuestCode() {
+            hideMessages();
+            const btn = event.target.closest('.btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span> <span>Generating...</span>';
+
+            try {
+                const response = await fetch('/api/repeat-guest/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    generatedCode = data.guest_code;
+                    document.getElementById('displayedCode').textContent = data.guest_code;
+                    document.querySelectorAll('.form-section').forEach(el => el.classList.remove('active'));
+                    document.getElementById('codeDisplay').classList.add('active');
+                } else {
+                    showError(data.error || 'Failed to generate code. Please try again.');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>Generate My Code</span>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('An error occurred. Please try again.');
+                btn.disabled = false;
+                btn.innerHTML = '<span>Generate My Code</span>';
+            }
+        }
+
+        function copyCode() {
+            const code = document.getElementById('displayedCode').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                const btn = event.target;
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '✅ Copied!';
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                }, 2000);
+            });
+        }
+
+        function continueWithCode() {
+            if (generatedCode) {
+                // Auto-login with the generated code
+                fetch('/api/repeat-guest/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ guest_code: generatedCode })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = data.redirect || '/student';
+                    } else {
+                        showError(data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showError('Failed to continue. Please try again.');
+                });
+            }
+        }
+
+        // Repeat Guest - Login
+        document.getElementById('guestLoginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+
+            const code = document.getElementById('guestCode').value.trim().toLowerCase();
+            const btn = e.target.querySelector('.btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span> <span>Logging in...</span>';
+
+            try {
+                const response = await fetch('/api/repeat-guest/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ guest_code: code })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    window.location.href = data.redirect || '/student';
+                } else {
+                    showError(data.error || 'Code not found. Please check and try again.');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>Continue</span>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('An error occurred. Please try again.');
+                btn.disabled = false;
+                btn.innerHTML = '<span>Continue</span>';
+            }
+        });
+
+        // Full Account Login
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessages();
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const btn = e.target.querySelector('.btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span> <span>Logging in...</span>';
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    if (data.role === 'student') {
+                        window.location.href = '/student';
+                    } else if (data.role === 'teacher') {
+                        if (data.is_approved) {
+                            window.location.href = '/teacher';
+                        } else {
+                            showError('Your teacher account is pending approval.');
+                            btn.disabled = false;
+                            btn.innerHTML = '<span>Login</span>';
+                        }
+                    } else if (data.role === 'admin') {
+                        window.location.href = '/admin';
+                    }
+                } else {
+                    showError(data.error || 'Login failed. Please check your credentials.');
+                    btn.disabled = false;
+                    btn.innerHTML = '<span>Login</span>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('An error occurred. Please try again.');
+                btn.disabled = false;
+                btn.innerHTML = '<span>Login</span>';
+            }
+        });
+
+        // Auto-focus on guest code input when form is shown
+        document.getElementById('guestCode').addEventListener('input', function() {
+            this.value = this.value.toLowerCase();
+        });
+    </script>
+</body>
+</html>

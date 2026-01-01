@@ -1,0 +1,3619 @@
+<!DOCTYPE html>
+<!-- Maths Passport - Revision 3.5 - 2025-12-27 -->
+<!-- Phase 12: Smart Coach Hub - ILP Recommendations restored -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🛂 My Maths Passport - AgentMath</title>
+    <!-- Revision 3.4 - 2025-12-27 - Auto-redistribute incomplete topics notification -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .back-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+
+        .back-btn:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateX(-5px);
+        }
+
+        /* Main Container */
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 30px;
+        }
+
+        /* Tab Navigation */
+        .tab-nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .tab-btn {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 12px 25px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 1rem;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tab-btn:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateY(-2px);
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-color: transparent;
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .tab-btn.new-badge::after {
+            content: 'NEW';
+            background: #10b981;
+            color: white;
+            font-size: 0.6rem;
+            padding: 2px 6px;
+            border-radius: 8px;
+            margin-left: 5px;
+            font-weight: 700;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Card Styles */
+        .card {
+            background: linear-gradient(135deg, rgba(30, 58, 95, 0.9), rgba(45, 74, 111, 0.9));
+            border-radius: 20px;
+            padding: 25px;
+            border: 2px solid rgba(255,255,255,0.1);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+        }
+
+        .card h2 {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+        }
+
+        /* Buttons */
+        .btn-primary {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.3s;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            padding: 12px 24px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 12px;
+            color: white;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.95rem;
+            transition: all 0.3s;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+
+        .btn-success:hover:not(:disabled) {
+            box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
+        }
+
+        /* =====================================================
+           PASSPORT V2 - WEEKLY PLANNER STYLES
+           ===================================================== */
+
+        /* Step Indicator */
+        .step-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 25px;
+        }
+
+        .step {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .step.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .step.done {
+            background: #10b981;
+            color: white;
+        }
+
+        .step-line {
+            width: 30px;
+            height: 4px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+        }
+
+        .step-line.done {
+            background: #10b981;
+        }
+
+        /* Setup Wizard Screens */
+        .wizard-screen {
+            display: none;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .wizard-screen.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .subtitle {
+            text-align: center;
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 20px;
+            font-size: 0.95rem;
+        }
+
+        /* Progress Summary Card */
+        .progress-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .progress-stat {
+            background: rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .progress-stat .value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .progress-stat .label {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.6);
+            margin-top: 5px;
+        }
+
+        .progress-stat.strength .value { color: #10b981; }
+        .progress-stat.weakness .value { color: #f59e0b; }
+
+        /* Curriculum Selector */
+        .curriculum-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .curriculum-option {
+            background: rgba(255,255,255,0.08);
+            border: 2px solid rgba(255,255,255,0.15);
+            border-radius: 15px;
+            padding: 18px 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .curriculum-option:hover {
+            background: rgba(255,255,255,0.12);
+            transform: translateY(-3px);
+        }
+
+        .curriculum-option.selected {
+            background: rgba(102, 126, 234, 0.2);
+            border-color: #667eea;
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .curriculum-option .icon {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+
+        .curriculum-option .name {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .curriculum-option .desc {
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.6);
+            margin-top: 5px;
+        }
+
+        /* Exam Date Picker */
+        .date-picker-container {
+            margin: 20px 0;
+        }
+
+        .date-picker-container label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+
+        .date-picker-container input[type="date"] {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 12px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            font-size: 1rem;
+            font-family: inherit;
+        }
+
+        .date-picker-container input[type="date"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .weeks-preview {
+            background: rgba(102, 126, 234, 0.15);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 10px;
+            padding: 12px 15px;
+            margin-top: 15px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Self-Assessment Strands */
+        .strand-accordion {
+            margin-bottom: 12px;
+        }
+
+        .strand-header {
+            background: rgba(255,255,255,0.08);
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 15px 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .strand-header:hover {
+            background: rgba(255,255,255,0.12);
+        }
+
+        .strand-header.expanded {
+            border-radius: 12px 12px 0 0;
+            border-bottom: none;
+            background: rgba(102, 126, 234, 0.15);
+        }
+
+        .strand-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .strand-icon {
+            font-size: 1.5rem;
+        }
+
+        .strand-name {
+            font-weight: 600;
+        }
+
+        .strand-count {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .strand-progress {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .strand-progress .done {
+            background: #10b981;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .expand-icon {
+            transition: transform 0.3s;
+            font-size: 1.2rem;
+        }
+
+        .strand-header.expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+
+        .strand-topics {
+            display: none;
+            background: rgba(255,255,255,0.03);
+            border: 2px solid rgba(255,255,255,0.1);
+            border-top: none;
+            border-radius: 0 0 12px 12px;
+            padding: 15px;
+        }
+
+        .strand-topics.expanded {
+            display: block;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; max-height: 0; }
+            to { opacity: 1; max-height: 1000px; }
+        }
+
+        .topic-rating {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .topic-rating:last-child {
+            border-bottom: none;
+        }
+
+        .topic-name {
+            font-size: 0.95rem;
+        }
+
+        .rating-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .rating-btn {
+            padding: 8px 14px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 20px;
+            background: rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.7);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .rating-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .rating-btn.selected {
+            color: white;
+            font-weight: 600;
+        }
+
+        .rating-btn.selected[data-rating="1"] {
+            background: rgba(239, 68, 68, 0.3);
+            border-color: #ef4444;
+        }
+
+        .rating-btn.selected[data-rating="2"] {
+            background: rgba(245, 158, 11, 0.3);
+            border-color: #f59e0b;
+        }
+
+        .rating-btn.selected[data-rating="3"] {
+            background: rgba(16, 185, 129, 0.3);
+            border-color: #10b981;
+        }
+
+        .assessment-progress {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 12px 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .assessment-progress .count {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        /* Quiz Screen */
+        .quiz-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .quiz-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .quiz-progress-container {
+            margin-bottom: 20px;
+        }
+
+        .quiz-progress-bar {
+            background: rgba(255,255,255,0.1);
+            height: 12px;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .quiz-progress-fill {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.4s ease;
+        }
+
+        .quiz-progress-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.7);
+        }
+
+        .quiz-meta {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .quiz-meta-item {
+            background: rgba(255,255,255,0.08);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .question-card {
+            background: rgba(255,255,255,0.08);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+
+        .question-strand {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(102, 126, 234, 0.2);
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            margin-bottom: 15px;
+        }
+
+        .question-text {
+            font-size: 1.2rem;
+            font-weight: 500;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .answer-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .answer-option {
+            background: rgba(255,255,255,0.08);
+            border: 2px solid rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 15px 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .answer-option:hover {
+            background: rgba(255,255,255,0.12);
+            transform: translateX(5px);
+        }
+
+        .answer-option.selected {
+            background: rgba(102, 126, 234, 0.25);
+            border-color: #667eea;
+        }
+
+        .answer-option.correct {
+            background: rgba(16, 185, 129, 0.25);
+            border-color: #10b981;
+        }
+
+        .answer-option.incorrect {
+            background: rgba(239, 68, 68, 0.25);
+            border-color: #ef4444;
+        }
+
+        .answer-letter {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .answer-option.selected .answer-letter {
+            background: #667eea;
+        }
+
+        .quiz-nav {
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+        }
+
+        .quiz-nav button {
+            flex: 1;
+        }
+
+        /* Results Screen */
+        .results-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .results-grade {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin: 0 auto 15px;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .results-score {
+            font-size: 1.3rem;
+            margin-bottom: 5px;
+        }
+
+        .strand-results {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 25px;
+        }
+
+        .strand-result {
+            background: rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .strand-result-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .strand-result-score {
+            font-weight: 600;
+        }
+
+        .strand-result-score.high { color: #10b981; }
+        .strand-result-score.medium { color: #f59e0b; }
+        .strand-result-score.low { color: #ef4444; }
+
+        .strand-result-level {
+            background: rgba(255,255,255,0.1);
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+        }
+
+        /* Dashboard View */
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .week-indicator {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            padding: 12px 20px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .week-indicator .week-num {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .week-indicator .week-label {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+
+        .days-left {
+            background: rgba(255,255,255,0.1);
+            padding: 10px 18px;
+            border-radius: 12px;
+            font-size: 0.9rem;
+        }
+
+        .days-left .num {
+            font-weight: 700;
+            color: #f59e0b;
+        }
+
+        .topic-cards {
+            display: grid;
+            gap: 15px;
+        }
+
+        .topic-card {
+            background: rgba(255,255,255,0.08);
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            transition: all 0.3s;
+        }
+
+        .topic-card:hover {
+            background: rgba(255,255,255,0.12);
+            transform: translateY(-2px);
+        }
+
+        .topic-card.completed {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .topic-card.pinned {
+            border-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .topic-card-info {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .topic-card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .topic-card-icon {
+            font-size: 1.3rem;
+        }
+
+        .topic-card-name {
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+
+        .topic-card-badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .topic-badge {
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .topic-badge.priority-high {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .topic-badge.pinned {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        .topic-card-progress {
+            flex: 1;
+            min-width: 150px;
+            max-width: 200px;
+        }
+
+        .level-display {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+        }
+
+        .level-display .current {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .level-display .target {
+            color: rgba(255,255,255,0.6);
+        }
+
+        .progress-bar-container {
+            background: rgba(255,255,255,0.1);
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            background: linear-gradient(90deg, #667eea, #10b981);
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        .topic-card-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .start-btn {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.3s;
+        }
+
+        .start-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .start-btn.completed {
+            background: rgba(255,255,255,0.1);
+        }
+
+        /* Week Stats */
+        .week-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .week-stat {
+            background: rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .week-stat .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .week-stat .label {
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.6);
+            margin-top: 5px;
+        }
+
+        .week-stat.on-track .value { color: #10b981; }
+        .week-stat.behind .value { color: #f59e0b; }
+        .week-stat.ahead .value { color: #667eea; }
+        .week-stat.complete .value { color: #10b981; }
+
+        /* Phase 6: Enhanced Dashboard Styles */
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .refresh-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .refresh-btn:hover {
+            background: rgba(255,255,255,0.2);
+            transform: rotate(30deg);
+        }
+        
+        .refresh-btn.spinning {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .streak-banner {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.2));
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 12px;
+            padding: 12px 18px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        .streak-icon {
+            font-size: 1.3rem;
+            animation: pulse 2s infinite;
+        }
+        
+        .streak-text {
+            font-weight: 600;
+            color: #f59e0b;
+        }
+        
+        .streak-badge {
+            background: #f59e0b;
+            color: #000;
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            margin-left: auto;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        .celebration-banner {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(102, 126, 234, 0.2));
+            border: 2px solid rgba(16, 185, 129, 0.4);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+            animation: celebrationPop 0.5s ease-out;
+        }
+        
+        .celebration-icon {
+            font-size: 2rem;
+            display: block;
+            margin-bottom: 8px;
+            animation: bounce 1s infinite;
+        }
+        
+        .celebration-text {
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: #10b981;
+        }
+        
+        @keyframes celebrationPop {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .card-header h2 {
+            margin: 0;
+        }
+        
+        .progress-ring-container {
+            position: relative;
+            width: 50px;
+            height: 50px;
+        }
+        
+        .progress-ring {
+            transform: rotate(-90deg);
+        }
+        
+        .progress-ring-fill {
+            transition: stroke-dashoffset 0.5s ease;
+        }
+        
+        .progress-ring-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #10b981;
+        }
+        
+        .holiday-notice {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 10px;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .holiday-notice.intensive {
+            background: rgba(102, 126, 234, 0.15);
+            border-color: rgba(102, 126, 234, 0.3);
+        }
+        
+        .holiday-icon {
+            font-size: 1.1rem;
+        }
+        
+        /* Enhanced topic card styles */
+        .topic-card.in-progress {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+        
+        .completed-check {
+            color: #10b981;
+            font-weight: 700;
+            margin-left: auto;
+        }
+        
+        .topic-badge.level-up {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+        
+        .level-display .current.improved {
+            color: #10b981;
+        }
+        
+        .level-display .arrow {
+            color: rgba(255,255,255,0.4);
+            margin: 0 5px;
+        }
+        
+        .topic-stats {
+            display: flex;
+            gap: 10px;
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.5);
+            margin-top: 5px;
+        }
+        
+        .progress-bar-fill.complete {
+            background: linear-gradient(90deg, #10b981, #34d399);
+        }
+        
+        .dashboard-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .dashboard-actions button {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .btn-icon {
+            font-size: 1.1rem;
+        }
+        
+        /* Topic card animation */
+        .topic-card {
+            animation: slideIn 0.3s ease-out forwards;
+            opacity: 0;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Phase 7: Drag & Drop Styles */
+        .edit-mode-banner {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3));
+            border: 2px solid rgba(102, 126, 234, 0.5);
+            border-radius: 15px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        .edit-mode-banner .edit-icon {
+            font-size: 1.3rem;
+        }
+        
+        .edit-mode-banner .edit-text {
+            flex: 1;
+            font-weight: 500;
+            color: rgba(255,255,255,0.9);
+        }
+        
+        .btn-done {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-done:hover {
+            background: #059669;
+            transform: scale(1.05);
+        }
+        
+        .edit-instructions {
+            display: flex;
+            gap: 20px;
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.6);
+        }
+        
+        .edit-instructions .instruction {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .edit-instructions .icon {
+            font-size: 1rem;
+        }
+        
+        /* Drag handle */
+        .drag-handle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+            cursor: grab;
+            color: rgba(255,255,255,0.4);
+            transition: all 0.2s;
+            border-radius: 8px;
+            margin-right: 10px;
+        }
+        
+        .drag-handle:hover {
+            color: rgba(255,255,255,0.8);
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .drag-handle.disabled {
+            cursor: not-allowed;
+            opacity: 0.3;
+        }
+        
+        .drag-handle .grip {
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+        }
+        
+        /* Topic card edit mode */
+        .topic-card.edit-mode {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+        }
+        
+        .topic-card.edit-mode .topic-card-info {
+            flex: 2;
+        }
+        
+        .topic-card.edit-mode .topic-card-progress {
+            flex: 1;
+            max-width: 150px;
+        }
+        
+        /* Dragging state */
+        .topic-card.dragging {
+            opacity: 0.5;
+            transform: scale(0.98);
+            border-color: #667eea;
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        /* Drop zone */
+        .week-drop-zone {
+            min-height: 80px;
+            padding: 10px;
+            border-radius: 12px;
+            transition: all 0.3s;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .week-drop-zone.active {
+            border: 2px dashed rgba(102, 126, 234, 0.4);
+            background: rgba(102, 126, 234, 0.05);
+        }
+        
+        .week-drop-zone.drag-over {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.15);
+            transform: scale(1.01);
+        }
+        
+        .empty-week {
+            text-align: center;
+            padding: 30px;
+            color: rgba(255,255,255,0.4);
+            font-style: italic;
+            border: 2px dashed rgba(255,255,255,0.2);
+            border-radius: 10px;
+        }
+        
+        /* Pin button */
+        .pin-btn {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .pin-btn:hover {
+            background: rgba(255,255,255,0.2);
+            transform: scale(1.1);
+        }
+        
+        .pin-btn.pinned {
+            background: rgba(245, 158, 11, 0.2);
+        }
+        
+        /* Edit button style */
+        .btn-edit {
+            border-color: rgba(102, 126, 234, 0.5) !important;
+        }
+        
+        .btn-edit:hover {
+            background: rgba(102, 126, 234, 0.2) !important;
+            border-color: #667eea !important;
+        }
+        
+        /* Editable week styling */
+        .plan-week.editable {
+            margin-bottom: 15px;
+        }
+        
+        .plan-week.editable .plan-week-header {
+            margin-bottom: 10px;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Full Plan View */
+        .plan-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .plan-legend {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+        }
+
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.normal { background: #667eea; }
+        .legend-dot.intensive { background: #10b981; }
+        .legend-dot.light { background: #6b7280; }
+
+        .plan-weeks {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .plan-week {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 15px 18px;
+            border-left: 5px solid #667eea;
+            transition: all 0.2s;
+        }
+
+        .plan-week.current {
+            background: rgba(102, 126, 234, 0.15);
+            border: 2px solid rgba(102, 126, 234, 0.4);
+            border-left: 5px solid #667eea;
+        }
+
+        .plan-week.intensive {
+            border-left-color: #10b981;
+            background: rgba(16, 185, 129, 0.08);
+        }
+
+        .plan-week.light {
+            border-left-color: #6b7280;
+            opacity: 0.7;
+        }
+
+        .plan-week.revision {
+            border-left-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.08);
+        }
+
+        .plan-week-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .week-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .week-num {
+            font-weight: 700;
+        }
+
+        .week-dates {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.5);
+        }
+
+        .week-badge {
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .week-badge.current { background: #667eea; }
+        .week-badge.holiday { background: #10b981; }
+        .week-badge.revision { background: #f59e0b; }
+
+        .week-capacity {
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.6);
+            background: rgba(255,255,255,0.1);
+            padding: 4px 10px;
+            border-radius: 10px;
+        }
+
+        .plan-week-topics {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .topic-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            font-size: 0.85rem;
+            cursor: grab;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .topic-chip:hover {
+            background: rgba(255,255,255,0.18);
+            transform: scale(1.02);
+        }
+
+        .topic-chip.pinned {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+
+        .topic-chip .levels {
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.5);
+        }
+        /* Draggable Topic Chip Styles for Edit Mode */
+        .topic-chip.draggable {
+            cursor: grab;
+            border: 2px solid transparent;
+            transition: all 0.2s ease;
+        }
+
+        .topic-chip.draggable:hover {
+            background: rgba(102, 126, 234, 0.3);
+            border-color: rgba(102, 126, 234, 0.5);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .topic-chip.draggable:active {
+            cursor: grabbing;
+        }
+
+        .topic-chip.dragging {
+            opacity: 0.5;
+            transform: scale(0.95);
+            border-color: #667eea;
+        }
+
+        .topic-chip .pin-icon {
+            cursor: pointer;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+            margin-left: 4px;
+        }
+
+        .topic-chip .pin-icon:hover {
+            opacity: 1;
+        }
+
+        .topic-chip.pinned .pin-icon {
+            opacity: 1;
+        }
+
+        /* Drop zone improvements */
+        .week-drop-zone {
+            min-height: 60px;
+            padding: 12px;
+            border: 2px dashed transparent;
+            border-radius: 12px;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-content: flex-start;
+        }
+
+        .week-drop-zone.active {
+            border-color: rgba(102, 126, 234, 0.4);
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .week-drop-zone.drag-over {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.15);
+            box-shadow: inset 0 0 20px rgba(102, 126, 234, 0.2);
+        }
+
+        .empty-week-msg {
+            width: 100%;
+            text-align: center;
+            color: rgba(255,255,255,0.4);
+            font-style: italic;
+            padding: 10px;
+        }
+
+        /* Edit mode banner improvement */
+        .edit-mode-banner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2));
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+
+        .edit-mode-banner .edit-icon {
+            font-size: 1.5rem;
+        }
+
+        .edit-mode-banner .edit-text {
+            color: rgba(255,255,255,0.9);
+            font-weight: 500;
+        }
+
+        .edit-mode-banner .btn-done {
+            padding: 8px 20px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            border: none;
+            border-radius: 20px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .edit-mode-banner .btn-done:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+        }
+
+        /* Plan week in edit mode */
+        .plan-week.edit-mode {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .plan-week.edit-mode .plan-week-header {
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+
+
+        /* Loading States */
+        .loading-spinner {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            padding: 50px;
+            color: rgba(255,255,255,0.7);
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.1);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Toast Notifications */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #1e3a5f;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 12px;
+            padding: 15px 25px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .toast.success { border-color: #10b981; }
+        .toast.error { border-color: #ef4444; }
+
+        /* =====================================================
+           V1 PASSPORT STYLES (existing features)
+           ===================================================== */
+
+        .passport-cover {
+            background: linear-gradient(135deg, #1e3a5f, #2d4a6f);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            border: 3px solid #667eea;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .passport-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .passport-subtitle {
+            color: rgba(255,255,255,0.8);
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+        }
+
+        .passport-photo {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 50%;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            border: 4px solid rgba(255,255,255,0.3);
+        }
+
+        .passport-name {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .passport-level {
+            color: rgba(255,255,255,0.7);
+            margin-bottom: 30px;
+        }
+
+        .destinations-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .destination-card {
+            background: linear-gradient(135deg, rgba(30, 58, 95, 0.9), rgba(45, 74, 111, 0.9));
+            border-radius: 15px;
+            padding: 20px;
+            border: 2px solid rgba(255,255,255,0.1);
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .destination-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+
+        .destination-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .destination-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+        }
+
+        .destination-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .destination-tagline {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .destination-progress {
+            margin-top: 15px;
+        }
+
+        .destination-bar {
+            background: rgba(255,255,255,0.1);
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .destination-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        .destination-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .stamps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 15px;
+        }
+
+        .stamp {
+            aspect-ratio: 1;
+            background: rgba(255,255,255,0.08);
+            border-radius: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            padding: 15px;
+            transition: all 0.3s;
+        }
+
+        .stamp.earned {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.3), rgba(118, 75, 162, 0.3));
+            border: 2px solid #667eea;
+        }
+
+        .stamp.locked {
+            opacity: 0.4;
+        }
+
+        .stamp-icon {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+
+        .stamp-name {
+            font-size: 0.75rem;
+            text-align: center;
+            color: rgba(255,255,255,0.8);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                padding: 12px 20px;
+            }
+
+            .header h1 {
+                font-size: 1.2rem;
+            }
+
+            .main-container {
+                padding: 20px 15px;
+            }
+
+            .tab-btn {
+                padding: 10px 18px;
+                font-size: 0.9rem;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .passport-cover {
+                padding: 30px 20px;
+            }
+
+            .passport-title {
+                font-size: 1.8rem;
+            }
+
+            .curriculum-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .topic-card {
+                flex-wrap: wrap;
+                align-items: flex-start;
+            }
+
+            .topic-card-progress {
+                max-width: 100%;
+                width: 100%;
+            }
+
+            .topic-card-actions {
+                width: 100%;
+            }
+
+            .start-btn {
+                width: 100%;
+            }
+
+            .rating-buttons {
+                flex-wrap: wrap;
+            }
+
+            .rating-btn {
+                padding: 6px 10px;
+                font-size: 0.75rem;
+            }
+        }
+
+        /* =====================================================
+           SMART COACH HUB - ILP STYLES
+           ===================================================== */
+        
+        .ilp-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .ilp-stat-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.2s, background 0.2s;
+        }
+        
+        .ilp-stat-card:hover {
+            background: rgba(255,255,255,0.08);
+            transform: translateY(-2px);
+        }
+        
+        .ilp-stat-icon {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+        }
+        
+        .ilp-stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: white;
+            line-height: 1.2;
+        }
+        
+        .ilp-stat-label {
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.6);
+            margin-top: 5px;
+        }
+        
+        .ilp-notification {
+            background: linear-gradient(135deg, #1e3a5f, #0f2744);
+            border: 2px solid #3b82f6;
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .ilp-notification::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #f97316, #ea580c);
+        }
+        
+        .ilp-notification.high::before {
+            background: linear-gradient(90deg, #ef4444, #dc2626);
+        }
+        
+        .ilp-notification.low::before {
+            background: linear-gradient(90deg, #22c55e, #16a34a);
+        }
+        
+        .ilp-notification-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .ilp-notification-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        
+        .ilp-notification-title h3 {
+            color: white;
+            margin: 0 0 5px 0;
+            font-size: 1.2rem;
+        }
+        
+        .ilp-notification-title p {
+            color: rgba(255,255,255,0.6);
+            margin: 0;
+            font-size: 0.85rem;
+        }
+        
+        .ilp-notification-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: white;
+        }
+        
+        .ilp-timer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.8);
+        }
+        
+        .ilp-observations {
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .ilp-observations h4 {
+            color: rgba(255,255,255,0.9);
+            margin: 0 0 12px 0;
+            font-size: 0.95rem;
+        }
+        
+        .ilp-observation-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+        }
+        
+        .ilp-observation-item:last-child {
+            border-bottom: none;
+        }
+        
+        .ilp-changes {
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .ilp-changes h4 {
+            color: rgba(255,255,255,0.9);
+            margin: 0 0 12px 0;
+            font-size: 0.95rem;
+        }
+        
+        .ilp-change-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .ilp-change-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        
+        .ilp-change-icon.add {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+        }
+        
+        .ilp-change-icon.delay {
+            background: linear-gradient(135deg, #f97316, #ea580c);
+        }
+        
+        .ilp-change-details {
+            flex: 1;
+        }
+        
+        .ilp-change-details strong {
+            color: white;
+            display: block;
+            margin-bottom: 2px;
+        }
+        
+        .ilp-change-details span {
+            color: rgba(255,255,255,0.6);
+            font-size: 0.8rem;
+        }
+        
+        .ilp-actions {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .ilp-btn {
+            flex: 1;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-family: inherit;
+        }
+        
+        .ilp-btn-accept {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: white;
+        }
+        
+        .ilp-btn-accept:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4);
+        }
+        
+        .ilp-btn-reject {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+        
+        .ilp-btn-reject:hover {
+            background: rgba(255,255,255,0.15);
+        }
+        
+        .ilp-auto-apply-note {
+            text-align: center;
+            margin-top: 12px;
+            padding: 8px;
+            background: rgba(234, 179, 8, 0.2);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: #fbbf24;
+        }
+        
+        .ilp-no-recommendations {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            border-radius: 12px;
+            padding: 25px;
+            text-align: center;
+        }
+        
+        .ilp-no-recommendations h3 {
+            color: #22c55e;
+            margin-bottom: 10px;
+        }
+        
+        .ilp-no-recommendations p {
+            color: rgba(255,255,255,0.7);
+            margin: 0;
+        }
+        
+        .ilp-history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .ilp-history-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            transition: background 0.2s;
+        }
+        
+        .ilp-history-item:hover {
+            background: rgba(255,255,255,0.08);
+        }
+        
+        .ilp-history-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        
+        .ilp-history-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .ilp-history-title {
+            font-weight: 600;
+            color: white;
+            margin-bottom: 3px;
+        }
+        
+        .ilp-history-summary {
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.6);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .ilp-history-date {
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.4);
+            margin-top: 3px;
+        }
+        
+        .ilp-history-status {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: capitalize;
+            flex-shrink: 0;
+        }
+        
+        .ilp-history-status.accepted {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+        
+        .ilp-history-status.auto_applied {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+        }
+        
+        .ilp-history-status.rejected {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+        
+        .ilp-history-status.pending {
+            background: rgba(234, 179, 8, 0.2);
+            color: #eab308;
+        }
+        
+        .action-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            color: white;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>🛂 My Maths Passport</h1>
+        <button class="back-btn" onclick="window.location.href='/app'">
+            ← Back to App
+        </button>
+    </header>
+
+    <div class="main-container">
+        <div class="tab-nav">
+            <button class="tab-btn active" onclick="showTab('cover')">📖 Passport</button>
+            <button class="tab-btn" onclick="showTab('stamps')">🛂 Stamps</button>
+            <button class="tab-btn" onclick="showTab('map')">🗺️ World Map</button>
+            <button class="tab-btn" onclick="showTab('itinerary')">🎯 Smart Coach</button>
+            <button class="tab-btn new-badge" onclick="showTab('weekly')">📅 Weekly Plan</button>
+        </div>
+
+        <div id="coverTab" class="tab-content active"></div>
+        <div id="stampsTab" class="tab-content"></div>
+        <div id="mapTab" class="tab-content"></div>
+        <div id="itineraryTab" class="tab-content"></div>
+        <div id="weeklyTab" class="tab-content">
+            <div id="weeklyPlanContent">
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <span>Loading your weekly plan...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">
+        <span id="toastIcon">✓</span>
+        <span id="toastMessage">Saved!</span>
+    </div>
+
+    <script>
+        const state = {
+            currentTab: 'cover',
+            v2: {
+                hasPlan: false,
+                wizardStep: 1,
+                curriculum: null,
+                examDate: null,
+                strands: [],
+                assessments: {},
+                quizQuestions: [],
+                quizAnswers: {},
+                currentQuestion: 0,
+                quizResults: null,
+                entryLevels: null,
+                weeklyPlan: null,
+                dashboard: null,
+                editMode: false
+            }
+        };
+
+        function showTab(tabName) {
+            state.currentTab = tabName;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.getElementById(tabName + 'Tab').classList.add('active');
+            
+            if (tabName === 'weekly') loadWeeklyPlanTab();
+            else if (tabName === 'cover') loadPassportCover();
+            else if (tabName === 'stamps') loadStamps();
+            else if (tabName === 'map') loadWorldMap();
+            else if (tabName === 'itinerary') loadItinerary();
+        }
+
+        async function loadWeeklyPlanTab() {
+            const container = document.getElementById('weeklyPlanContent');
+            container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Checking your study plan...</span></div>';
+            
+            try {
+                // Check if returning from quiz (sync progress first)
+                const urlParams = new URLSearchParams(window.location.search);
+                const fromQuiz = urlParams.get('source') === 'quiz_complete' || urlParams.get('synced');
+                
+                if (fromQuiz || state.v2.hasPlan) {
+                    // Sync progress from adaptive system
+                    await syncProgress();
+                }
+                
+                const response = await fetch('/api/passport/v2/dashboard');
+                const data = await response.json();
+                
+                if (data.success && data.has_plan && data.current_week) {
+                    state.v2.hasPlan = true;
+                    state.v2.dashboard = data;
+                    
+                    // Also fetch weekly summary for enhanced stats
+                    const summaryResponse = await fetch('/api/passport/v2/weekly-summary');
+                    const summaryData = await summaryResponse.json();
+                    if (summaryData.success) {
+                        state.v2.weeklySummary = summaryData;
+                    }
+                    
+                    renderDashboard(data);
+                    
+                    // Show completion toast if returning from quiz with progress
+                    if (fromQuiz) {
+                        showToast('Progress synced! 🎉', 'success');
+                        // Clean URL
+                        window.history.replaceState({}, '', '/passport');
+                    }
+                } else {
+                    state.v2.hasPlan = false;
+                    renderSetupWizard();
+                }
+            } catch (error) {
+                console.error('Error loading weekly plan:', error);
+                renderSetupWizard();
+            }
+        }
+        
+        async function syncProgress() {
+            try {
+                const response = await fetch('/api/passport/v2/sync-progress', { method: 'POST' });
+                const data = await response.json();
+                if (data.completed > 0) {
+                    console.log(`Synced ${data.synced} topics, ${data.completed} completed!`);
+                }
+                return data;
+            } catch (error) {
+                console.error('Error syncing progress:', error);
+                return { synced: 0, completed: 0 };
+            }
+        }
+        
+        async function refreshDashboard() {
+            const refreshBtn = document.querySelector('.refresh-btn');
+            if (refreshBtn) {
+                refreshBtn.classList.add('spinning');
+                refreshBtn.disabled = true;
+            }
+            
+            await syncProgress();
+            await loadWeeklyPlanTab();
+            
+            showToast('Dashboard refreshed!', 'success');
+        }
+
+        // Auto-refresh when tab becomes visible (returning from quiz)
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && state.currentTab === 'weekly' && state.v2.hasPlan) {
+                // Small delay to let any quiz completion save
+                setTimeout(() => {
+                    syncProgress().then(() => loadWeeklyPlanTab());
+                }, 500);
+            }
+        });
+
+        function renderSetupWizard() {
+            const container = document.getElementById('weeklyPlanContent');
+            container.innerHTML = `
+                <div class="wizard-screen active" id="wizardScreen">
+                    <div class="step-indicator">
+                        <div class="step ${state.v2.wizardStep >= 1 ? (state.v2.wizardStep > 1 ? 'done' : 'active') : ''}" id="step1">1</div>
+                        <div class="step-line ${state.v2.wizardStep > 1 ? 'done' : ''}"></div>
+                        <div class="step ${state.v2.wizardStep >= 2 ? (state.v2.wizardStep > 2 ? 'done' : 'active') : ''}" id="step2">2</div>
+                        <div class="step-line ${state.v2.wizardStep > 2 ? 'done' : ''}"></div>
+                        <div class="step ${state.v2.wizardStep >= 3 ? (state.v2.wizardStep > 3 ? 'done' : 'active') : ''}" id="step3">3</div>
+                        <div class="step-line ${state.v2.wizardStep > 3 ? 'done' : ''}"></div>
+                        <div class="step ${state.v2.wizardStep >= 4 ? (state.v2.wizardStep > 4 ? 'done' : 'active') : ''}" id="step4">4</div>
+                        <div class="step-line ${state.v2.wizardStep > 4 ? 'done' : ''}"></div>
+                        <div class="step ${state.v2.wizardStep >= 5 ? 'active' : ''}" id="step5">5</div>
+                    </div>
+                    <div id="wizardContent"></div>
+                </div>
+            `;
+            renderWizardStep(state.v2.wizardStep);
+        }
+
+        function renderWizardStep(step) {
+            const content = document.getElementById('wizardContent');
+            switch(step) {
+                case 1: renderProgressReview(content); break;
+                case 2: renderCurriculumSelection(content); break;
+                case 3: renderSelfAssessment(content); break;
+                case 4: renderDiagnosticQuiz(content); break;
+                case 5: renderPlanGeneration(content); break;
+            }
+            updateStepIndicator();
+        }
+
+        function updateStepIndicator() {
+            for (let i = 1; i <= 5; i++) {
+                const stepEl = document.getElementById(`step${i}`);
+                if (stepEl) {
+                    stepEl.className = 'step';
+                    if (i < state.v2.wizardStep) stepEl.classList.add('done');
+                    else if (i === state.v2.wizardStep) stepEl.classList.add('active');
+                }
+            }
+            document.querySelectorAll('.step-line').forEach((line, idx) => {
+                line.className = 'step-line';
+                if (idx + 1 < state.v2.wizardStep) line.classList.add('done');
+            });
+        }
+
+        function nextStep() { state.v2.wizardStep++; renderSetupWizard(); }
+        function prevStep() { if (state.v2.wizardStep > 1) { state.v2.wizardStep--; renderSetupWizard(); } }
+
+        async function renderProgressReview(container) {
+            container.innerHTML = '<div class="card"><h2 style="text-align: center;">📊 Your Progress So Far</h2><p class="subtitle">Let\'s see what you\'ve already accomplished!</p><div id="progressContent" class="loading-spinner"><div class="spinner"></div><span>Loading your progress...</span></div></div>';
+            
+            try {
+                const response = await fetch('/api/passport/v2/progress');
+                const data = await response.json();
+                const progressDiv = document.getElementById('progressContent');
+                
+                if (data.has_progress) {
+                    progressDiv.innerHTML = `
+                        <div class="progress-summary">
+                            <div class="progress-stat"><div class="value">${data.summary.topics_practiced}</div><div class="label">Topics Practiced</div></div>
+                            <div class="progress-stat"><div class="value">${data.summary.total_questions}</div><div class="label">Questions Answered</div></div>
+                            <div class="progress-stat"><div class="value">${data.summary.accuracy}%</div><div class="label">Accuracy</div></div>
+                            <div class="progress-stat"><div class="value">L${Math.round(data.summary.average_level)}</div><div class="label">Avg Level</div></div>
+                        </div>
+                        ${data.strengths.length > 0 ? `<div style="margin-bottom: 15px;"><h3 style="color: #10b981; margin-bottom: 8px;">💪 Your Strengths</h3><div style="display: flex; flex-wrap: wrap; gap: 8px;">${data.strengths.map(t => `<span class="topic-chip">${formatTopicName(t)}</span>`).join('')}</div></div>` : ''}
+                        ${data.weaknesses.length > 0 ? `<div style="margin-bottom: 15px;"><h3 style="color: #f59e0b; margin-bottom: 8px;">🎯 Areas to Focus</h3><div style="display: flex; flex-wrap: wrap; gap: 8px;">${data.weaknesses.map(t => `<span class="topic-chip">${formatTopicName(t)}</span>`).join('')}</div></div>` : ''}
+                        <p style="text-align: center; color: rgba(255,255,255,0.7); margin-top: 20px;">We'll use this to create your personalised study plan!</p>
+                        <button class="btn-primary" onclick="nextStep()" style="margin-top: 20px;">Continue →</button>
+                    `;
+                } else {
+                    progressDiv.innerHTML = `<div style="text-align: center; padding: 30px 0;"><div style="font-size: 3rem; margin-bottom: 15px;">🌟</div><h3 style="margin-bottom: 10px;">Welcome to Your Journey!</h3><p style="color: rgba(255,255,255,0.7); margin-bottom: 20px;">You're just getting started - that's exciting!<br>Let's build a study plan tailored to your goals.</p></div><button class="btn-primary" onclick="nextStep()">Get Started →</button>`;
+                }
+            } catch (error) {
+                console.error('Error loading progress:', error);
+                document.getElementById('progressContent').innerHTML = '<p style="text-align: center; color: rgba(255,255,255,0.7);">Let\'s set up your personalised study plan!</p><button class="btn-primary" onclick="nextStep()" style="margin-top: 20px;">Get Started →</button>';
+            }
+        }
+
+        function renderCurriculumSelection(container) {
+            container.innerHTML = `
+                <div class="card">
+                    <h2 style="text-align: center;">📚 Choose Your Course</h2>
+                    <p class="subtitle">What are you studying for?</p>
+                    <div class="curriculum-grid">
+                        <div class="curriculum-option ${state.v2.curriculum === 'L1LP' ? 'selected' : ''}" onclick="selectCurriculum('L1LP')"><div class="icon">📓</div><div class="name">L1LP</div><div class="desc">Level 1 Learning Programme</div></div>
+                        <div class="curriculum-option ${state.v2.curriculum === 'L2LP' ? 'selected' : ''}" onclick="selectCurriculum('L2LP')"><div class="icon">📕</div><div class="name">L2LP</div><div class="desc">Level 2 Learning Programme</div></div>
+                        <div class="curriculum-option ${state.v2.curriculum === 'JC' ? 'selected' : ''}" onclick="selectCurriculum('JC')"><div class="icon">📗</div><div class="name">Junior Cycle</div><div class="desc">JC Mathematics</div></div>
+                        <div class="curriculum-option ${state.v2.curriculum === 'LC_OL' ? 'selected' : ''}" onclick="selectCurriculum('LC_OL')"><div class="icon">📙</div><div class="name">LC Ordinary</div><div class="desc">Leaving Cert OL</div></div>
+                        <div class="curriculum-option ${state.v2.curriculum === 'LC_HL' ? 'selected' : ''}" onclick="selectCurriculum('LC_HL')"><div class="icon">📘</div><div class="name">LC Higher</div><div class="desc">Leaving Cert HL</div></div>
+                    </div>
+                    <div class="date-picker-container">
+                        <label>📅 When is your exam?</label>
+                        <input type="date" id="examDateInput" value="${state.v2.examDate || ''}" onchange="updateExamDate(this.value)" min="${getTodayDate()}">
+                        <div id="weeksPreview" class="weeks-preview" style="${state.v2.examDate ? '' : 'display: none;'}"><span>📆</span><span id="weeksText">That's about X weeks away</span></div>
+                    </div>
+                    <div style="display: flex; gap: 15px; margin-top: 25px;">
+                        <button class="btn-secondary" onclick="prevStep()" style="flex: 1;">← Back</button>
+                        <button class="btn-primary" onclick="saveCurriculumAndContinue()" style="flex: 2;" id="continueBtn" ${!state.v2.curriculum || !state.v2.examDate ? 'disabled' : ''}>Continue →</button>
+                    </div>
+                </div>
+            `;
+            if (state.v2.examDate) updateExamDate(state.v2.examDate);
+        }
+
+        function selectCurriculum(curriculum) {
+            state.v2.curriculum = curriculum;
+            document.querySelectorAll('.curriculum-option').forEach(opt => opt.classList.remove('selected'));
+            event.target.closest('.curriculum-option').classList.add('selected');
+            updateContinueButton();
+        }
+
+        function updateExamDate(dateStr) {
+            state.v2.examDate = dateStr;
+            if (dateStr) {
+                const examDate = new Date(dateStr);
+                const today = new Date();
+                const diffDays = Math.ceil((examDate - today) / (1000 * 60 * 60 * 24));
+                const weeks = Math.ceil(diffDays / 7);
+                const weeksPreview = document.getElementById('weeksPreview');
+                const weeksText = document.getElementById('weeksText');
+                if (weeks > 0) { weeksText.textContent = `That's about ${weeks} week${weeks !== 1 ? 's' : ''} away`; weeksPreview.style.display = 'flex'; }
+                else { weeksPreview.style.display = 'none'; }
+            }
+            updateContinueButton();
+        }
+
+        function updateContinueButton() {
+            const btn = document.getElementById('continueBtn');
+            if (btn) btn.disabled = !state.v2.curriculum || !state.v2.examDate;
+        }
+
+        async function saveCurriculumAndContinue() {
+            try {
+                const response = await fetch('/api/passport/v2/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ curriculum: state.v2.curriculum, exam_date: state.v2.examDate, study_hours_per_week: 3.5 }) });
+                const data = await response.json();
+                if (data.success) { await loadStrands(); nextStep(); } else { showToast('Error saving settings', 'error'); }
+            } catch (error) { console.error('Error saving curriculum:', error); showToast('Error saving settings', 'error'); }
+        }
+
+        async function loadStrands() {
+            try {
+                const response = await fetch(`/api/passport/v2/strands?curriculum=${state.v2.curriculum}`);
+                const data = await response.json();
+                if (data.success) state.v2.strands = data.strands;
+            } catch (error) { console.error('Error loading strands:', error); }
+        }
+
+        function renderSelfAssessment(container) {
+            const totalTopics = state.v2.strands.reduce((sum, s) => sum + s.topics.length, 0);
+            const assessedCount = Object.keys(state.v2.assessments).length;
+            container.innerHTML = `
+                <div class="card">
+                    <h2 style="text-align: center;">🎯 Rate Your Confidence</h2>
+                    <p class="subtitle">How do you feel about each topic? Be honest - this helps us plan better!</p>
+                    <div class="assessment-progress"><span>Topics rated: <span class="count">${assessedCount}</span> / ${totalTopics}</span><span style="color: rgba(255,255,255,0.6);">Click strands to expand ▼</span></div>
+                    <div id="strandsContainer">${state.v2.strands.map((strand, idx) => renderStrandAccordion(strand, idx)).join('')}</div>
+                    <div style="display: flex; gap: 15px; margin-top: 25px;">
+                        <button class="btn-secondary" onclick="prevStep()" style="flex: 1;">← Back</button>
+                        <button class="btn-primary" onclick="saveAssessmentsAndContinue()" style="flex: 2;" id="assessmentContinueBtn">Continue to Quiz →</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderStrandAccordion(strand, index) {
+            const assessedInStrand = strand.topics.filter(t => state.v2.assessments[t.id]).length;
+            const allDone = assessedInStrand === strand.topics.length;
+            return `
+                <div class="strand-accordion">
+                    <div class="strand-header ${index === 0 && !allDone ? 'expanded' : ''}" onclick="toggleStrand(this, '${strand.id}')">
+                        <div class="strand-info"><span class="strand-icon">${strand.icon}</span><div><div class="strand-name">${strand.display_name}</div><div class="strand-count">${strand.topics.length} topics</div></div></div>
+                        <div class="strand-progress">${allDone ? '<span class="done">✓ Done</span>' : `<span style="color: rgba(255,255,255,0.6);">${assessedInStrand}/${strand.topics.length}</span>`}<span class="expand-icon">▼</span></div>
+                    </div>
+                    <div class="strand-topics ${index === 0 && !allDone ? 'expanded' : ''}" id="strand-${strand.id}">${strand.topics.map(topic => renderTopicRating(topic, strand.id)).join('')}</div>
+                </div>
+            `;
+        }
+
+        function renderTopicRating(topic, strandId) {
+            const currentRating = state.v2.assessments[topic.id]?.confidence || 0;
+            return `
+                <div class="topic-rating">
+                    <span class="topic-name">${topic.name}</span>
+                    <div class="rating-buttons">
+                        <button class="rating-btn ${currentRating === 1 ? 'selected' : ''}" data-rating="1" onclick="setRating('${topic.id}', '${strandId}', 1, this)">😰 Need Help</button>
+                        <button class="rating-btn ${currentRating === 2 ? 'selected' : ''}" data-rating="2" onclick="setRating('${topic.id}', '${strandId}', 2, this)">🤔 Okay</button>
+                        <button class="rating-btn ${currentRating === 3 ? 'selected' : ''}" data-rating="3" onclick="setRating('${topic.id}', '${strandId}', 3, this)">💪 Confident</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function toggleStrand(header, strandId) {
+            const topics = document.getElementById(`strand-${strandId}`);
+            const isExpanded = header.classList.contains('expanded');
+            document.querySelectorAll('.strand-header').forEach(h => h.classList.remove('expanded'));
+            document.querySelectorAll('.strand-topics').forEach(t => t.classList.remove('expanded'));
+            if (!isExpanded) { header.classList.add('expanded'); topics.classList.add('expanded'); }
+        }
+
+        function setRating(topicId, strandId, rating, button) {
+            state.v2.assessments[topicId] = { confidence: rating, strand: strandId };
+            const container = button.closest('.rating-buttons');
+            container.querySelectorAll('.rating-btn').forEach(btn => btn.classList.remove('selected'));
+            button.classList.add('selected');
+            const assessedCount = Object.keys(state.v2.assessments).length;
+            const countEl = document.querySelector('.assessment-progress .count');
+            if (countEl) countEl.textContent = assessedCount;
+        }
+
+        async function saveAssessmentsAndContinue() {
+            try {
+                const response = await fetch('/api/passport/v2/self-assessment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assessments: state.v2.assessments }) });
+                const data = await response.json();
+                if (data.success) { showToast(`Saved ${data.topics_assessed} topic ratings`, 'success'); await loadQuizQuestions(); nextStep(); }
+                else { showToast('Error saving assessments', 'error'); }
+            } catch (error) { console.error('Error saving assessments:', error); showToast('Error saving assessments', 'error'); }
+        }
+
+        async function loadQuizQuestions() {
+            try {
+                const response = await fetch(`/api/passport/v2/diagnostic/questions?curriculum=${state.v2.curriculum}`);
+                const data = await response.json();
+                if (data.success) { state.v2.quizQuestions = data.questions; state.v2.currentQuestion = 0; state.v2.quizAnswers = {}; }
+            } catch (error) { console.error('Error loading quiz:', error); }
+        }
+
+        function renderDiagnosticQuiz(container) {
+            if (state.v2.quizQuestions.length === 0) {
+                container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Loading quiz...</span></div>';
+                loadQuizQuestions().then(() => renderDiagnosticQuiz(container));
+                return;
+            }
+            const q = state.v2.quizQuestions[state.v2.currentQuestion];
+            const total = state.v2.quizQuestions.length;
+            const progress = ((state.v2.currentQuestion + 1) / total) * 100;
+            const answered = Object.keys(state.v2.quizAnswers).length;
+            container.innerHTML = `
+                <div class="quiz-container">
+                    <div class="quiz-header"><h2>📝 Quick Knowledge Check</h2><p class="subtitle">25 questions to calibrate your starting level</p></div>
+                    <div class="quiz-progress-container"><div class="quiz-progress-bar"><div class="quiz-progress-fill" style="width: ${progress}%"></div></div><div class="quiz-progress-text"><span>Question ${state.v2.currentQuestion + 1} of ${total}</span><span>${answered} answered</span></div></div>
+                    <div class="quiz-meta"><div class="quiz-meta-item"><span>${q.strand_icon}</span><span>${q.strand_name}</span></div><div class="quiz-meta-item"><span>📊</span><span>${q.difficulty}</span></div></div>
+                    <div class="question-card">
+                        <div class="question-strand">${q.strand_icon} ${q.strand_name}</div>
+                        <div class="question-text">${q.question}</div>
+                        <div class="answer-options">${q.options.map((opt, idx) => `<div class="answer-option ${state.v2.quizAnswers[q.id] === idx ? 'selected' : ''}" onclick="selectAnswer('${q.id}', ${idx}, this)"><span class="answer-letter">${String.fromCharCode(65 + idx)}</span><span>${opt}</span></div>`).join('')}</div>
+                    </div>
+                    <div class="quiz-nav">
+                        <button class="btn-secondary" onclick="prevQuestion()" ${state.v2.currentQuestion === 0 ? 'disabled' : ''}>← Previous</button>
+                        ${state.v2.currentQuestion === total - 1 ? `<button class="btn-primary btn-success" onclick="submitQuiz()" ${answered < total ? 'disabled' : ''}>Submit Quiz ✓</button>` : `<button class="btn-primary" onclick="nextQuestion()">Next →</button>`}
+                    </div>
+                </div>
+            `;
+        }
+
+        function selectAnswer(questionId, answerIdx, element) {
+            state.v2.quizAnswers[questionId] = answerIdx;
+            element.closest('.answer-options').querySelectorAll('.answer-option').forEach(opt => opt.classList.remove('selected'));
+            element.classList.add('selected');
+            setTimeout(() => {
+                if (state.v2.currentQuestion < state.v2.quizQuestions.length - 1) nextQuestion();
+                else renderDiagnosticQuiz(document.getElementById('wizardContent'));
+            }, 300);
+        }
+
+        function nextQuestion() { if (state.v2.currentQuestion < state.v2.quizQuestions.length - 1) { state.v2.currentQuestion++; renderDiagnosticQuiz(document.getElementById('wizardContent')); } }
+        function prevQuestion() { if (state.v2.currentQuestion > 0) { state.v2.currentQuestion--; renderDiagnosticQuiz(document.getElementById('wizardContent')); } }
+
+        async function submitQuiz() {
+            const container = document.getElementById('wizardContent');
+            container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Calculating your results...</span></div>';
+            try {
+                const response = await fetch('/api/passport/v2/diagnostic/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answers: state.v2.quizAnswers, questions: state.v2.quizQuestions }) });
+                const data = await response.json();
+                if (data.success) { state.v2.quizResults = data; renderQuizResults(container, data); }
+                else { showToast('Error submitting quiz', 'error'); renderDiagnosticQuiz(container); }
+            } catch (error) { console.error('Error submitting quiz:', error); showToast('Error submitting quiz', 'error'); }
+        }
+
+        function renderQuizResults(container, results) {
+            container.innerHTML = `
+                <div class="card">
+                    <div class="results-header"><div class="results-grade">${results.grade}</div><div class="results-score">${results.score} / ${results.total} correct</div><div class="subtitle">${results.percentage}% overall</div></div>
+                    <h3 style="margin-bottom: 15px;">📊 Results by Topic</h3>
+                    <div class="strand-results">${Object.entries(results.strand_results).map(([strand, data]) => {
+                        const icon = state.v2.strands.find(s => s.id === strand)?.icon || '📝';
+                        const name = state.v2.strands.find(s => s.id === strand)?.display_name || strand;
+                        const scoreClass = data.percentage >= 70 ? 'high' : (data.percentage >= 40 ? 'medium' : 'low');
+                        return `<div class="strand-result"><div class="strand-result-info"><span>${icon}</span><span>${name}</span></div><span class="strand-result-score ${scoreClass}">${data.percentage}%</span><span class="strand-result-level">Start: L${data.recommended_level}</span></div>`;
+                    }).join('')}</div>
+                    <button class="btn-primary btn-success" onclick="generatePlan()" style="margin-top: 20px;">Generate My Study Plan 🚀</button>
+                </div>
+            `;
+        }
+
+        async function generatePlan() {
+            const container = document.getElementById('wizardContent');
+            container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Calculating entry levels...</span></div>';
+            try {
+                const entryResponse = await fetch('/api/passport/v2/calculate-entry-levels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ curriculum: state.v2.curriculum }) });
+                const entryData = await entryResponse.json();
+                if (!entryData.success) throw new Error('Failed to calculate entry levels');
+                state.v2.entryLevels = entryData;
+                container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Building your weekly plan...</span></div>';
+                const planResponse = await fetch('/api/passport/v2/generate-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ curriculum: state.v2.curriculum, exam_date: state.v2.examDate }) });
+                const planData = await planResponse.json();
+                if (planData.success) { state.v2.weeklyPlan = planData; state.v2.hasPlan = true; renderPlanGeneration(container); }
+                else throw new Error('Failed to generate plan');
+            } catch (error) {
+                console.error('Error generating plan:', error);
+                showToast('Error generating plan', 'error');
+                container.innerHTML = '<div class="card" style="text-align: center;"><div style="font-size: 3rem; margin-bottom: 15px;">❌</div><h2>Something went wrong</h2><p style="color: rgba(255,255,255,0.7); margin-bottom: 20px;">We couldn\'t generate your plan. Please try again.</p><button class="btn-primary" onclick="generatePlan()">Try Again</button></div>';
+            }
+        }
+
+        function renderPlanGeneration(container) {
+            const plan = state.v2.weeklyPlan;
+            container.innerHTML = `
+                <div class="card" style="text-align: center;">
+                    <div style="font-size: 4rem; margin-bottom: 15px;">🎉</div>
+                    <h2>Your Study Plan is Ready!</h2>
+                    <p class="subtitle">${plan.weeks_to_exam} weeks until your exam, ${plan.total_topics} topics to master</p>
+                    <div class="progress-summary" style="margin: 25px 0;">
+                        <div class="progress-stat"><div class="value">${plan.summary.normal_weeks}</div><div class="label">Normal Weeks</div></div>
+                        <div class="progress-stat"><div class="value">${plan.summary.intensive_weeks}</div><div class="label">Intensive Weeks</div></div>
+                        <div class="progress-stat"><div class="value">${plan.summary.revision_weeks}</div><div class="label">Revision Weeks</div></div>
+                    </div>
+                    <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 15px; margin-bottom: 20px;"><p style="margin: 0;">✅ <strong>All set!</strong> Your plan starts this week with your top priority topics.</p></div>
+                    <button class="btn-primary btn-success" onclick="goToDashboard()">View My Dashboard →</button>
+                </div>
+            `;
+        }
+
+        function goToDashboard() { loadWeeklyPlanTab(); }
+
+        function renderDashboard(data) {
+            const container = document.getElementById('weeklyPlanContent');
+            const week = data.current_week;
+            const stats = data.stats;
+            const summary = state.v2.weeklySummary || {};
+            
+            // Calculate overall progress percentage
+            const progressPercent = stats.topics_count > 0 ? Math.round((stats.completed_count / stats.topics_count) * 100) : 0;
+            
+            container.innerHTML = `
+                <div class="dashboard-header">
+                    <div class="week-indicator">
+                        <div class="week-num">Week ${week.week_number}</div>
+                        <div class="week-label">of ${week.total_weeks}</div>
+                    </div>
+                    <div class="header-actions">
+                        <button class="refresh-btn" onclick="refreshDashboard()" title="Refresh Progress">🔄</button>
+                        <div class="days-left"><span class="num">${week.days_left}</span> days left</div>
+                    </div>
+                </div>
+                
+                ${summary.current_streak > 0 ? `
+                <div class="streak-banner">
+                    <span class="streak-icon">🔥</span>
+                    <span class="streak-text">${summary.current_streak} day streak!</span>
+                    ${summary.current_streak >= summary.longest_streak && summary.current_streak > 1 ? '<span class="streak-badge">Personal Best!</span>' : ''}
+                </div>
+                ` : ''}
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📚 This Week's Topics</h2>
+                        <div class="progress-ring-container">
+                            <svg class="progress-ring" width="50" height="50">
+                                <circle class="progress-ring-bg" cx="25" cy="25" r="20" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4"/>
+                                <circle class="progress-ring-fill" cx="25" cy="25" r="20" fill="none" stroke="#10b981" stroke-width="4" 
+                                    stroke-dasharray="${125.6}" stroke-dashoffset="${125.6 - (125.6 * progressPercent / 100)}" 
+                                    transform="rotate(-90 25 25)"/>
+                            </svg>
+                            <span class="progress-ring-text">${progressPercent}%</span>
+                        </div>
+                    </div>
+                    
+                    ${week.holiday_name ? `
+                    <div class="holiday-notice ${week.capacity_type}">
+                        <span class="holiday-icon">${week.capacity_type === 'intensive' ? '📖' : '🎄'}</span>
+                        <span>${week.holiday_name} - ${week.capacity_type === 'intensive' ? 'Intensive study time!' : 'Lighter workload'}</span>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="topic-cards">
+                        ${week.topics.map((topic, idx) => renderTopicCard(topic, idx)).join('')}
+                    </div>
+                    
+                    <div class="week-stats">
+                        <div class="week-stat ${stats.completed_count === stats.topics_count ? 'complete' : ''}">
+                            <div class="value">${stats.completed_count}/${stats.topics_count}</div>
+                            <div class="label">Topics Done</div>
+                        </div>
+                        <div class="week-stat">
+                            <div class="value">${summary.questions_answered || stats.questions_answered || 0}</div>
+                            <div class="label">Questions</div>
+                        </div>
+                        <div class="week-stat">
+                            <div class="value">${summary.accuracy || 0}%</div>
+                            <div class="label">Accuracy</div>
+                        </div>
+                        <div class="week-stat ${stats.on_track ? 'on-track' : 'behind'}">
+                            <div class="value">${stats.status === 'ahead' ? '🚀' : (stats.on_track ? '✓' : '⚡')}</div>
+                            <div class="label">${stats.status === 'ahead' ? 'Ahead!' : (stats.on_track ? 'On Track' : 'Catch Up')}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                ${stats.completed_count === stats.topics_count && stats.topics_count > 0 ? `
+                <div class="celebration-banner">
+                    <span class="celebration-icon">🎉</span>
+                    <span class="celebration-text">Week Complete! Amazing work!</span>
+                </div>
+                ` : ''}
+                
+                <div class="dashboard-actions">
+                    <button class="btn-secondary" onclick="showFullPlan()">
+                        <span class="btn-icon">📅</span> View Plan
+                    </button>
+                    <button class="btn-secondary btn-edit" onclick="toggleEditMode()">
+                        <span class="btn-icon">✏️</span> Edit Plan
+                    </button>
+                    <button class="btn-secondary" onclick="regeneratePlan()">
+                        <span class="btn-icon">🔄</span> Regenerate
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderTopicCard(topic, index = 0, weekNumber = null, editMode = false) {
+            const progressWidth = topic.progress_percent || 0;
+            const isCompleted = topic.status === 'completed';
+            const isInProgress = topic.status === 'in_progress';
+            const isPinned = topic.pinned;
+            const currentLevel = topic.current_level || topic.entry_level;
+            const levelsGained = currentLevel - topic.entry_level;
+            
+            // Animation delay based on index
+            const animDelay = index * 0.1;
+            
+            // Drag attributes for edit mode
+            const dragAttrs = editMode && !isPinned ? `draggable="true" ondragstart="handleDragStart(event, '${topic.topic_id}', ${weekNumber})" ondragend="handleDragEnd(event)"` : '';
+            
+            return `
+                <div class="topic-card ${isCompleted ? 'completed' : ''} ${isInProgress ? 'in-progress' : ''} ${isPinned ? 'pinned' : ''} ${editMode ? 'edit-mode' : ''}" 
+                     style="animation-delay: ${animDelay}s" data-topic-id="${topic.topic_id}" data-week="${weekNumber}" ${dragAttrs}>
+                    ${editMode ? `
+                    <div class="drag-handle ${isPinned ? 'disabled' : ''}" title="${isPinned ? 'Unpin to move' : 'Drag to move'}">
+                        <span class="grip">⋮⋮</span>
+                    </div>
+                    ` : ''}
+                    <div class="topic-card-info">
+                        <div class="topic-card-header">
+                            <span class="topic-card-icon">${topic.strand_icon || '📝'}</span>
+                            <span class="topic-card-name">${topic.topic_name}</span>
+                            ${isCompleted ? '<span class="completed-check">✓</span>' : ''}
+                        </div>
+                        <div class="topic-card-badges">
+                            ${topic.priority === 'high' ? '<span class="topic-badge priority-high">🔥 Priority</span>' : ''}
+                            ${isPinned ? '<span class="topic-badge pinned">📌</span>' : ''}
+                            ${levelsGained > 0 ? `<span class="topic-badge level-up">+${levelsGained} levels</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="topic-card-progress">
+                        <div class="level-display">
+                            <span class="current ${currentLevel > topic.entry_level ? 'improved' : ''}">L${currentLevel}</span>
+                            <span class="arrow">→</span>
+                            <span class="target">L${topic.target_level}</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill ${isCompleted ? 'complete' : ''}" style="width: ${progressWidth}%"></div>
+                        </div>
+                        ${topic.questions_answered > 0 ? `
+                        <div class="topic-stats">
+                            <span>${topic.questions_answered} Q</span>
+                            ${topic.accuracy ? `<span>${topic.accuracy}% acc</span>` : ''}
+                        </div>
+                        ` : ''}
+                    </div>
+                    <div class="topic-card-actions">
+                        ${editMode ? `
+                        <button class="pin-btn ${isPinned ? 'pinned' : ''}" onclick="togglePin('${topic.topic_id}', ${!isPinned})" title="${isPinned ? 'Unpin topic' : 'Pin topic'}">
+                            ${isPinned ? '📌' : '📍'}
+                        </button>
+                        ` : `
+                        <button class="start-btn ${isCompleted ? 'completed' : ''}" onclick="startTopic('${topic.topic_id}', ${currentLevel})">
+                            ${isCompleted ? '✓ Complete' : (isInProgress ? 'Continue' : 'Start')}
+                        </button>
+                        `}
+                    </div>
+                </div>
+            `;
+        }
+
+        function startTopic(topicId, level) { 
+            // Store that we're going to quiz so we can sync on return
+            sessionStorage.setItem('passportQuizTopic', topicId);
+            window.location.href = `/app?topic=${topicId}&level=${level}&source=passport`; 
+        }
+        
+        // ============ DRAG & DROP FUNCTIONS ============
+        
+        let draggedTopic = null;
+        let draggedFromWeek = null;
+        
+        function handleDragStart(event, topicId, weekNumber) {
+            draggedTopic = topicId;
+            draggedFromWeek = weekNumber;
+            event.target.classList.add('dragging');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', topicId);
+            
+            // Highlight valid drop zones
+            document.querySelectorAll('.week-drop-zone').forEach(zone => {
+                zone.classList.add('active');
+            });
+        }
+        
+        function handleDragEnd(event) {
+            event.target.classList.remove('dragging');
+            draggedTopic = null;
+            draggedFromWeek = null;
+            
+            // Remove highlights
+            document.querySelectorAll('.week-drop-zone').forEach(zone => {
+                zone.classList.remove('active', 'drag-over');
+            });
+        }
+        
+        function handleDragOver(event, weekNumber) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            event.currentTarget.classList.add('drag-over');
+        }
+        
+        function handleDragLeave(event) {
+            event.currentTarget.classList.remove('drag-over');
+        }
+        
+        async function handleDrop(event, toWeek) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('drag-over');
+            
+            if (!draggedTopic) return;
+            
+            const topicId = draggedTopic;
+            const fromWeek = draggedFromWeek;
+            
+            // Reset drag state immediately
+            draggedTopic = null;
+            draggedFromWeek = null;
+            
+            // Remove all drag highlights
+            document.querySelectorAll('.week-drop-zone').forEach(zone => {
+                zone.classList.remove('active', 'drag-over');
+            });
+            
+            // Compare as numbers to avoid type mismatch
+            if (Number(fromWeek) === Number(toWeek)) {
+                console.log('Same week, skipping');
+                return;
+            }
+            
+            console.log(`Moving ${topicId} from week ${fromWeek} to week ${toWeek}`);
+            
+            try {
+                const response = await fetch('/api/passport/v2/move-topic', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        topic_id: topicId,
+                        from_week: Number(fromWeek),
+                        to_week: Number(toWeek)
+                    })
+                });
+                
+                const data = await response.json();
+                console.log('Move response:', data);
+                console.log('Verified week:', data.verified_week);
+                
+                if (data.success) {
+                    showToast(`Topic moved to Week ${toWeek}`, 'success');
+                    // Force refresh by clearing container first
+                    const container = document.getElementById('weeklyPlanContent');
+                    container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Refreshing...</span></div>';
+                    // Wait for DB and then refresh
+                    setTimeout(async () => {
+                        console.log('Refreshing edit view...');
+                        await showFullPlanEdit();
+                        console.log('Refresh complete');
+                    }, 200);
+                } else {
+                    showToast(data.error || 'Failed to move topic', 'error');
+                }
+            } catch (error) {
+                console.error('Error moving topic:', error);
+                showToast('Error moving topic', 'error');
+            }
+        }
+        
+        async function togglePin(topicId, pinned) {
+            try {
+                const response = await fetch('/api/passport/v2/pin-topic', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic_id: topicId, pinned: pinned })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(pinned ? 'Topic pinned 📌' : 'Topic unpinned', 'success');
+                    // Refresh the view
+                    if (state.v2.editMode) {
+                        showFullPlanEdit();
+                    } else {
+                        loadWeeklyPlanTab();
+                    }
+                } else {
+                    showToast(data.error || 'Failed to update pin', 'error');
+                }
+            } catch (error) {
+                console.error('Error toggling pin:', error);
+                showToast('Error updating pin', 'error');
+            }
+        }
+        
+        function toggleEditMode() {
+            state.v2.editMode = !state.v2.editMode;
+            if (state.v2.editMode) {
+                showFullPlanEdit();
+            } else {
+                loadWeeklyPlanTab();
+            }
+        }
+        
+        async function showFullPlanEdit() {
+            const container = document.getElementById('weeklyPlanContent');
+            container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Loading plan editor...</span></div>';
+            
+            try {
+                // Add cache-busting timestamp to prevent stale data
+                const url = '/api/passport/v2/plan?nocache=' + Date.now() + Math.random();
+                console.log('Fetching plan from:', url);
+                const response = await fetch(url);
+                const data = await response.json();
+                console.log('Plan data received, weeks:', data.weekly_plan ? data.weekly_plan.length : 0);
+                
+                if (data.success && data.has_plan) {
+                    // Check if any topics were auto-redistributed from past weeks
+                    if (data.redistribution && data.redistribution.redistributed > 0) {
+                        showToast(`📦 ${data.redistribution.redistributed} incomplete topics moved from past weeks`, 'success');
+                    }
+                    // Log topics per week for debugging
+                    data.weekly_plan.forEach(w => {
+                        console.log(`Week ${w.week_number}: ${w.topics.map(t => t.topic_name).join(', ')}`);
+                    });
+                    renderFullPlanEdit(container, data);
+                } else {
+                    showToast('Could not load plan', 'error');
+                    state.v2.editMode = false;
+                    loadWeeklyPlanTab();
+                }
+            } catch (error) {
+                console.error('Error loading plan:', error);
+                showToast('Error loading plan', 'error');
+                state.v2.editMode = false;
+            }
+        }
+        
+        function renderFullPlanEdit(container, data) {
+            container.innerHTML = `
+                <div class="edit-mode-banner">
+                    <span class="edit-icon">✏️</span>
+                    <span class="edit-text">Drag topics between weeks to reorganise</span>
+                    <button class="btn-done" onclick="toggleEditMode()">✓ Done</button>
+                </div>
+                
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                        <h2>📅 ${data.curriculum_name || 'Your Plan'}</h2>
+                        <div style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Click 📍 to pin/unpin • Drag to move</div>
+                    </div>
+                    
+                    <div class="plan-weeks edit-mode">
+                        ${data.weekly_plan.map(week => renderEditableWeek(week)).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderEditableWeek(week) {
+            const isCurrent = week.is_current || week.status === 'current';
+            const isIntensive = week.capacity_type === 'intensive';
+            const isLight = week.capacity_type === 'light';
+            let weekClass = 'plan-week edit-mode';
+            if (isCurrent) weekClass += ' current';
+            if (isIntensive) weekClass += ' intensive';
+            if (isLight) weekClass += ' light';
+            
+            return `
+                <div class="${weekClass}">
+                    <div class="plan-week-header">
+                        <div class="week-info">
+                            <span class="week-num">Week ${week.week_number}</span>
+                            <span class="week-dates">${formatDateRange(week.week_start, week.week_end)}</span>
+                            ${isCurrent ? '<span class="week-badge current">This Week</span>' : ''}
+                            ${week.holiday_name ? `<span class="week-badge holiday">${week.holiday_name}</span>` : ''}
+                        </div>
+                        <span class="week-capacity">${week.capacity_hours}h • ${week.topics ? week.topics.length : 0} topics</span>
+                    </div>
+                    <div class="week-drop-zone" 
+                         ondragover="handleDragOver(event, ${week.week_number})" 
+                         ondragleave="handleDragLeave(event)"
+                         ondrop="handleDrop(event, ${week.week_number})">
+                        ${week.topics && week.topics.length > 0 ? 
+                            week.topics.map((topic) => renderEditableChip(topic, week.week_number)).join('') :
+                            '<div class="empty-week-msg">Drop topics here</div>'
+                        }
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderEditableChip(topic, weekNumber) {
+            const isPinned = topic.pinned;
+            const dragAttrs = !isPinned ? 
+                `draggable="true" ondragstart="handleDragStart(event, '${topic.topic_id}', ${weekNumber})" ondragend="handleDragEnd(event)"` : 
+                '';
+            
+            return `
+                <div class="topic-chip ${isPinned ? 'pinned' : 'draggable'}" 
+                     data-topic-id="${topic.topic_id}" 
+                     data-week="${weekNumber}"
+                     ${dragAttrs}>
+                    ${topic.strand_icon || '📝'} ${topic.topic_name}
+                    <span class="levels">L${topic.entry_level}→${topic.target_level}</span>
+                    <span class="pin-icon" onclick="event.stopPropagation(); togglePin('${topic.topic_id}', ${!isPinned})" 
+                          title="${isPinned ? 'Unpin to enable dragging' : 'Pin to lock position'}">
+                        ${isPinned ? '📌' : '📍'}
+                    </span>
+                </div>
+            `;
+        }
+
+        async function showFullPlan() {
+            const container = document.getElementById('weeklyPlanContent');
+            container.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><span>Loading full plan...</span></div>';
+            try {
+                const response = await fetch('/api/passport/v2/plan?t=' + Date.now());
+                const data = await response.json();
+                if (data.success && data.has_plan) {
+                    // Check if any topics were auto-redistributed from past weeks
+                    if (data.redistribution && data.redistribution.redistributed > 0) {
+                        showToast(`📦 ${data.redistribution.redistributed} incomplete topics moved from past weeks`, 'success');
+                    }
+                    renderFullPlan(container, data);
+                }
+                else { showToast('Could not load plan', 'error'); loadWeeklyPlanTab(); }
+            } catch (error) { console.error('Error loading plan:', error); showToast('Error loading plan', 'error'); }
+        }
+
+        function renderFullPlan(container, data) {
+            container.innerHTML = `
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                        <h2>📅 ${data.curriculum_name} - Full Plan</h2>
+                        <button class="btn-secondary" onclick="loadWeeklyPlanTab()">← Back to Dashboard</button>
+                    </div>
+                    <div class="plan-controls">
+                        <div class="plan-legend"><div class="legend-item"><span class="legend-dot normal"></span><span>Normal</span></div><div class="legend-item"><span class="legend-dot intensive"></span><span>Intensive</span></div><div class="legend-item"><span class="legend-dot light"></span><span>Light</span></div></div>
+                        <div style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">${data.weeks_to_exam} weeks to exam</div>
+                    </div>
+                    <div class="plan-weeks">${data.weekly_plan.map(week => renderPlanWeek(week)).join('')}</div>
+                </div>
+            `;
+        }
+
+        function renderPlanWeek(week) {
+            const isCurrent = week.is_current || week.status === 'current';
+            const isRevision = week.status === 'revision';
+            const isIntensive = week.capacity_type === 'intensive';
+            const isLight = week.capacity_type === 'light';
+            let weekClass = 'plan-week';
+            if (isCurrent) weekClass += ' current';
+            if (isRevision) weekClass += ' revision';
+            if (isIntensive) weekClass += ' intensive';
+            if (isLight) weekClass += ' light';
+            return `
+                <div class="${weekClass}">
+                    <div class="plan-week-header">
+                        <div class="week-info">
+                            <span class="week-num">Week ${week.week_number}</span>
+                            <span class="week-dates">${formatDateRange(week.week_start, week.week_end)}</span>
+                            ${isCurrent ? '<span class="week-badge current">This Week</span>' : ''}
+                            ${week.holiday_name ? `<span class="week-badge holiday">${week.holiday_name}</span>` : ''}
+                            ${isRevision ? '<span class="week-badge revision">Revision</span>' : ''}
+                        </div>
+                        <span class="week-capacity">${week.capacity_hours}h • ${week.topics.length} topics</span>
+                    </div>
+                    <div class="plan-week-topics">${week.topics.map(topic => `<div class="topic-chip ${topic.pinned ? 'pinned' : ''}">${topic.strand_icon || '📝'} ${topic.topic_name}<span class="levels">L${topic.entry_level}→${topic.target_level}</span>${topic.pinned ? '<span>📌</span>' : ''}</div>`).join('')}</div>
+                </div>
+            `;
+        }
+
+        async function regeneratePlan() {
+            if (!confirm('This will regenerate your study plan. Your progress will be preserved. Continue?')) return;
+            state.v2.wizardStep = 1;
+            state.v2.hasPlan = false;
+            renderSetupWizard();
+        }
+
+        async function loadPassportCover() {
+            const container = document.getElementById('coverTab');
+            container.innerHTML = '<div class="passport-cover"><div class="passport-title">🛂 Maths Passport</div><div class="passport-subtitle">Your journey through mathematics</div><div class="passport-photo">👤</div><div class="passport-name" id="studentName">Welcome!</div><div class="passport-level" id="studentLevel">Explorer</div></div><div class="card" style="margin-top: 20px;"><h2>🌍 Destinations</h2><div id="destinationsGrid" class="destinations-grid"><div class="loading-spinner"><div class="spinner"></div><span>Loading destinations...</span></div></div></div>';
+            try {
+                const response = await fetch('/api/passport');
+                const data = await response.json();
+                if (data.student_name) {
+                    document.getElementById('studentName').textContent = data.student_name;
+                } else if (data.exists) {
+                    document.getElementById('studentName').textContent = 'Welcome Back!';
+                }
+                if (data.destinations && data.destinations.length > 0) {
+                    const destProgress = data.destination_progress || {};
+                    document.getElementById('destinationsGrid').innerHTML = data.destinations.map(dest => {
+                        const progress = destProgress[dest.id] || {};
+                        const progressPct = progress.avg_level ? Math.round((progress.avg_level / 12) * 100) : 0;
+                        return `<div class="destination-card" onclick="goToDestination('${dest.id}')"><div class="destination-header"><div class="destination-icon" style="background: ${dest.colour}20;">${dest.icon}</div><div><div class="destination-name">${dest.display_name}</div><div class="destination-tagline">${dest.tagline}</div></div></div><div class="destination-progress"><div class="destination-bar"><div class="destination-fill" style="width: ${progressPct}%; background: ${dest.colour};"></div></div><div class="destination-stats"><span>${progress.topics_started || 0}/${progress.total_topics || 0} topics</span><span>${progressPct}%</span></div></div></div>`;
+                    }).join('');
+                } else {
+                    document.getElementById('destinationsGrid').innerHTML = '<p style="text-align: center; color: rgba(255,255,255,0.6);">No destinations found.</p>';
+                }
+            } catch (error) { 
+                console.error('Error loading passport:', error); 
+                document.getElementById('destinationsGrid').innerHTML = '<p style="text-align: center; color: rgba(255,255,255,0.6);">Unable to load destinations. Please try again.</p>'; 
+            }
+        }
+
+        function loadStamps() {
+            const container = document.getElementById('stampsTab');
+            container.innerHTML = '<div class="card"><h2>🛂 My Stamp Collection</h2><div id="stampsGrid" class="stamps-grid"><div class="loading-spinner"><div class="spinner"></div><span>Loading stamps...</span></div></div></div>';
+            setTimeout(() => { document.getElementById('stampsGrid').innerHTML = '<div class="stamp earned"><div class="stamp-icon">🎯</div><div class="stamp-name">First Steps</div></div><div class="stamp earned"><div class="stamp-icon">📐</div><div class="stamp-name">Geometry Novice</div></div><div class="stamp locked"><div class="stamp-icon">🔒</div><div class="stamp-name">Algebra Pro</div></div><div class="stamp locked"><div class="stamp-icon">🔒</div><div class="stamp-name">Number Master</div></div>'; }, 500);
+        }
+
+        function loadWorldMap() { document.getElementById('mapTab').innerHTML = '<div class="card" style="text-align: center;"><h2>🗺️ Your Maths World</h2><p style="color: rgba(255,255,255,0.7); margin-bottom: 20px;">Explore the mathematical lands you\'ve conquered!</p><div style="font-size: 5rem; margin: 30px 0;">🌍</div><p style="color: rgba(255,255,255,0.5);">Interactive world map coming soon...</p></div>'; }
+
+        async function loadItinerary() { 
+            const container = document.getElementById('itineraryTab');
+            container.innerHTML = `
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                        <div>
+                            <h2 style="margin: 0;">🎯 Smart Coach</h2>
+                            <p style="color: rgba(255,255,255,0.6); margin: 5px 0 0 0;">Your AI-powered learning assistant</p>
+                        </div>
+                        <button onclick="runILPAnalysisFromHub()" class="action-btn" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);">
+                            🔍 Analyse My Progress
+                        </button>
+                    </div>
+                    
+                    <div id="ilpHubStats" class="ilp-hub-stats">
+                        <div class="loading-spinner"><div class="spinner"></div><span>Loading insights...</span></div>
+                    </div>
+                </div>
+                
+                <div id="ilpHubPending"></div>
+                
+                <div class="card" style="margin-top: 20px;">
+                    <h3 style="margin-bottom: 15px;">📜 Recommendation History</h3>
+                    <div id="ilpHubHistory">
+                        <div class="loading-spinner"><div class="spinner"></div><span>Loading history...</span></div>
+                    </div>
+                </div>
+            `;
+            
+            // Load all ILP Hub data
+            await Promise.all([
+                loadILPHubStats(),
+                loadILPHubPending(),
+                loadILPHubHistory()
+            ]);
+        }
+        
+        let ilpPendingRecommendations = [];
+        
+        async function loadILPHubStats() {
+            const container = document.getElementById('ilpHubStats');
+            try {
+                const response = await fetch('/api/ilp/activity-summary?days=7');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const accuracy = Math.round((data.overall_accuracy || 0) * 100);
+                    const accuracyColor = accuracy >= 70 ? '#22c55e' : accuracy >= 50 ? '#eab308' : '#ef4444';
+                    
+                    container.innerHTML = `
+                        <div class="ilp-stats-grid">
+                            <div class="ilp-stat-card">
+                                <div class="ilp-stat-icon">📊</div>
+                                <div class="ilp-stat-value">${data.total_questions || 0}</div>
+                                <div class="ilp-stat-label">Questions (7 days)</div>
+                            </div>
+                            <div class="ilp-stat-card">
+                                <div class="ilp-stat-icon">🎯</div>
+                                <div class="ilp-stat-value" style="color: ${accuracyColor}">${accuracy}%</div>
+                                <div class="ilp-stat-label">Accuracy</div>
+                            </div>
+                            <div class="ilp-stat-card">
+                                <div class="ilp-stat-icon">📚</div>
+                                <div class="ilp-stat-value">${data.topics_attempted?.length || 0}</div>
+                                <div class="ilp-stat-label">Topics Practiced</div>
+                            </div>
+                            <div class="ilp-stat-card">
+                                <div class="ilp-stat-icon">⚠️</div>
+                                <div class="ilp-stat-value">${data.dormant_topics?.length || 0}</div>
+                                <div class="ilp-stat-label">Need Refresh</div>
+                            </div>
+                        </div>
+                        ${data.total_questions === 0 ? '<p style="text-align: center; color: rgba(255,255,255,0.5); margin-top: 15px;">Start practicing to get personalised recommendations!</p>' : ''}
+                    `;
+                } else {
+                    container.innerHTML = '<p style="color: rgba(255,255,255,0.5);">Unable to load stats</p>';
+                }
+            } catch (error) {
+                console.error('Error loading ILP stats:', error);
+                container.innerHTML = '<p style="color: rgba(255,255,255,0.5);">Unable to load stats</p>';
+            }
+        }
+        
+        async function loadILPHubPending() {
+            const container = document.getElementById('ilpHubPending');
+            try {
+                const response = await fetch('/api/ilp/pending');
+                const data = await response.json();
+                
+                if (data.success && data.pending_count > 0) {
+                    ilpPendingRecommendations = data.pending;
+                    container.innerHTML = data.pending.map(rec => renderILPRecommendationCard(rec)).join('');
+                } else {
+                    container.innerHTML = `
+                        <div class="ilp-no-recommendations" style="margin-top: 20px;">
+                            <h3>✅ You're On Track!</h3>
+                            <p>No plan changes recommended right now. Keep up the great work!</p>
+                            <p style="margin-top: 10px; font-size: 0.85rem; color: rgba(255,255,255,0.5);">
+                                Click "Analyse My Progress" to check for new recommendations
+                            </p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading pending recommendations:', error);
+                container.innerHTML = '';
+            }
+        }
+        
+        function getHighestPriority(recommendations) {
+            if (!recommendations || recommendations.length === 0) return 'medium';
+            const priorities = recommendations.map(r => r.priority || 'medium');
+            if (priorities.includes('high')) return 'high';
+            if (priorities.includes('medium')) return 'medium';
+            return 'low';
+        }
+        
+        function renderILPObservations(rec) {
+            if (!rec.recommendations || rec.recommendations.length === 0) return '';
+            return `
+                <div class="ilp-observations">
+                    <h4>📊 What I've Noticed</h4>
+                    ${rec.recommendations.map(r => `
+                        <div class="ilp-observation-item">
+                            <span>${r.priority === 'high' ? '🔥' : r.priority === 'low' ? '💪' : '📚'}</span>
+                            <span>${r.reason || r.type}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        function renderILPChanges(modifications) {
+            if (!modifications || modifications.length === 0) return '';
+            return `
+                <div class="ilp-changes">
+                    <h4>📋 Suggested Changes</h4>
+                    ${modifications.map(m => `
+                        <div class="ilp-change-item">
+                            <div class="ilp-change-icon ${m.action === 'add' ? 'add' : 'delay'}">${m.action === 'add' ? '➕' : '⏸️'}</div>
+                            <div class="ilp-change-details">
+                                <strong>${m.action === 'add' ? 'Add' : 'Delay'} ${m.topic_name || m.topic_id}</strong>
+                                <span>${m.reason || ''}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        function renderILPRecommendationCard(rec) {
+            const priority = getHighestPriority(rec.recommendations);
+            return `
+                <div class="ilp-notification ${priority}" style="margin-top: 20px;">
+                    <span class="ilp-notification-badge">Action Needed</span>
+                    <div class="ilp-notification-header">
+                        <div class="ilp-notification-icon">🎯</div>
+                        <div class="ilp-notification-title">
+                            <h3>Study Plan Update Available</h3>
+                            <p>Based on your recent activity, I've identified some ways to help you progress faster</p>
+                        </div>
+                    </div>
+                    <div class="ilp-timer">
+                        <span>⏱️</span>
+                        <span>${rec.hours_remaining > 0 ? 'Auto-applies in ' + Math.round(rec.hours_remaining) + ' hours if not reviewed' : 'Ready to apply'}</span>
+                    </div>
+                    ${renderILPObservations(rec)}
+                    ${renderILPChanges(rec.modifications)}
+                    <div class="ilp-actions">
+                        <button class="ilp-btn ilp-btn-accept" onclick="acceptILPRecommendation(${rec.id})">✓ Apply Changes</button>
+                        <button class="ilp-btn ilp-btn-reject" onclick="rejectILPRecommendation(${rec.id})">✗ Dismiss</button>
+                    </div>
+                    <div class="ilp-auto-apply-note">
+                        💡 These changes will be applied automatically after ${Math.round(rec.hours_remaining || 24)} hours to keep your learning on track
+                    </div>
+                </div>
+            `;
+        }
+        
+        async function acceptILPRecommendation(recId) {
+            try {
+                const response = await fetch('/api/ilp/accept/' + recId, { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Changes applied successfully!', 'success');
+                    await loadItinerary();
+                } else {
+                    showToast(data.error || 'Failed to apply changes', 'error');
+                }
+            } catch (error) {
+                console.error('Error accepting recommendation:', error);
+                showToast('Error applying changes', 'error');
+            }
+        }
+        
+        async function rejectILPRecommendation(recId) {
+            try {
+                const response = await fetch('/api/ilp/reject/' + recId, { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Recommendation dismissed', 'success');
+                    await loadItinerary();
+                } else {
+                    showToast(data.error || 'Failed to dismiss', 'error');
+                }
+            } catch (error) {
+                console.error('Error rejecting recommendation:', error);
+                showToast('Error dismissing recommendation', 'error');
+            }
+        }
+        
+        async function loadILPHubHistory() {
+            const container = document.getElementById('ilpHubHistory');
+            try {
+                const response = await fetch('/api/ilp/history?limit=10');
+                const data = await response.json();
+                
+                if (data.success && data.count > 0) {
+                    container.innerHTML = `
+                        <div class="ilp-history-list">
+                            ${data.history.map(item => `
+                                <div class="ilp-history-item ${item.status}">
+                                    <div class="ilp-history-icon">
+                                        ${item.status === 'accepted' ? '✅' : item.status === 'rejected' ? '❌' : item.status === 'auto_applied' ? '🤖' : item.status === 'pending' ? '⏳' : '📋'}
+                                    </div>
+                                    <div class="ilp-history-content">
+                                        <div class="ilp-history-title">
+                                            ${item.status === 'accepted' ? 'Changes Applied' : item.status === 'rejected' ? 'Dismissed' : item.status === 'auto_applied' ? 'Auto-Applied' : item.status === 'pending' ? 'Pending' : 'Recommendation'}
+                                        </div>
+                                        <div class="ilp-history-summary">${item.reason_summary ? item.reason_summary.split('\\n')[0] : 'Plan update'}</div>
+                                        <div class="ilp-history-date">${formatHistoryDate(item.created_at)}</div>
+                                    </div>
+                                    <div class="ilp-history-status ${item.status}">${item.status.replace('_', ' ')}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                } else {
+                    container.innerHTML = '<p style="color: rgba(255,255,255,0.5); text-align: center; padding: 20px;">No recommendation history yet. As you practice, I\'ll suggest ways to optimise your learning path.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading ILP history:', error);
+                container.innerHTML = '<p style="color: rgba(255,255,255,0.5);">Unable to load history</p>';
+            }
+        }
+        
+        function formatHistoryDate(isoDate) {
+            if (!isoDate) return '';
+            const date = new Date(isoDate);
+            const now = new Date();
+            const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+            if (diffDays === 0) return 'Today';
+            if (diffDays === 1) return 'Yesterday';
+            if (diffDays < 7) return diffDays + ' days ago';
+            return date.toLocaleDateString('en-IE', { day: 'numeric', month: 'short' });
+        }
+        
+        async function runILPAnalysisFromHub() {
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;margin-right:8px;"></span> Analysing...';
+            
+            try {
+                const response = await fetch('/api/ilp/create-notification', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (data.notification_created) {
+                        showToast('New recommendations available!', 'success');
+                    } else {
+                        showToast(data.message || 'No changes needed - you\'re on track!', 'success');
+                    }
+                    await loadItinerary();
+                } else {
+                    showToast(data.error || 'Analysis failed', 'error');
+                }
+            } catch (error) {
+                console.error('Error running ILP analysis:', error);
+                showToast('Error running analysis', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+
+        function goToDestination(destId) { window.location.href = `/app?destination=${destId}`; }
+
+        function formatTopicName(topicId) { return topicId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
+        function getTodayDate() { return new Date().toISOString().split('T')[0]; }
+        function formatDateRange(start, end) { const startDate = new Date(start); const endDate = new Date(end); const options = { day: 'numeric', month: 'short' }; return `${startDate.toLocaleDateString('en-IE', options)} - ${endDate.toLocaleDateString('en-IE', options)}`; }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toastIcon');
+            const msg = document.getElementById('toastMessage');
+            icon.textContent = type === 'success' ? '✓' : '✗';
+            msg.textContent = message;
+            toast.className = `toast ${type}`;
+            toast.classList.add('show');
+            setTimeout(() => { toast.classList.remove('show'); }, 3000);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() { loadPassportCover(); });
+    </script>
+</body>
+</html>

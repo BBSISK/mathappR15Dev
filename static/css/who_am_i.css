@@ -1,0 +1,560 @@
+/* WHO AM I: Reveal Grid Styles - ULTRA COMPACT FOR BUTTON VISIBILITY */
+
+.who-am-i-wrapper {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 16px;  /* Slightly smaller */
+    padding: 16px;  /* Reduced from 20px */
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    max-height: 85vh;  /* More aggressive - 85% instead of 90% */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.who-am-i-header {
+    text-align: center;
+    color: white;
+    margin-bottom: 8px;  /* Reduced from 12px */
+    flex-shrink: 0;
+}
+
+.who-am-i-header h3 {
+    font-size: 20px;  /* Reduced from 22px */
+    font-weight: bold;
+    margin-bottom: 4px;  /* Reduced from 6px */
+}
+
+.who-am-i-header p {
+    font-size: 12px;  /* Reduced from 13px */
+    opacity: 0.9;
+}
+
+/* Hint Display - VERY COMPACT */
+.who-am-i-hint {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    background: rgba(255, 255, 255, 0.15);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;  /* Smaller */
+    padding: 8px 12px;  /* Very compact */
+    margin-bottom: 8px;  /* Reduced from 12px */
+    color: white !important;
+    font-size: 13px;  /* Reduced from 14px */
+    text-align: center;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    animation: hintFadeIn 0.5s ease-out;
+    z-index: 10;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.who-am-i-hint strong {
+    font-weight: 700 !important;
+    color: #ffd700 !important;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes hintFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Grid Container - PRIORITIZE FITTING */
+.reveal-grid {
+    position: relative;
+    width: 100%;
+    max-width: 380px;  /* Significantly reduced from 450px */
+    margin: 0 auto 8px;  /* Reduced bottom margin */
+    aspect-ratio: 1 / 1;
+    border-radius: 10px;  /* Slightly smaller */
+    overflow: hidden;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);  /* Slightly smaller shadow */
+    flex-shrink: 1;
+    min-height: 180px;  /* Lower minimum */
+}
+
+/* Background Image */
+.reveal-grid-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+    z-index: 0;
+}
+
+/* Grid Overlay - 5×5 with NO GAPS */
+.reveal-grid-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    grid-template-rows: repeat(5, 1fr);
+    gap: 0;
+    z-index: 1;
+}
+
+/* Individual Tile */
+.reveal-tile {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 24px;  /* Reduced from 28px */
+    font-weight: bold;
+}
+
+/* Tile Number */
+.reveal-tile span {
+    opacity: 0.3;
+    font-family: 'Arial Black', sans-serif;
+}
+
+/* Hover Effect */
+.reveal-tile:not(.revealed):hover {
+    transform: scale(1.05);
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+}
+
+/* Revealed Tile */
+.reveal-tile.revealed {
+    background: transparent;
+    cursor: default;
+    animation: revealTile 0.5s ease-out;
+}
+
+.reveal-tile.revealed span {
+    display: none;
+}
+
+/* Reveal Animation */
+@keyframes revealTile {
+    0% {
+        transform: scale(1) rotateY(0deg);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.1) rotateY(90deg);
+        opacity: 0.5;
+    }
+    100% {
+        transform: scale(1) rotateY(0deg);
+        opacity: 0;
+    }
+}
+
+/* Progress Section - VERY COMPACT */
+.who-am-i-progress {
+    text-align: center;
+    color: white;
+    margin-bottom: 8px;  /* Reduced from 12px */
+    flex-shrink: 0;
+}
+
+.who-am-i-progress p {
+    font-size: 13px;  /* Reduced from 14px */
+    font-weight: 600;
+    margin-bottom: 4px;  /* Reduced spacing */
+}
+
+.who-am-i-progress .progress-bar {
+    width: 100%;
+    height: 5px;  /* Reduced from 6px */
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.who-am-i-progress .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #48bb78 0%, #38a169 100%);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+/* Guess Button - MAXIMUM VISIBILITY */
+.guess-button {
+    width: 100%;
+    padding: 14px;
+    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 17px;  /* Slightly reduced from 18px */
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(72, 187, 120, 0.5);
+    flex-shrink: 0;  /* NEVER shrink */
+    min-height: 48px;  /* Ensure minimum size */
+    animation: pulseButton 2s ease-in-out infinite;
+}
+
+/* Pointing emojis to draw attention */
+.guess-button::before {
+    content: '👉 ';
+    font-size: 18px;
+}
+
+.guess-button::after {
+    content: ' 👈';
+    font-size: 18px;
+}
+
+/* Pulse animation */
+@keyframes pulseButton {
+    0%, 100% {
+        box-shadow: 0 4px 12px rgba(72, 187, 120, 0.5);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 4px 18px rgba(72, 187, 120, 0.7);
+        transform: scale(1.02);
+    }
+}
+
+.guess-button:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 6px 16px rgba(72, 187, 120, 0.6);
+    background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+    animation: none;
+}
+
+.guess-button:active {
+    transform: translateY(0) scale(1);
+}
+
+.guess-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    animation: none;
+}
+
+/* Guess Modal */
+.guess-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+}
+
+.guess-modal-content {
+    background: white;
+    border-radius: 20px;
+    padding: 32px;
+    max-width: 500px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        transform: translateY(-50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.guess-modal h3 {
+    font-size: 26px;
+    font-weight: bold;
+    color: #2d3748;
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+.guess-modal p {
+    color: #718096;
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 15px;
+}
+
+.guess-modal input {
+    width: 100%;
+    padding: 14px;
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 16px;
+    margin-bottom: 16px;
+    transition: border-color 0.3s ease;
+}
+
+.guess-modal input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.guess-modal-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.guess-modal-buttons button {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.guess-modal-submit {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.guess-modal-submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+}
+
+.guess-modal-cancel {
+    background: #e2e8f0;
+    color: #4a5568;
+}
+
+.guess-modal-cancel:hover {
+    background: #cbd5e0;
+}
+
+/* Feedback Messages */
+.guess-feedback {
+    margin-top: 16px;
+    padding: 14px;
+    border-radius: 10px;
+    text-align: center;
+    font-weight: 600;
+    animation: feedbackSlideIn 0.3s ease-out;
+}
+
+@keyframes feedbackSlideIn {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.guess-feedback.correct {
+    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+    color: white;
+}
+
+.guess-feedback.incorrect {
+    background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+    color: white;
+}
+
+.guess-feedback.already-guessed {
+    background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+    color: white;
+}
+
+/* Bonus Points Display */
+.bonus-points {
+    display: inline-block;
+    font-size: 22px;
+    font-weight: bold;
+    color: #f6e05e;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    animation: bonusBounce 0.5s ease-out;
+}
+
+@keyframes bonusBounce {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.2);
+    }
+}
+
+/* Mobile Responsive - MAXIMUM COMPACTNESS */
+@media (max-width: 640px) {
+    .who-am-i-wrapper {
+        padding: 12px;  /* Very compact */
+        max-height: 88vh;  /* Use even more space on mobile */
+        border-radius: 12px;
+    }
+
+    .who-am-i-header h3 {
+        font-size: 17px;
+        margin-bottom: 3px;
+    }
+    
+    .who-am-i-header p {
+        font-size: 11px;
+    }
+    
+    .who-am-i-hint {
+        font-size: 12px !important;
+        padding: 6px 10px;
+        margin-bottom: 6px;
+    }
+
+    .reveal-grid {
+        max-width: 100%;
+        margin-bottom: 6px;
+        min-height: 160px;
+    }
+
+    .reveal-tile {
+        font-size: 18px;
+    }
+
+    .who-am-i-progress {
+        margin-bottom: 6px;
+    }
+
+    .who-am-i-progress p {
+        font-size: 12px;
+    }
+
+    .guess-button {
+        font-size: 15px;
+        padding: 12px;
+        min-height: 44px;
+    }
+
+    .guess-button::before,
+    .guess-button::after {
+        font-size: 16px;
+    }
+
+    .guess-modal-content {
+        padding: 20px;
+    }
+
+    .guess-modal h3 {
+        font-size: 22px;
+    }
+}
+
+/* Tablet - balanced approach */
+@media (min-width: 641px) and (max-width: 1024px) {
+    .who-am-i-wrapper {
+        max-height: 82vh;  /* More compact */
+        padding: 14px;
+    }
+    
+    .reveal-grid {
+        max-width: 340px;  /* Smaller grid */
+    }
+}
+
+/* Desktop - ensure button visible */
+@media (min-width: 1025px) and (max-width: 1439px) {
+    .who-am-i-wrapper {
+        max-height: 80vh;  /* More compact on medium screens */
+    }
+}
+
+/* Large screens */
+@media (min-width: 1440px) {
+    .reveal-grid {
+        max-width: 420px;  /* Cap size even on large screens */
+    }
+}
+
+/* Very small screens - ULTRA COMPACT */
+@media (max-width: 480px) {
+    .who-am-i-wrapper {
+        padding: 10px;
+        max-height: 90vh;
+    }
+
+    .who-am-i-header h3 {
+        font-size: 16px;
+    }
+
+    .who-am-i-header p {
+        font-size: 10px;
+    }
+
+    .who-am-i-hint {
+        font-size: 11px !important;
+        padding: 5px 8px;
+    }
+
+    .reveal-grid {
+        min-height: 140px;
+    }
+
+    .reveal-tile {
+        font-size: 16px;
+    }
+
+    .guess-button {
+        font-size: 14px;
+        padding: 10px;
+    }
+}
+
+/* ========================================
+   NOTIFICATION ANIMATIONS
+   ======================================== */
+
+.who-am-i-notification {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translate(-50%, -100%);
+        opacity: 0;
+    }
+    to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
+    to {
+        transform: translate(-50%, -100%);
+        opacity: 0;
+    }
+}

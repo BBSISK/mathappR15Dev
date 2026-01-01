@@ -1,0 +1,1673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Class Performance Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: white;
+            color: #667eea;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        /* Filter Bar */
+        .filter-bar {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .filter-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .filter-label {
+            font-weight: 600;
+            color: #495057;
+            min-width: 100px;
+        }
+
+        .search-input-wrapper {
+            flex: 1;
+            min-width: 250px;
+            max-width: 400px;
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 45px 12px 45px;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 18px;
+            color: #6c757d;
+        }
+
+        .clear-search {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            color: #6c757d;
+            display: none;
+        }
+
+        .clear-search.visible {
+            display: block;
+        }
+
+        /* Strand Filter Chips */
+        .strand-chips {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .strand-chip {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+
+        .strand-chip.all {
+            background: #667eea;
+            color: white;
+        }
+
+        .strand-chip.number {
+            background: #e3f2fd;
+            color: #1565c0;
+            border-color: #1565c0;
+        }
+
+        .strand-chip.algebra {
+            background: #f3e5f5;
+            color: #7b1fa2;
+            border-color: #7b1fa2;
+        }
+
+        .strand-chip.statistics {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-color: #2e7d32;
+        }
+
+        .strand-chip.geometry {
+            background: #fff3e0;
+            color: #ef6c00;
+            border-color: #ef6c00;
+        }
+
+        .strand-chip.other {
+            background: #eceff1;
+            color: #546e7a;
+            border-color: #546e7a;
+        }
+
+        .strand-chip:not(.active) {
+            opacity: 0.5;
+        }
+
+        .strand-chip.active {
+            opacity: 1;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            transform: scale(1.05);
+        }
+
+        .strand-chip:hover {
+            opacity: 1;
+        }
+
+        /* Performance Filter Chips */
+        .filter-chips {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-chip {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #e9ecef;
+            color: #495057;
+        }
+
+        .filter-chip:hover {
+            background: #dee2e6;
+        }
+
+        .filter-chip.active {
+            background: #667eea;
+            color: white;
+        }
+
+        /* Quiz Type Chips */
+        .quiz-type-chips {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .quiz-chip {
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 3px solid transparent;
+        }
+
+        .quiz-chip.legacy {
+            background: #e8f4fd;
+            color: #1976d2;
+            border-color: #1976d2;
+        }
+
+        .quiz-chip.adaptive {
+            background: #fce4ec;
+            color: #c2185b;
+            border-color: #c2185b;
+        }
+
+        .quiz-chip:not(.active) {
+            opacity: 0.4;
+            border-color: transparent;
+        }
+
+        .quiz-chip.active {
+            opacity: 1;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+            transform: scale(1.05);
+        }
+
+        .quiz-chip:hover {
+            opacity: 0.9;
+        }
+
+        /* Controls Bar */
+        .controls-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .student-count {
+            color: #6c757d;
+            font-size: 14px;
+        }
+
+        .student-count strong {
+            color: #667eea;
+        }
+
+        /* Dashboard Content */
+        .dashboard-content {
+            padding: 20px 30px;
+            overflow-x: auto;
+        }
+
+        .loading-message {
+            text-align: center;
+            padding: 60px;
+            color: #6c757d;
+            font-size: 18px;
+        }
+
+        /* Matrix Table */
+        .matrix-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 12px;
+        }
+
+        .matrix-table thead th {
+            background: #667eea;
+            color: white;
+            padding: 8px;
+            font-weight: 600;
+            font-size: 11px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            border-right: 1px solid rgba(255,255,255,0.2);
+            white-space: nowrap;
+        }
+
+        /* Strand Header Cells */
+        .matrix-table thead th.strand-header {
+            background: #2d3748;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        .matrix-table thead th.strand-number {
+            background: #1565c0;
+        }
+
+        .matrix-table thead th.strand-algebra {
+            background: #7b1fa2;
+        }
+
+        .matrix-table thead th.strand-statistics {
+            background: #2e7d32;
+        }
+
+        .matrix-table thead th.strand-geometry {
+            background: #ef6c00;
+        }
+
+        /* Frozen Columns */
+        .matrix-table thead th.col-student {
+            position: sticky !important;
+            left: 0 !important;
+            z-index: 11 !important;
+            background: #764ba2 !important;
+            min-width: 180px !important;
+            width: 180px !important;
+        }
+
+        .matrix-table thead th.col-points {
+            position: sticky !important;
+            left: 180px !important;
+            z-index: 11 !important;
+            background: #8b5fbf !important;
+            min-width: 70px !important;
+            width: 70px !important;
+        }
+
+        .matrix-table thead th.col-level {
+            position: sticky !important;
+            left: 250px !important;
+            z-index: 11 !important;
+            background: #9d73d1 !important;
+            min-width: 60px !important;
+            width: 60px !important;
+        }
+
+        .matrix-table tbody td {
+            border: 1px solid #e9ecef;
+            text-align: center;
+            position: relative;
+            height: 30px;
+            padding: 4px;
+            min-width: 55px;
+        }
+
+        .student-cell {
+            position: sticky !important;
+            left: 0 !important;
+            background: white !important;
+            z-index: 5 !important;
+            text-align: left !important;
+            padding: 8px 10px !important;
+            font-weight: 600;
+            border-right: 2px solid #dee2e6 !important;
+            white-space: nowrap;
+            min-width: 180px !important;
+            width: 180px !important;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.08) !important;
+        }
+
+        .points-cell {
+            position: sticky !important;
+            left: 180px !important;
+            background: white !important;
+            z-index: 5 !important;
+            font-weight: 700 !important;
+            font-size: 13px !important;
+            color: #667eea !important;
+            min-width: 70px !important;
+            width: 70px !important;
+        }
+
+        .level-cell {
+            position: sticky !important;
+            left: 250px !important;
+            background: white !important;
+            z-index: 5 !important;
+            font-weight: 700 !important;
+            font-size: 13px !important;
+            color: #764ba2 !important;
+            border-right: 2px solid #dee2e6 !important;
+            min-width: 60px !important;
+            width: 60px !important;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.08) !important;
+        }
+
+        .student-cell-inner {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .student-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .student-name {
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .student-name mark {
+            background: #ffeb3b;
+            padding: 1px 3px;
+            border-radius: 3px;
+        }
+
+        .performance-cell {
+            font-weight: 700;
+            font-size: 12px;
+            cursor: help;
+            transition: all 0.2s;
+        }
+
+        .performance-cell:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            z-index: 100;
+        }
+
+        .color-grey {
+            background: #e9ecef;
+            color: #6c757d;
+        }
+
+        .color-yellow {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .color-green {
+            background: #28a745;
+            color: white;
+        }
+
+        /* Strand separator column */
+        .strand-separator {
+            background: #2d3748 !important;
+            width: 4px !important;
+            min-width: 4px !important;
+            max-width: 4px !important;
+            padding: 0 !important;
+        }
+
+        /* Tooltip */
+        #floatingTooltip {
+            display: none;
+            position: fixed;
+            background: #2d3748;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 10000;
+            max-width: 280px;
+            font-size: 13px;
+            pointer-events: none;
+        }
+
+        #floatingTooltip.visible {
+            display: block;
+        }
+
+        .tooltip-title {
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 8px;
+            color: #a5b4fc;
+        }
+
+        .tooltip-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+        }
+
+        .tooltip-label {
+            color: #9ca3af;
+        }
+
+        .tooltip-value {
+            font-weight: 600;
+        }
+
+        .tooltip-recommendation {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #4b5563;
+            font-style: italic;
+            color: #fbbf24;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-top: 1px solid #e9ecef;
+            flex-wrap: wrap;
+        }
+
+        #legendLegacy, #legendAdaptive {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .legend-box {
+            width: 24px;
+            height: 24px;
+            border-radius: 5px;
+        }
+
+        /* Row states */
+        tr.selected {
+            background-color: #e7f3ff !important;
+        }
+
+        tr.selected .student-cell {
+            background-color: #d0e7ff !important;
+        }
+
+        tr.filtered-out {
+            display: none;
+        }
+
+        /* Column Selector Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 10000;
+            overflow-y: auto;
+        }
+
+        .modal-overlay.active {
+            display: block;
+        }
+
+        .modal-content {
+            max-width: 900px;
+            margin: 50px auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 15px 15px 0 0;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .modal-body {
+            padding: 30px;
+        }
+
+        .strand-group {
+            margin-bottom: 25px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .strand-group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 16px;
+        }
+
+        .strand-group-header.number { background: #e3f2fd; color: #1565c0; }
+        .strand-group-header.algebra { background: #f3e5f5; color: #7b1fa2; }
+        .strand-group-header.statistics { background: #e8f5e9; color: #2e7d32; }
+        .strand-group-header.geometry { background: #fff3e0; color: #ef6c00; }
+        .strand-group-header.other { background: #eceff1; color: #546e7a; }
+
+        .strand-group-content {
+            padding: 15px 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .topic-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .topic-checkbox:hover {
+            background: #e9ecef;
+        }
+
+        .topic-checkbox input {
+            width: 18px;
+            height: 18px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: flex-end;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e9ecef;
+        }
+
+        /* No results */
+        .no-results {
+            text-align: center;
+            padding: 60px;
+            color: #6c757d;
+        }
+
+        .no-results-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .filter-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .filter-label {
+                min-width: auto;
+            }
+
+            .search-input-wrapper {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Floating tooltip -->
+    <div id="floatingTooltip"></div>
+
+    <div class="container">
+        <div class="header">
+            <h1 id="className">Class Performance Dashboard</h1>
+            <div style="background: rgba(255,255,255,0.2); padding: 8px 15px; border-radius: 8px; margin-top: 10px; display: inline-block;">
+                <strong>🆕 Version 3.2 - STRAND FILTERING FOR ADAPTIVE</strong> ✅
+            </div>
+            <div class="header-controls">
+                <button class="btn btn-primary" onclick="refreshData()">🔄 Refresh Data</button>
+                <button class="btn btn-primary" onclick="openColumnSelector()">📋 Select Columns</button>
+                <button class="btn btn-secondary" onclick="exportData()">📊 Export to CSV</button>
+                <button class="btn btn-secondary" onclick="goBack()">← Back</button>
+            </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+            <!-- Row 1: Search and Student Filters -->
+            <div class="filter-row">
+                <span class="filter-label">🔍 Search:</span>
+                <div class="search-input-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="studentSearch" class="search-input" 
+                           placeholder="Search students by name..." oninput="handleSearch()">
+                    <button class="clear-search" id="clearSearch" onclick="clearSearch()">✕</button>
+                </div>
+                <div class="filter-chips">
+                    <div class="filter-chip active" onclick="filterByPerformance('all')" data-filter="all">All Students</div>
+                    <div class="filter-chip" onclick="filterByPerformance('excellent')" data-filter="excellent">Excellent (>80%)</div>
+                    <div class="filter-chip" onclick="filterByPerformance('needs-help')" data-filter="needs-help">Needs Help (<60%)</div>
+                    <div class="filter-chip" onclick="filterByPerformance('not-started')" data-filter="not-started">Not Started</div>
+                </div>
+            </div>
+
+            <!-- Row 2: Quiz Type Filter -->
+            <div class="filter-row">
+                <span class="filter-label">📝 Quiz Type:</span>
+                <div class="quiz-type-chips">
+                    <div class="quiz-chip legacy active" onclick="filterByQuizType('legacy')" data-type="legacy">
+                        📚 Legacy Practice
+                    </div>
+                    <div class="quiz-chip adaptive" onclick="filterByQuizType('adaptive')" data-type="adaptive">
+                        🎯 Adaptive (Levels 1-12)
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 3: Strand Filters -->
+            <div class="filter-row">
+                <span class="filter-label">📚 Strands:</span>
+                <div class="strand-chips" id="strandChips">
+                    <div class="strand-chip all active" onclick="filterByStrand('all')" data-strand="all">📊 All Strands</div>
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls Bar -->
+        <div class="controls-bar">
+            <div class="student-count">
+                Showing <strong id="visibleCount">0</strong> of <strong id="totalCount">0</strong> students
+                <span id="searchMatch" style="color: #667eea;"></span>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn btn-primary" onclick="selectAllVisible()" style="padding: 8px 16px; font-size: 13px;">✓ Select Visible</button>
+                <button class="btn btn-secondary" onclick="deselectAllStudents()" style="padding: 8px 16px; font-size: 13px; background: #e9ecef; color: #495057; border: none;">✗ Clear Selection</button>
+            </div>
+        </div>
+
+        <!-- Dashboard Content -->
+        <div class="dashboard-content">
+            <div id="loadingMessage" class="loading-message">
+                ⏳ Loading class data...
+            </div>
+            <div id="matrixContainer" style="display: none; overflow-x: auto;"></div>
+            <div id="noResults" class="no-results" style="display: none;">
+                <div class="no-results-icon">🔍</div>
+                <div>No students match your filters</div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend" id="legendContainer">
+            <!-- Legacy Legend (default) -->
+            <div id="legendLegacy">
+                <div class="legend-item">
+                    <div class="legend-box color-grey"></div>
+                    <span>Not Attempted / < 20%</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box color-yellow"></div>
+                    <span>20% - 80% (Needs Improvement)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box color-green"></div>
+                    <span>> 80% (Excellent)</span>
+                </div>
+            </div>
+            <!-- Adaptive Legend (hidden by default) -->
+            <div id="legendAdaptive" style="display: none;">
+                <div class="legend-item">
+                    <div class="legend-box color-grey"></div>
+                    <span>Level 1-3 (Building Foundations)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box color-yellow"></div>
+                    <span>Level 4-8 (Developing)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box color-green"></div>
+                    <span>Level 9-12 (Mastery)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Column Selector Modal -->
+    <div id="columnSelectorModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📋 Select Topics to Display</h2>
+                <p style="margin: 10px 0 0 0; opacity: 0.9;">Choose which topics and difficulty levels to show</p>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 20px; display: flex; gap: 15px;">
+                    <button class="btn btn-primary" onclick="selectAllColumns()" style="background: #667eea; color: white;">✓ Select All</button>
+                    <button class="btn" onclick="deselectAllColumns()" style="background: #dc3545; color: white;">✗ Deselect All</button>
+                </div>
+                <div id="columnSelectorContent">
+                    <!-- Populated dynamically with strand groups -->
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-primary" onclick="applyColumnSelection()" style="background: #667eea; color: white;">✓ Apply Changes</button>
+                    <button class="btn btn-secondary" onclick="closeColumnSelector()" style="background: #e9ecef; color: #495057; border: none;">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let classData = null;
+        let selectedStudents = new Set();
+        let tooltipData = {};
+        let currentSearchTerm = '';
+        let currentPerformanceFilter = 'all';
+        let currentStrandFilter = 'all';
+        let currentQuizType = 'legacy';  // 'legacy' or 'adaptive'
+        let visibleColumns = {};
+        
+        const classId = getClassIdFromURL();
+
+        // Strand colors for consistency
+        const strandColors = {
+            'Number': { bg: '#e3f2fd', color: '#1565c0', class: 'number' },
+            'Algebra and Functions': { bg: '#f3e5f5', color: '#7b1fa2', class: 'algebra' },
+            'Statistics and Probability': { bg: '#e8f5e9', color: '#2e7d32', class: 'statistics' },
+            'Geometry and Trigonometry': { bg: '#fff3e0', color: '#ef6c00', class: 'geometry' },
+            'Senior Cycle - Algebra': { bg: '#f3e5f5', color: '#7b1fa2', class: 'algebra' },
+            'default': { bg: '#eceff1', color: '#546e7a', class: 'other' }
+        };
+
+        function getStrandStyle(strand) {
+            return strandColors[strand] || strandColors['default'];
+        }
+
+        function getClassIdFromURL() {
+            const path = window.location.pathname;
+            const match = path.match(/\/teacher\/class-dashboard\/(\d+)/);
+            return match ? match[1] : null;
+        }
+
+        function goBack() {
+            window.location.href = '/teacher/classes';
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            if (!classId) {
+                alert('No class ID provided');
+                goBack();
+                return;
+            }
+            loadClassData();
+        });
+
+        async function loadClassData() {
+            try {
+                const response = await fetch(`/api/teacher/class/${classId}/matrix-data`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load class data');
+                }
+
+                classData = await response.json();
+                
+                document.getElementById('className').textContent = classData.class_name || 'Class Performance Dashboard';
+                document.getElementById('totalCount').textContent = classData.total_students;
+
+                // Build strand filter chips
+                buildStrandChips();
+                
+                // Initialize column visibility
+                initializeColumnVisibility();
+                
+                // Render the matrix
+                renderMatrix();
+                updateAllVisibility();
+                
+                document.getElementById('loadingMessage').style.display = 'none';
+                document.getElementById('matrixContainer').style.display = 'block';
+
+            } catch (error) {
+                console.error('Error loading class data:', error);
+                document.getElementById('loadingMessage').innerHTML = 
+                    '<div style="color: #dc3545;">❌ Failed to load class data. <button onclick="goBack()" style="padding: 10px 20px; margin-left: 10px; border-radius: 5px; cursor: pointer;">Go Back</button></div>';
+            }
+        }
+
+        function buildStrandChips() {
+            const container = document.getElementById('strandChips');
+            container.innerHTML = '<div class="strand-chip all active" onclick="filterByStrand(\'all\')" data-strand="all">📊 All Strands</div>';
+            
+            // Use appropriate strands based on quiz type
+            const strandsToUse = currentQuizType === 'adaptive' 
+                ? (classData.adaptive_strands || {}) 
+                : (classData.strands || {});
+            
+            Object.keys(strandsToUse).forEach(strand => {
+                const style = getStrandStyle(strand);
+                const topicCount = strandsToUse[strand].length;
+                container.innerHTML += `
+                    <div class="strand-chip ${style.class} active" 
+                         onclick="filterByStrand('${strand}')" 
+                         data-strand="${strand}">
+                        ${strand} (${topicCount})
+                    </div>
+                `;
+            });
+        }
+
+        function initializeColumnVisibility() {
+            if (!classData) return;
+            
+            classData.topics.forEach(topic => {
+                classData.difficulties.forEach(diff => {
+                    const key = `${topic}_${diff}`;
+                    if (visibleColumns[key] === undefined) {
+                        visibleColumns[key] = true;
+                    }
+                });
+            });
+        }
+
+        function isColumnVisible(topic, difficulty) {
+            const key = `${topic}_${difficulty}`;
+            return visibleColumns[key] !== false;
+        }
+
+        function getTopicStrand(topic) {
+            if (!classData.strands) return 'Other';
+            for (const [strand, topics] of Object.entries(classData.strands)) {
+                if (topics.includes(topic)) return strand;
+            }
+            return 'Other';
+        }
+
+        function filterByStrand(strand) {
+            currentStrandFilter = strand;
+            
+            // Update chip styles - only selected strand is active
+            document.querySelectorAll('.strand-chip').forEach(chip => {
+                const chipStrand = chip.getAttribute('data-strand');
+                if (strand === 'all') {
+                    // When "All" selected, highlight all chips
+                    chip.classList.add('active');
+                } else {
+                    // When specific strand selected, only that chip is active
+                    chip.classList.toggle('active', chipStrand === strand);
+                }
+            });
+            
+            // Re-render matrix with strand filter
+            renderMatrix();
+        }
+
+        function filterByQuizType(type) {
+            currentQuizType = type;
+            currentStrandFilter = 'all';  // Reset strand filter when switching quiz type
+            
+            // Update chip styles
+            document.querySelectorAll('.quiz-chip').forEach(chip => {
+                chip.classList.toggle('active', chip.getAttribute('data-type') === type);
+            });
+            
+            // Update legend
+            document.getElementById('legendLegacy').style.display = type === 'legacy' ? 'flex' : 'none';
+            document.getElementById('legendAdaptive').style.display = type === 'adaptive' ? 'flex' : 'none';
+            
+            // Rebuild strand chips for new quiz type
+            buildStrandChips();
+            
+            // Re-render matrix with new quiz type
+            renderMatrix();
+        }
+
+        function renderMatrix() {
+            if (!classData) return;
+            
+            const container = document.getElementById('matrixContainer');
+            tooltipData = {};
+            
+            // Build header based on quiz type
+            let html = '<table class="matrix-table"><thead><tr>';
+            html += '<th class="col-student">Student Name</th>';
+            html += '<th class="col-points">Points</th>';
+            html += '<th class="col-level">Level</th>';
+            
+            if (currentQuizType === 'legacy') {
+                // ==================== LEGACY MODE ====================
+                // Group topics by strand
+                const strandOrder = ['Number', 'Algebra and Functions', 'Statistics and Probability', 'Geometry and Trigonometry', 'Senior Cycle - Algebra'];
+                
+                // Get visible topics based on strand filter
+                let visibleTopics = [];
+                
+                strandOrder.forEach(strand => {
+                    if (!classData.strands || !classData.strands[strand]) return;
+                    
+                    // Check if this strand should be visible
+                    if (currentStrandFilter !== 'all' && currentStrandFilter !== strand) return;
+                    
+                    classData.strands[strand].forEach(topic => {
+                        classData.difficulties.forEach(diff => {
+                            if (isColumnVisible(topic, diff)) {
+                                visibleTopics.push({ topic, diff, strand });
+                            }
+                        });
+                    });
+                });
+                
+                // Also include topics not in any strand
+                classData.topics.forEach(topic => {
+                    const topicStrand = getTopicStrand(topic);
+                    if (currentStrandFilter !== 'all' && currentStrandFilter !== topicStrand) return;
+                    
+                    const alreadyAdded = visibleTopics.some(v => v.topic === topic);
+                    if (alreadyAdded) return;
+                    
+                    classData.difficulties.forEach(diff => {
+                        if (isColumnVisible(topic, diff)) {
+                            visibleTopics.push({ topic, diff, strand: 'Other' });
+                        }
+                    });
+                });
+                
+                // Add column headers
+                visibleTopics.forEach(({ topic, diff }) => {
+                    const topicName = formatTopicName(topic);
+                    const diffName = formatDifficultyName(diff);
+                    html += `<th>${topicName}<br><small>${diffName}</small></th>`;
+                });
+                
+                html += '</tr></thead><tbody>';
+                
+                // Render student rows - LEGACY
+                classData.students.forEach(student => {
+                    html += `<tr id="student-row-${student.student_id}" 
+                                class="${selectedStudents.has(student.student_id) ? 'selected' : ''}" 
+                                data-student-name="${student.student_name.toLowerCase()}">`;
+                    
+                    html += `<td class="student-cell">
+                        <div class="student-cell-inner">
+                            <input type="checkbox" class="student-checkbox" 
+                                   id="checkbox-${student.student_id}"
+                                   onchange="toggleStudent(${student.student_id})"
+                                   ${selectedStudents.has(student.student_id) ? 'checked' : ''}>
+                            <label for="checkbox-${student.student_id}" class="student-name" data-original="${student.student_name}">${student.student_name}</label>
+                        </div>
+                    </td>`;
+                    
+                    html += `<td class="points-cell">${student.total_points || 0}</td>`;
+                    html += `<td class="level-cell">${student.level || 1}</td>`;
+                    
+                    visibleTopics.forEach(({ topic, diff }) => {
+                        const moduleKey = `${topic}_${diff}`;
+                        const module = student.modules[moduleKey];
+                        const cellId = `cell-${student.student_id}-${topic}-${diff}`;
+                        
+                        if (module) {
+                            const recommendation = generateRecommendation(module, topic, diff);
+                            
+                            tooltipData[cellId] = {
+                                topic: formatTopicName(topic),
+                                difficulty: formatDifficultyName(diff),
+                                percentage: module.percentage,
+                                attempts: module.attempts,
+                                completed: module.completed,
+                                recommendation: recommendation,
+                                type: 'legacy'
+                            };
+                            
+                            html += `<td id="${cellId}" class="performance-cell color-${module.color}" 
+                                        onmouseenter="showTooltip(event, '${cellId}')" 
+                                        onmousemove="updateTooltipPosition(event)"
+                                        onmouseleave="hideTooltip()">
+                                ${module.percentage}%
+                            </td>`;
+                        } else {
+                            html += `<td class="performance-cell color-grey">0%</td>`;
+                        }
+                    });
+                    
+                    html += '</tr>';
+                });
+                
+            } else {
+                // ==================== ADAPTIVE MODE ====================
+                // Get adaptive topics filtered by strand
+                let adaptiveTopics = [];
+                
+                if (currentStrandFilter === 'all') {
+                    // Show all adaptive topics
+                    adaptiveTopics = classData.adaptive_topics || [];
+                } else {
+                    // Filter by selected strand using adaptive_strands
+                    const strandTopics = classData.adaptive_strands ? classData.adaptive_strands[currentStrandFilter] : [];
+                    adaptiveTopics = strandTopics || [];
+                }
+                
+                // If no adaptive topics, show message
+                if (adaptiveTopics.length === 0) {
+                    html += '<th>No adaptive quiz data available for this strand</th>';
+                    html += '</tr></thead><tbody>';
+                    classData.students.forEach(student => {
+                        html += `<tr id="student-row-${student.student_id}" data-student-name="${student.student_name.toLowerCase()}">`;
+                        html += `<td class="student-cell">
+                            <div class="student-cell-inner">
+                                <input type="checkbox" class="student-checkbox" id="checkbox-${student.student_id}">
+                                <label class="student-name" data-original="${student.student_name}">${student.student_name}</label>
+                            </div>
+                        </td>`;
+                        html += `<td class="points-cell">${student.total_points || 0}</td>`;
+                        html += `<td class="level-cell">${student.level || 1}</td>`;
+                        html += `<td class="performance-cell color-grey">-</td>`;
+                        html += '</tr>';
+                    });
+                } else {
+                    // Add column headers for adaptive topics
+                    adaptiveTopics.forEach(topic => {
+                        const topicName = formatTopicName(topic);
+                        html += `<th style="background: #c2185b;">${topicName}<br><small>Level 1-12</small></th>`;
+                    });
+                    
+                    html += '</tr></thead><tbody>';
+                    
+                    // Render student rows - ADAPTIVE
+                    classData.students.forEach(student => {
+                        html += `<tr id="student-row-${student.student_id}" 
+                                    class="${selectedStudents.has(student.student_id) ? 'selected' : ''}" 
+                                    data-student-name="${student.student_name.toLowerCase()}">`;
+                        
+                        html += `<td class="student-cell">
+                            <div class="student-cell-inner">
+                                <input type="checkbox" class="student-checkbox" 
+                                       id="checkbox-${student.student_id}"
+                                       onchange="toggleStudent(${student.student_id})"
+                                       ${selectedStudents.has(student.student_id) ? 'checked' : ''}>
+                                <label for="checkbox-${student.student_id}" class="student-name" data-original="${student.student_name}">${student.student_name}</label>
+                            </div>
+                        </td>`;
+                        
+                        html += `<td class="points-cell">${student.total_points || 0}</td>`;
+                        html += `<td class="level-cell">${student.level || 1}</td>`;
+                        
+                        adaptiveTopics.forEach(topic => {
+                            const adaptiveData = student.adaptive ? student.adaptive[topic] : null;
+                            const cellId = `cell-adaptive-${student.student_id}-${topic}`;
+                            
+                            if (adaptiveData && adaptiveData.level > 0) {
+                                tooltipData[cellId] = {
+                                    topic: formatTopicName(topic),
+                                    level: adaptiveData.level,
+                                    points: adaptiveData.points || 0,
+                                    questions: adaptiveData.questions_answered || 0,
+                                    percentage: adaptiveData.percentage,
+                                    type: 'adaptive'
+                                };
+                                
+                                html += `<td id="${cellId}" class="performance-cell color-${adaptiveData.color}" 
+                                            onmouseenter="showTooltip(event, '${cellId}')" 
+                                            onmousemove="updateTooltipPosition(event)"
+                                            onmouseleave="hideTooltip()">
+                                    L${adaptiveData.level}
+                                </td>`;
+                            } else {
+                                html += `<td class="performance-cell color-grey">L1</td>`;
+                            }
+                        });
+                        
+                        html += '</tr>';
+                    });
+                }
+            }
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+            
+            // Re-apply visibility filters
+            updateAllVisibility();
+        }
+
+        function formatTopicName(topic) {
+            return topic.split('_').map(word => 
+                word.charAt(0).toUpperCase() + word.slice(1)
+            ).join(' ');
+        }
+
+        function formatDifficultyName(diff) {
+            return diff.charAt(0).toUpperCase() + diff.slice(1);
+        }
+
+        function generateRecommendation(module, topic, difficulty) {
+            if (!module.completed) {
+                return `Encourage student to start ${formatTopicName(topic)} at ${formatDifficultyName(difficulty)} level`;
+            }
+            if (module.percentage < 60) {
+                return `Student needs additional practice. Consider reviewing fundamentals.`;
+            }
+            if (module.percentage < 80) {
+                return `Good progress! A few more practice sessions recommended.`;
+            }
+            return `Excellent performance! Ready for next level.`;
+        }
+
+        // Tooltip functions
+        function showTooltip(event, cellId) {
+            const data = tooltipData[cellId];
+            if (!data) return;
+            
+            const tooltip = document.getElementById('floatingTooltip');
+            
+            if (data.type === 'adaptive') {
+                // Adaptive quiz tooltip
+                tooltip.innerHTML = `
+                    <div class="tooltip-title">🎯 ${data.topic} - Adaptive</div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Current Level:</span>
+                        <span class="tooltip-value" style="color: #fbbf24;">Level ${data.level} / 12</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Progress:</span>
+                        <span class="tooltip-value">${data.percentage}%</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Points Earned:</span>
+                        <span class="tooltip-value">${data.points}</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Questions Answered:</span>
+                        <span class="tooltip-value">${data.questions || 0}</span>
+                    </div>
+                    <div class="tooltip-recommendation">
+                        💡 ${getAdaptiveRecommendation(data.level)}
+                    </div>
+                `;
+            } else {
+                // Legacy quiz tooltip
+                tooltip.innerHTML = `
+                    <div class="tooltip-title">📚 ${data.topic} - ${data.difficulty}</div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Score:</span>
+                        <span class="tooltip-value">${data.percentage}%</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Attempts:</span>
+                        <span class="tooltip-value">${data.attempts}</span>
+                    </div>
+                    <div class="tooltip-row">
+                        <span class="tooltip-label">Status:</span>
+                        <span class="tooltip-value">${data.completed ? 'Attempted' : 'Not Started'}</span>
+                    </div>
+                    <div class="tooltip-recommendation">💡 ${data.recommendation}</div>
+                `;
+            }
+            
+            tooltip.classList.add('visible');
+            updateTooltipPosition(event);
+        }
+
+        function getAdaptiveRecommendation(level) {
+            if (level <= 3) {
+                return 'Student is building foundations. Encourage continued practice.';
+            } else if (level <= 6) {
+                return 'Good progress! Student is developing competency.';
+            } else if (level <= 9) {
+                return 'Strong performance! Student is advancing well.';
+            } else {
+                return 'Excellent mastery! Student is ready for challenging content.';
+            }
+        }
+
+        function updateTooltipPosition(event) {
+            const tooltip = document.getElementById('floatingTooltip');
+            const x = event.clientX + 15;
+            const y = event.clientY + 15;
+            
+            // Keep tooltip on screen
+            const maxX = window.innerWidth - tooltip.offsetWidth - 20;
+            const maxY = window.innerHeight - tooltip.offsetHeight - 20;
+            
+            tooltip.style.left = Math.min(x, maxX) + 'px';
+            tooltip.style.top = Math.min(y, maxY) + 'px';
+        }
+
+        function hideTooltip() {
+            document.getElementById('floatingTooltip').classList.remove('visible');
+        }
+
+        // Search and filter functions
+        function handleSearch() {
+            const input = document.getElementById('studentSearch');
+            currentSearchTerm = input.value.toLowerCase().trim();
+            
+            const clearBtn = document.getElementById('clearSearch');
+            clearBtn.classList.toggle('visible', currentSearchTerm.length > 0);
+            
+            updateAllVisibility();
+        }
+
+        function clearSearch() {
+            document.getElementById('studentSearch').value = '';
+            currentSearchTerm = '';
+            document.getElementById('clearSearch').classList.remove('visible');
+            updateAllVisibility();
+        }
+
+        function filterByPerformance(filter) {
+            currentPerformanceFilter = filter;
+            
+            document.querySelectorAll('.filter-chip').forEach(chip => {
+                chip.classList.toggle('active', chip.getAttribute('data-filter') === filter);
+            });
+            
+            updateAllVisibility();
+        }
+
+        function matchesPerformanceFilter(student) {
+            if (currentPerformanceFilter === 'all') return true;
+            
+            if (currentQuizType === 'adaptive') {
+                // Filter based on adaptive data
+                const adaptiveValues = student.adaptive ? Object.values(student.adaptive) : [];
+                
+                if (adaptiveValues.length === 0) {
+                    return currentPerformanceFilter === 'not-started';
+                }
+                
+                const startedTopics = adaptiveValues.filter(a => a.level > 1);
+                
+                if (startedTopics.length === 0) {
+                    return currentPerformanceFilter === 'not-started';
+                }
+                
+                const avgLevel = startedTopics.reduce((sum, a) => sum + a.level, 0) / startedTopics.length;
+                
+                switch (currentPerformanceFilter) {
+                    case 'excellent':
+                        return avgLevel >= 9;  // Level 9+ out of 12
+                    case 'needs-help':
+                        return avgLevel < 5;   // Below level 5
+                    case 'not-started':
+                        return startedTopics.length === 0;
+                    default:
+                        return true;
+                }
+            } else {
+                // Filter based on legacy data
+                const moduleValues = Object.values(student.modules);
+                if (moduleValues.length === 0) {
+                    return currentPerformanceFilter === 'not-started';
+                }
+                
+                const attemptedModules = moduleValues.filter(m => m.attempts > 0);
+                
+                if (attemptedModules.length === 0) {
+                    return currentPerformanceFilter === 'not-started';
+                }
+                
+                const avgPerformance = attemptedModules.reduce((sum, m) => sum + m.percentage, 0) / attemptedModules.length;
+                
+                switch (currentPerformanceFilter) {
+                    case 'excellent':
+                        return avgPerformance >= 80;
+                    case 'needs-help':
+                        return avgPerformance < 60;
+                    case 'not-started':
+                        return attemptedModules.length === 0;
+                    default:
+                        return true;
+                }
+            }
+        }
+
+        function updateAllVisibility() {
+            if (!classData) return;
+            
+            let visibleCount = 0;
+            
+            classData.students.forEach(student => {
+                const row = document.getElementById(`student-row-${student.student_id}`);
+                if (!row) return;
+                
+                const studentName = student.student_name.toLowerCase();
+                const matchesSearch = !currentSearchTerm || studentName.includes(currentSearchTerm);
+                const matchesFilter = matchesPerformanceFilter(student);
+                
+                // Highlight search matches
+                const label = row.querySelector('.student-name');
+                const originalName = label.getAttribute('data-original');
+                if (matchesSearch && currentSearchTerm) {
+                    const regex = new RegExp(`(${currentSearchTerm})`, 'gi');
+                    label.innerHTML = originalName.replace(regex, '<mark>$1</mark>');
+                } else {
+                    label.innerHTML = originalName;
+                }
+                
+                if (matchesSearch && matchesFilter) {
+                    row.classList.remove('filtered-out');
+                    visibleCount++;
+                } else {
+                    row.classList.add('filtered-out');
+                }
+            });
+            
+            document.getElementById('visibleCount').textContent = visibleCount;
+            
+            // Show/hide no results
+            const noResults = document.getElementById('noResults');
+            const matrixContainer = document.getElementById('matrixContainer');
+            if (visibleCount === 0 && classData.students.length > 0) {
+                noResults.style.display = 'block';
+                matrixContainer.style.display = 'none';
+            } else {
+                noResults.style.display = 'none';
+                matrixContainer.style.display = 'block';
+            }
+        }
+
+        // Student selection
+        function toggleStudent(studentId) {
+            const row = document.getElementById(`student-row-${studentId}`);
+            const checkbox = document.getElementById(`checkbox-${studentId}`);
+            
+            if (checkbox.checked) {
+                selectedStudents.add(studentId);
+                row.classList.add('selected');
+            } else {
+                selectedStudents.delete(studentId);
+                row.classList.remove('selected');
+            }
+        }
+
+        function selectAllVisible() {
+            if (!classData) return;
+            
+            classData.students.forEach(student => {
+                const row = document.getElementById(`student-row-${student.student_id}`);
+                if (!row || row.classList.contains('filtered-out')) return;
+                
+                selectedStudents.add(student.student_id);
+                const checkbox = document.getElementById(`checkbox-${student.student_id}`);
+                if (row) row.classList.add('selected');
+                if (checkbox) checkbox.checked = true;
+            });
+        }
+
+        function deselectAllStudents() {
+            selectedStudents.clear();
+            document.querySelectorAll('.student-checkbox').forEach(cb => cb.checked = false);
+            document.querySelectorAll('tr.selected').forEach(row => row.classList.remove('selected'));
+        }
+
+        function refreshData() {
+            document.getElementById('loadingMessage').style.display = 'block';
+            document.getElementById('matrixContainer').style.display = 'none';
+            selectedStudents.clear();
+            currentSearchTerm = '';
+            currentPerformanceFilter = 'all';
+            currentStrandFilter = 'all';
+            document.getElementById('studentSearch').value = '';
+            loadClassData();
+        }
+
+        // Column Selector
+        function openColumnSelector() {
+            buildColumnSelector();
+            document.getElementById('columnSelectorModal').classList.add('active');
+        }
+
+        function closeColumnSelector() {
+            document.getElementById('columnSelectorModal').classList.remove('active');
+        }
+
+        function buildColumnSelector() {
+            const container = document.getElementById('columnSelectorContent');
+            let html = '';
+            
+            // Group by strand
+            const strandOrder = ['Number', 'Algebra and Functions', 'Statistics and Probability', 'Geometry and Trigonometry', 'Senior Cycle - Algebra'];
+            
+            strandOrder.forEach(strand => {
+                if (!classData.strands || !classData.strands[strand]) return;
+                
+                const style = getStrandStyle(strand);
+                html += `
+                    <div class="strand-group">
+                        <div class="strand-group-header ${style.class}">
+                            <span>${strand}</span>
+                            <span>${classData.strands[strand].length} topics</span>
+                        </div>
+                        <div class="strand-group-content">
+                `;
+                
+                classData.strands[strand].forEach(topic => {
+                    classData.difficulties.forEach(diff => {
+                        const key = `${topic}_${diff}`;
+                        const checked = visibleColumns[key] !== false ? 'checked' : '';
+                        html += `
+                            <label class="topic-checkbox">
+                                <input type="checkbox" id="col-${key}" ${checked}>
+                                ${formatTopicName(topic)} - ${formatDifficultyName(diff)}
+                            </label>
+                        `;
+                    });
+                });
+                
+                html += '</div></div>';
+            });
+            
+            container.innerHTML = html;
+        }
+
+        function selectAllColumns() {
+            document.querySelectorAll('#columnSelectorContent input[type="checkbox"]').forEach(cb => cb.checked = true);
+        }
+
+        function deselectAllColumns() {
+            document.querySelectorAll('#columnSelectorContent input[type="checkbox"]').forEach(cb => cb.checked = false);
+        }
+
+        function applyColumnSelection() {
+            document.querySelectorAll('#columnSelectorContent input[type="checkbox"]').forEach(cb => {
+                const key = cb.id.replace('col-', '');
+                visibleColumns[key] = cb.checked;
+            });
+            
+            closeColumnSelector();
+            renderMatrix();
+        }
+
+        // Export
+        function exportData() {
+            if (!classData) return;
+            
+            let csv = 'Student Name,Points,Level,';
+            
+            if (currentQuizType === 'adaptive') {
+                // Export adaptive data - filter by strand
+                let adaptiveTopics = [];
+                if (currentStrandFilter === 'all') {
+                    adaptiveTopics = classData.adaptive_topics || [];
+                } else {
+                    adaptiveTopics = classData.adaptive_strands ? classData.adaptive_strands[currentStrandFilter] : [];
+                }
+                
+                adaptiveTopics.forEach(topic => {
+                    csv += `"${formatTopicName(topic)} (Adaptive Level)",`;
+                });
+                csv = csv.slice(0, -1) + '\n';
+                
+                classData.students.forEach(student => {
+                    const row = document.getElementById(`student-row-${student.student_id}`);
+                    if (row && row.classList.contains('filtered-out')) return;
+                    if (selectedStudents.size > 0 && !selectedStudents.has(student.student_id)) return;
+                    
+                    csv += `"${student.student_name}",${student.total_points || 0},${student.level || 1},`;
+                    
+                    adaptiveTopics.forEach(topic => {
+                        const adaptiveData = student.adaptive ? student.adaptive[topic] : null;
+                        csv += `${adaptiveData ? adaptiveData.level : 1},`;
+                    });
+                    
+                    csv = csv.slice(0, -1) + '\n';
+                });
+            } else {
+                // Export legacy data
+                classData.topics.forEach(topic => {
+                    classData.difficulties.forEach(diff => {
+                        if (isColumnVisible(topic, diff)) {
+                            csv += `"${formatTopicName(topic)} ${formatDifficultyName(diff)}",`;
+                        }
+                    });
+                });
+                csv = csv.slice(0, -1) + '\n';
+                
+                classData.students.forEach(student => {
+                    const row = document.getElementById(`student-row-${student.student_id}`);
+                    if (row && row.classList.contains('filtered-out')) return;
+                    if (selectedStudents.size > 0 && !selectedStudents.has(student.student_id)) return;
+                    
+                    csv += `"${student.student_name}",${student.total_points || 0},${student.level || 1},`;
+                    
+                    classData.topics.forEach(topic => {
+                        classData.difficulties.forEach(diff => {
+                            if (!isColumnVisible(topic, diff)) return;
+                            
+                            const moduleKey = `${topic}_${diff}`;
+                            const module = student.modules[moduleKey];
+                            csv += `${module ? module.percentage : 0}%,`;
+                        });
+                    });
+                    
+                    csv = csv.slice(0, -1) + '\n';
+                });
+            }
+            
+            // Download
+            const typeLabel = currentQuizType === 'adaptive' ? 'adaptive' : 'legacy';
+            const strandLabel = currentStrandFilter !== 'all' ? `_${currentStrandFilter.replace(/\s+/g, '_')}` : '';
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${classData.class_name || 'class'}_${typeLabel}${strandLabel}_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Close modal on click outside
+        document.getElementById('columnSelectorModal').addEventListener('click', (e) => {
+            if (e.target.id === 'columnSelectorModal') closeColumnSelector();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeColumnSelector();
+        });
+    </script>
+</body>
+</html>

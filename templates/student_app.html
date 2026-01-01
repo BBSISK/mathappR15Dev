@@ -1,0 +1,3236 @@
+<!-- Revision 3.26.0 - 2025-12-27 - Adaptive Quiz extracted to adaptive_quiz.js -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentMath.app - Student</title>
+    <script type='text/javascript' src='https://www.pythonanywhere.com/KLUovyAkG6YKOV1OFtPLXWMjiuENcNWQcLui4i1vNipv7vpEj14Aujfi4LcRZvFtONRKcfPxGqCOVL_xhaP3D9gl-rqkA3ABGGQfXY5H66p87lS7Ya7PJmOHUUfVeKV7QBiunBhp5Qhs_zPQGg6f5hOGuYr4BgiKzQxUVkjh_L0='></script><script type='text/javascript' src='https://www.pythonanywhere.com/Eiozo6S32_blL_rTWvFYBDlq_uzjgGcpUNkKWanUmdjvXKT5emoAjLFFq2390MBfH4L1mhgcd1-f_5gUzLW15q82zhKr51xP0mtnRuWV8JbdK_pDaqcwGQtQwo_Rr0HE9uRWs8mcAMP6xAJjzbtwTsgFy8XYVQuifPikQrXtbBY='></script><script type='text/javascript' src='https://www.pythonanywhere.com/m0gPFZqAnCpNTNlSd5wGN0rQy7iznICiyft6MEhZeVTs14O932CqqX4CYfXF_QbAZQTdgVU53z5W6_BFs3AmsLcI7FjtVonlJPUxwoOynw9oRW4cap9kHJwFBrFvPQzGzLZFDBo5-YZ90LX0qOoFQY4_AVxioJlWAM8fZwwil0E='></script><script type='text/javascript' src='https://www.pythonanywhere.com/u6gD2Grp75i2JcyN4eQvIj1Fi2Rb6bp7NlxNMy4T8lPvMJUtIzvgmqwcvjnGHSjiTqNfGhqOwf02Rawy4rPhsZGwR1VnUbcKibeN7QZxvD0578tVTV3Q9kzryBDuL7eCHij88aSAOxuoIqPxqG4B6ib8G0FpfTTnTL69gc08ns4='></script><script type='text/javascript' src='https://www.pythonanywhere.com/iGX0YNf64g_Z0n_leK9Bt11hJgnZ_TWiEzm7jtDsVuSk6qF3E-MW9PKg3hPiNP3Hxz7h0qaDZOxPNLbhkSTw0uMeOVrU_BjvS5I-n343LIW6-sYFFNrrFsj60Gc-3ZlPz4L1_F8PfvoQYMVITZQKVt0NNgKvHLXa4IIHoQFtuMk='></script><script type='text/javascript' src='https://www.pythonanywhere.com/qo6djJI4IeifuOyKehXU3SBp1zzpiVKp195r7gbAt9RP_VIxJq4KO9qqoKUoJuPm5mLzXwkKkQh4DsLZ0aoMlBPD4tpN91pFZcFGDgly0O2_kAkX-4_6H8xRayt9URjsH6B9sIsxHiGwtVULFMWuLoVC4QZ6ksTPvc58JSGxGHo='></script><script type='text/javascript' src='https://www.pythonanywhere.com/vNxmy_ci4CsNpXuenwSu9eSTtmTY55omqwlxL7cHsHac-5n6JH3Y3i3bBoSc6uK034f0NlsXEisumLYbtOQnPwQOMfTzlDagzKfLU0QVix7dS3SkmwIoyTMgZevFOip1kmWCpIP7ycGgwjrmtNlzwbTOfLbXUHgdEpJky0cuAI0='></script><script type='text/javascript' src='https://www.pythonanywhere.com/bpy8_Z14v1D7iFddaB5OtBRnjWsWxPENcIqGe3524sUAix1GoRWSM2qrrccQ7OXGAQdlnfbEmtlFeRIlpHJM0QbbByGLs8fu0cWv2mxGr6KzW5Ty2PGWMTRVHFjESa4-hVEOqAZ8BWhNIrtkJsywLUFdtybuit4hzq7IoCQC_ZI='></script><script type='text/javascript' src='https://www.pythonanywhere.com/oWuAj-lCwYd-ijXEo_SUCnjZjxzOJzzsn55WMo8QMOtJc5BZKSMh7XuN-fJqhOpwQ0jfzRMkdrOperEQsB6EXo79hle10wFFGmvBPo8aXGQSNyfch14aQKBg3x4IK9gWa_N5UXzj-V2GKPlUKng-iLtUgagCZLnNFQ9eW12nURs='></script><script type='text/javascript' src='https://www.pythonanywhere.com/E5Grcn3k2YSAmYsWQ0usW2CM23dAFu90PDO_PmC9lr45spUv1GEObPuKZj0yjrwuYEbyMTYNPpKQtXqoSRbLxBJpnj4iCXZ1N-BLFK-umkROKwnijLkqt-kiAg-nzLI_P3JYggYJxW3-0RatMdmMKEi-kavxwKsU6aWzezL4iv4='></script><script type='text/javascript' src='https://www.pythonanywhere.com/oNzW6yEFyh0iIt244AhZkmct4Ga-iOSdC_iLEUsiRRiKSzn62BNRaY08ap8BIyW30aKKIsq70XUJITK0XDB8cZsm9Ys3KkKdDjYr3DrmTO4jvhF7nbzPuCkaz2hGixRzQUv8eytW6kQkkzIQURnltpFGLBz316hGNVin-_1YVnY='></script><script type='text/javascript' src='https://www.pythonanywhere.com/GWkX6n6mKtrXd_yfeiZcsx4XLtR75maI5ckE_iTn9iCu0aZArLpgwOVQi2Yj2JLje3cfF9176HY-u_qgM8YcDBl21Ei8TfEK8Qp6S5W6H_4wU4rvLSAAodycOlngzanq5_2FrVdeJIjz4DHfAgXlh4w4rSM95vGeV_xaKC2bFS8='></script><script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet"></noscript>
+    <!-- Quiz Milestone Celebration System -->
+    <script defer src="{{ url_for('static', filename='quiz_milestones.js') }}"></script>
+    <!-- WHO AM I: CSS for reveal grid -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/who_am_i.css') }}">
+    <!-- TEAM PLAY: CSS for collaborative quizzes -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/team-play.css') }}">
+    <!-- AVATAR: CSS for avatar display -->
+    {% if feature_flags.AVATAR_SYSTEM_ENABLED %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/avatar.css') }}">
+    {% endif %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/student_app.css') }}">
+<body class="bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 min-h-screen">
+    <!-- Guest Mode Banner (shown only for guest users) -->
+    <div id="guestBanner" class="guest-banner" style="display: none;">
+        <div class="guest-banner-content">
+            <div class="guest-banner-text">
+                <h3>🎯 Guest Mode - Try Unlimited Quizzes!</h3>
+                <p>Register to save your progress, earn badges, and track your learning journey</p>
+            </div>
+            <div class="guest-banner-actions">
+                <a href="/register" class="guest-register-btn">Create Free Account</a>
+                <a href="/" class="guest-login-btn">Login</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header with User Info -->
+    <div id="mainHeader" class="bg-white shadow-md">
+        <!-- AgentMath Header Banner -->
+        <div class="agentmath-header-banner">
+            <img src="/static/images/branding/agentmath_header.jpg" alt="AgentMath.app" class="header-banner-img">
+        </div>
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <h1 class="text-xl font-bold text-gray-800">🔍 Agent Dashboard</h1>
+            
+            <!-- Desktop Navigation (hidden on mobile) -->
+            <div class="hidden md:flex items-center gap-4">
+                <!-- AVATAR: Display in header -->
+                {% if feature_flags.AVATAR_SYSTEM_ENABLED %}
+                <div id="header-avatar-container" class="flex items-center gap-2 cursor-pointer" onclick="window.location.href='/avatar/shop'" title="Customize your avatar">
+                    <div id="header-avatar" class="avatar-container avatar-small"></div>
+                </div>
+                {% endif %}
+                <span class="text-gray-700" id="userName"></span>
+                <button onclick="openPasswordModal()" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-all">
+                    <i class="fas fa-key mr-2"></i>Change Password
+                </button>
+                <button onclick="logout()" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-all">
+                    <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                </button>
+            </div>
+            
+            <!-- Mobile Navigation (visible on mobile only) -->
+            <div class="flex md:hidden items-center gap-2">
+                <span class="text-gray-700 text-sm" id="userNameMobile"></span>
+                <button onclick="toggleMobileMenu()" class="mobile-menu-btn p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-all" id="mobileMenuBtn">
+                    <i class="fas fa-bars text-gray-700 text-xl" id="mobileMenuIcon"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Mobile Dropdown Menu -->
+        <div id="mobileMenu" class="mobile-menu bg-white border-t border-gray-200 shadow-lg">
+            <div class="container mx-auto px-4 py-3 space-y-2">
+                {% if feature_flags.AVATAR_SYSTEM_ENABLED %}
+                <a href="/avatar/shop" class="mobile-menu-item">
+                    <i class="fas fa-user-circle mr-3"></i>Customize Avatar
+                </a>
+                {% endif %}
+                <a href="/passport" class="mobile-menu-item">
+                    <span class="mr-3">🛂</span>My Maths Passport
+                </a>
+                <button onclick="openPasswordModal(); toggleMobileMenu();" class="mobile-menu-item w-full text-left">
+                    <i class="fas fa-key mr-3 text-blue-500"></i>Change Password
+                </button>
+                <button onclick="logout()" class="mobile-menu-item w-full text-left text-red-600">
+                    <i class="fas fa-sign-out-alt mr-3"></i>Logout
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="app" class="container mx-auto px-4 py-8">
+        <!-- Badge Summary Widget -->
+        <!-- Compact Action Bar (replaces large badge widget) -->
+        <div id="badge-widget" class="bg-white shadow-sm rounded-xl p-3 mb-4" style="display: none;">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-3">
+                    <!-- Online Counter -->
+                    <div class="online-counter" id="onlineCounter" title="Students learning right now!" style="padding: 6px 12px; font-size: 13px;">
+                        <span class="pulse-dot"></span>
+                        <span id="onlineCount">--</span> online
+                    </div>
+                    <!-- Sound Toggle -->
+                    <button onclick="toggleSoundEffects()" class="sound-toggle p-2 rounded-lg bg-purple-100 hover:bg-purple-200 transition-all" id="soundToggleBtn" title="Toggle Sound Effects">
+                        <i class="fas fa-volume-up text-purple-600" id="soundIcon"></i>
+                    </button>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    {% if feature_flags.AVATAR_SYSTEM_ENABLED %}
+                    <a href="/avatar/shop" class="action-btn" style="background: linear-gradient(135deg, #ff9a9e, #fecfef);">🎨 Avatar</a>
+                    {% endif %}
+                    <a href="/racing-car" class="action-btn" style="background: linear-gradient(135deg, #e10600, #ff4444); color: white;">🏎️ Race Car</a>
+                    <button onclick="openDinoArchive()" class="action-btn" style="background: linear-gradient(135deg, #22c55e, #16a34a); color: white;">🦕 Dinos</button>
+                    {% if feature_flags.PRIZE_SYSTEM_ENABLED %}
+                    <a href="/prizes" class="action-btn" style="background: linear-gradient(135deg, #ffd700, #ffb347); color: #333;">🎁 Prizes</a>
+                    {% endif %}
+                    <a href="/student/badges" class="action-btn" style="background: #f3f4f6; color: #374151;">🏅 Badges</a>
+                    <a href="/passport" class="action-btn" style="background: linear-gradient(135deg, #1e3a5f, #0d2137); color: #c9a227;">📋 My Learning Plan</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Screen -->
+        <div id="loadingScreen" class="text-center py-20">
+            <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto"></div>
+            <p class="mt-4 text-xl text-gray-700">Loading...</p>
+        </div>
+
+        <!-- Topic Selection Screen -->
+        <div id="topicScreen" class="hidden">
+            <div class="text-center mb-8">
+                <h2 class="text-4xl font-bold text-gray-800 mb-2">🚀 Your Learning Journey</h2>
+                <p class="text-lg text-gray-600">Choose a topic to practice</p>
+            </div>
+
+            <!-- Main Layout: 3/4 Topics, 1/4 Sidebar -->
+            <div class="flex flex-col lg:flex-row gap-6 main-layout">
+                
+                <!-- LEFT: Main Topics Area (3/4) -->
+                <div class="w-full lg:w-3/4 topics-column">
+                    <!-- Learning Paths Container (Dynamically generated by Junior Cycle strands) -->
+                    <div class="space-y-8" id="learningPathsContainer">
+                        <!-- Strand cards will be generated dynamically based on database strands -->
+                    </div>
+                    <!-- Hidden div to maintain progressSummary element for JS compatibility -->
+                    <div id="progressSummary" class="hidden"></div>
+                </div>
+
+                <!-- RIGHT: Sidebar (1/4) -->
+                <div class="w-full lg:w-1/4 space-y-4 sidebar-column">
+                    
+                    <!-- Your Stats Card -->
+                    <div class="sidebar-card stats-card">
+                        <div class="sidebar-card-header">
+                            <span class="sidebar-card-icon">🏆</span>
+                            <span class="sidebar-card-title">Your Stats</span>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span id="stat-level" class="stat-value">-</span>
+                                <span class="stat-label">Level</span>
+                            </div>
+                            <div class="stat-item">
+                                <span id="stat-points" class="stat-value">-</span>
+                                <span class="stat-label">Points</span>
+                            </div>
+                            <div class="stat-item">
+                                <span id="stat-badges" class="stat-value">-</span>
+                                <span class="stat-label">Badges</span>
+                            </div>
+                            <div class="stat-item">
+                                <span id="stat-quizzes" class="stat-value">-</span>
+                                <span class="stat-label">Quizzes</span>
+                            </div>
+                            <div class="stat-item" id="streak-box" title="Complete quizzes on consecutive school days!">
+                                <span id="stat-streak" class="stat-value">-</span>
+                                <span class="stat-label">🔥 Streak</span>
+                            </div>
+                            <div class="stat-item">
+                                <span id="stat-accuracy" class="stat-value">-</span>
+                                <span class="stat-label">Accuracy</span>
+                            </div>
+                        </div>
+                        <div id="recent-badges-container" class="recent-badges-mini" style="display: none;">
+                            <div class="text-xs text-gray-500 mb-1">Recent:</div>
+                            <div id="recent-badges" class="flex flex-wrap gap-1"></div>
+                        </div>
+                        <!-- View All Badges Button -->
+                        <div style="margin-top: 12px; text-align: center;">
+                            <a href="/student/badges" style="display: inline-block; padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border-radius: 8px; font-size: 0.85rem; text-decoration: none; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+                                🏅 View All Badges
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- ========== TEAM PLAY CARD (Below Badges, Above Resources) ========== -->
+                    <div class="sidebar-card team-play-mini {% if session.get('is_guest') and not session.get('guest_code') %}guest-disabled{% endif %}" 
+                         style="background: linear-gradient(135deg, #7c3aed 0%, #6366f1 100%); position: relative; overflow: hidden;">
+                        <!-- Animated background sparkle -->
+                        <div style="position: absolute; top: -50%; right: -50%; width: 100%; height: 100%; background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%); animation: teamPlayGlow 3s ease-in-out infinite;"></div>
+                        
+                        <div class="sidebar-card-header" style="padding-bottom: 8px; position: relative; z-index: 1;">
+                            <span class="sidebar-card-icon">👥</span>
+                            <span class="sidebar-card-title" style="color: white;">Team Play</span>
+                            <span style="background: #fbbf24; color: #7c2d12; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: bold;">NEW</span>
+                        </div>
+                        
+                        <!-- Bonus Points Banner -->
+                        <div style="background: rgba(251, 191, 36, 0.2); border: 1px solid rgba(251, 191, 36, 0.5); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; position: relative; z-index: 1;">
+                            <span style="font-size: 1.2rem;">🎁</span>
+                            <span style="color: #fef3c7; font-size: 0.75rem; font-weight: 600;">Earn up to <strong style="color: #fbbf24;">50% BONUS</strong> points!</span>
+                        </div>
+                        
+                        <p style="color: rgba(255,255,255,0.85); font-size: 0.8rem; margin-bottom: 10px; position: relative; z-index: 1;">
+                            {% if session.get('is_guest') and not session.get('guest_code') %}Get guest code to unlock{% else %}Quiz with friends & earn team bonuses{% endif %}
+                        </p>
+                        
+                        <!-- Bonus Tiers -->
+                        <div style="display: flex; justify-content: space-between; background: rgba(0,0,0,0.2); border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; font-size: 0.7rem; position: relative; z-index: 1;">
+                            <div style="text-align: center;"><span style="opacity: 0.8;">2 players</span><br><span style="color: #fbbf24; font-weight: 700;">+10%</span></div>
+                            <div style="text-align: center;"><span style="opacity: 0.8;">3 players</span><br><span style="color: #fbbf24; font-weight: 700;">+25%</span></div>
+                            <div style="text-align: center;"><span style="opacity: 0.8;">4 players</span><br><span style="color: #fbbf24; font-weight: 700;">+50%</span></div>
+                        </div>
+                        
+                        <div style="display: flex; gap: 8px; position: relative; z-index: 1;">
+                            <button onclick="{% if session.get('is_guest') and not session.get('guest_code') %}showTeamPlayGuestMessage(){% else %}showTeamPlaySetup(){% endif %}" 
+                                    style="flex: 1; padding: 10px 12px; background: white; color: #7c3aed; border: none; border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: transform 0.2s;"
+                                    onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+                                <i class="fas fa-plus mr-1"></i>Create
+                            </button>
+                            <button onclick="{% if session.get('is_guest') and not session.get('guest_code') %}showTeamPlayGuestMessage(){% else %}showJoinTeamPlay(){% endif %}" 
+                                    style="flex: 1; padding: 10px 12px; background: rgba(255,255,255,0.2); color: white; border: 2px solid white; border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: transform 0.2s;"
+                                    onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+                                <i class="fas fa-sign-in-alt mr-1"></i>Join
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Additional Resources Panel -->
+                    <div class="sidebar-card resources-panel">
+                        <div class="sidebar-card-header">
+                            <span class="sidebar-card-icon">📚</span>
+                            <span class="sidebar-card-title">Additional Resources</span>
+                        </div>
+                        <div class="resources-buttons-container" id="resourcesContainer">
+                            <!-- Resources loaded dynamically -->
+                            <div class="text-sm text-gray-500 text-center py-2">Loading resources...</div>
+                        </div>
+                    </div>
+
+                    <!-- Smart Quiz Mini Card (Adaptive Learning) -->
+                    <div class="sidebar-card smart-quiz-mini {% if session.get('is_guest') and not session.get('guest_code') %}guest-disabled{% endif %}" 
+                         onclick="{% if session.get('is_guest') and not session.get('guest_code') %}showSmartQuizGuestMessage(){% else %}showSmartQuizModal(){% endif %}"
+                         title="{% if session.get('is_guest') and not session.get('guest_code') %}Get a guest code to unlock Smart Quiz!{% else %}AI-powered personalised quiz{% endif %}">
+                        <div class="sidebar-card-icon">🧠</div>
+                        <div class="sidebar-card-content">
+                            <h4 class="sidebar-card-title">Smart Quiz</h4>
+                            <p class="sidebar-card-desc">{% if session.get('is_guest') and not session.get('guest_code') %}Get guest code to unlock{% else %}Personalised for you{% endif %}</p>
+                        </div>
+                        <i class="fas fa-chevron-right sidebar-card-arrow"></i>
+                    </div>
+
+                    <!-- Adaptive Quiz Mini Card (10-Level Progression) -->
+                    <div class="sidebar-card adaptive-quiz-mini {% if session.get('is_guest') and not session.get('guest_code') %}guest-disabled{% endif %}" 
+                         onclick="{% if session.get('is_guest') and not session.get('guest_code') %}showAdaptiveQuizGuestMessage(){% else %}showAdaptiveQuizModal(){% endif %}"
+                         title="{% if session.get('is_guest') and not session.get('guest_code') %}Get a guest code to unlock Adaptive Quiz!{% else %}Level up through 10 difficulty stages{% endif %}">
+                        <div class="sidebar-card-icon">🎯</div>
+                        <div class="sidebar-card-content">
+                            <h4 class="sidebar-card-title">Adaptive Quiz</h4>
+                            <p class="sidebar-card-desc">{% if session.get('is_guest') and not session.get('guest_code') %}Get guest code to unlock{% else %}10 levels of progression{% endif %}</p>
+                        </div>
+                        <i class="fas fa-chevron-right sidebar-card-arrow"></i>
+                    </div>
+
+                    <!-- Quick Play Mini Card -->
+                    <div class="sidebar-card quick-play-mini" onclick="showQuickPlayModal()">
+                        <div class="sidebar-card-icon">⚡</div>
+                        <div class="sidebar-card-content">
+                            <h4 class="sidebar-card-title">Quick Play</h4>
+                            <p class="sidebar-card-desc">10 random questions</p>
+                        </div>
+                        <i class="fas fa-chevron-right sidebar-card-arrow"></i>
+                    </div>
+
+                    <!-- Weekly Challenge Mini Card -->
+                    <div class="sidebar-card weekly-challenge-mini">
+                        <div class="sidebar-card-header">
+                            <span class="sidebar-card-icon">📅</span>
+                            <span class="sidebar-card-title">Weekly Challenge</span>
+                        </div>
+                        <div class="challenge-mini-progress">
+                            <div class="challenge-mini-bar" id="challengeProgressBarMini" style="width: 0%;"></div>
+                        </div>
+                        <div class="challenge-mini-status">
+                            <span id="challengeProgressTextMini">0/3 Goals</span>
+                            <span class="challenge-mini-timer"><i class="fas fa-clock"></i> <span id="challengeTimeLeftMini">--</span></span>
+                        </div>
+                        <div class="challenge-mini-goals" id="challengeGoalsMini">
+                            <div class="challenge-mini-goal" id="goal1Mini" title="Complete 5 quizzes (+50 pts)">📝</div>
+                            <div class="challenge-mini-goal" id="goal2Mini" title="Score 80%+ three times (+75 pts)">🎯</div>
+                            <div class="challenge-mini-goal" id="goal3Mini" title="Get a 5-streak (+100 pts)">🔥</div>
+                        </div>
+                    </div>
+
+                    <!-- Leaderboard Mini Card -->
+                    <div class="sidebar-card leaderboard-mini">
+                        <div class="sidebar-card-header">
+                            <span class="sidebar-card-icon">🏆</span>
+                            <span class="sidebar-card-title">Top Learners</span>
+                            <button class="leaderboard-expand-btn" onclick="toggleLeaderboardExpand()" title="Show more">
+                                <i class="fas fa-chevron-down" id="leaderboardExpandIcon"></i>
+                            </button>
+                        </div>
+                        <div class="leaderboard-tabs-mini">
+                            <button class="lb-tab-mini active" onclick="switchLeaderboard('weekly', event)">Week</button>
+                            <button class="lb-tab-mini" onclick="switchLeaderboard('alltime', event)">All Time</button>
+                        </div>
+                        <div class="leaderboard-mini-list" id="leaderboardListMini">
+                            <!-- Top 3 shown by default -->
+                        </div>
+                        <div class="leaderboard-expanded-list hidden" id="leaderboardListExpanded">
+                            <!-- Positions 4-20 shown when expanded -->
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- Difficulty Selection Screen -->
+        <div id="difficultyScreen" class="hidden">
+            <div class="max-w-4xl mx-auto">
+                <button onclick="backToTopics()" class="mb-6 bg-white text-gray-700 px-6 py-2 rounded-lg shadow hover:shadow-md transition-all">
+                    ← Back to Topics
+                </button>
+
+                <div class="text-center mb-12">
+                    <h2 id="selectedTopicTitle" class="text-4xl font-bold text-gray-800 mb-4"></h2>
+                    <p class="text-xl text-gray-600">Select your level</p>
+                </div>
+
+                <div id="difficultyButtonsContainer" class="grid md:grid-cols-3 gap-6">
+                    <!-- Difficulty buttons will be generated dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Quiz Screen -->
+        <div id="quizScreen" class="hidden mx-auto" style="max-width: 1400px;">
+            <!-- Compact Quiz Header Bar -->
+            <div class="compact-quiz-header">
+                <div class="quiz-info">
+                    <button onclick="backToDifficulty()" class="back-btn">
+                        <i class="fas fa-arrow-left"></i> Exit
+                    </button>
+                    <span id="compactTopicTitle" class="topic-title"></span>
+                    <span id="compactQuestionBadge" class="question-badge">Q1/20</span>
+                    <span id="compactScoreBadge" class="score-badge">Score: 0/20</span>
+                    <!-- Enhanced Hot Streak Display -->
+                    <div id="hotStreakDisplay" class="hot-streak-display streak-cold">
+                        <span class="streak-flame">🔥</span>
+                        <span id="streakCount">0</span>
+                        <span id="streakLabel">streak</span>
+                        <span id="streakMultiplierBadge" class="streak-multiplier" style="display: none;">1.5x</span>
+                    </div>
+                    <!-- Mini Online Counter in Quiz -->
+                    <div class="online-counter-mini" id="onlineCounterMini" title="Students online now">
+                        <span class="pulse-dot"></span>
+                        <span id="onlineCountMini">--</span>
+                    </div>
+                </div>
+                <div class="tools">
+                    <!-- Sound Toggle in Quiz -->
+                    <button onclick="toggleSoundEffects()" class="tool-btn sound-toggle" id="soundToggleBtnQuiz" title="Toggle Sound Effects">
+                        <i class="fas fa-volume-up" id="soundIconQuiz"></i>
+                    </button>
+                    <!-- Hint Button (icon only) -->
+                    <button id="compactHintBtn" onclick="showHint()" class="tool-btn hint-btn" title="Show Hint (-50% points)" style="display: none;">
+                        <i class="fas fa-lightbulb"></i>
+                    </button>
+                    <!-- Calculator Button (icon only) -->
+                    <button onclick="toggleCalculator()" class="tool-btn" title="Calculator" id="compactCalcBtn">
+                        <i class="fas fa-calculator"></i>
+                    </button>
+                    <!-- Avatar (if enabled) -->
+                    {% if feature_flags.AVATAR_SYSTEM_ENABLED %}
+                    <div id="quiz-header-avatar" class="avatar-container avatar-small cursor-pointer" onclick="window.location.href='/avatar/shop'" title="Customize your avatar" style="width: 36px; height: 36px;"></div>
+                    {% endif %}
+                </div>
+            </div>
+            <!-- Compact Progress Bar -->
+            <div class="compact-progress">
+                <div id="compactProgressBar" class="compact-progress-fill" style="width: 0%"></div>
+            </div>
+
+            <!-- Flex container for side-by-side layout -->
+            <div class="flex flex-col lg:flex-row gap-6 px-4 py-4">
+                
+                <!-- WHO AM I: Reveal Grid - Left side on desktop, BELOW question on mobile -->
+                <div id="who-am-i-container" class="who-am-i-container w-full lg:w-5/12 flex-shrink-0 order-2 lg:order-1" style="display: none;">
+                    <div class="text-center">
+                        <i class="fas fa-spinner fa-spin fa-2x text-white"></i>
+                        <p class="text-white mt-2">Loading mystery image...</p>
+                    </div>
+                </div>
+
+                <!-- Question Card - Right side on desktop, ABOVE image on mobile -->
+                <div id="questionCard" class="bg-white rounded-2xl p-6 shadow-2xl flex-1 order-1 lg:order-2">
+                    <!-- Hidden elements for compatibility -->
+                    <div class="hidden">
+                        <h2 id="quizTopicTitle"></h2>
+                        <span id="currentQuestion">1</span>
+                        <span id="totalQuestions">20</span>
+                        <div id="progressBar"></div>
+                        <span id="score">0</span>
+                        <span id="total">20</span>
+                    </div>
+                    
+                    <!-- Streak Display (now shown in header, but keep for JS compatibility) -->
+                    <div id="streakDisplay" class="hidden">
+                        <span id="streakEmoji">🔥</span>
+                        <span id="streakText"></span>
+                        <span id="streakMultiplier"></span>
+                    </div>
+
+                    <!-- Question Content -->
+                    <div class="quiz-content-wrapper">
+                        <div class="quiz-main-content">
+                            <!-- Question Image (if present) - SIZE UNCHANGED -->
+                            <div id="questionImageContainer" class="hidden mb-4">
+                                <img id="questionImage" src="" alt="Question image" class="max-w-full max-h-64 mx-auto rounded-lg shadow-lg border-2 border-gray-200">
+                                <p id="questionImageCaption" class="text-sm text-gray-500 text-center mt-2 italic"></p>
+                            </div>
+                            
+                            <!-- Question Text - SIZE UNCHANGED -->
+                            <h3 id="questionText" class="text-3xl font-semibold text-gray-800 mb-6" style="white-space: pre-wrap; line-height: 1.8;"></h3>
+                            
+                            <!-- Hint Container (for compatibility) -->
+                            <div id="hintContainer" class="hidden"></div>
+                            
+                            <!-- Hint Text (shown when hint is revealed) -->
+                            <div id="hintText" class="hidden mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800">
+                                <i class="fas fa-lightbulb text-yellow-500 mr-2"></i>
+                                <span id="hintContent"></span>
+                            </div>
+                            
+                            <!-- Answer Options -->
+                            <div id="optionsContainer" class="space-y-3"></div>
+                            
+                            <!-- Inline Feedback + Next Button Row -->
+                            <div id="feedbackNextRow" class="feedback-next-row hidden">
+                                <div id="feedbackInline" class="feedback-inline correct">
+                                    <span class="feedback-icon">✅</span>
+                                    <div>
+                                        <span id="feedbackText" class="feedback-text correct">Correct!</span>
+                                        <span id="feedbackStreak" class="streak-bonus"></span>
+                                    </div>
+                                </div>
+                                <button id="nextBtnInline" onclick="nextQuestion()" class="next-btn-inline">
+                                    Next →
+                                </button>
+                            </div>
+                            
+                            <!-- Explanation Section (collapsible) -->
+                            <div id="explanationSection" class="explanation-section hidden">
+                                <div class="explanation-toggle" onclick="toggleExplanation()">
+                                    <span><i class="fas fa-book-open mr-2"></i>View Explanation</span>
+                                    <i id="explanationArrow" class="fas fa-chevron-down"></i>
+                                </div>
+                                <div id="explanationContent" class="explanation-content hidden"></div>
+                            </div>
+                            
+                            <!-- Hidden elements for backwards compatibility -->
+                            <div id="feedbackContainer" class="hidden"></div>
+                            <button id="nextButton" class="hidden"></button>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+
+        <!-- Results Screen -->
+        <div id="resultsScreen" class="hidden max-w-2xl mx-auto">
+            <div class="bg-white rounded-2xl p-8 shadow-2xl text-center">
+                <!-- AVATAR: Show on results screen -->
+                {% if feature_flags.AVATAR_SYSTEM_ENABLED %}
+                <div id="results-avatar-container" class="mb-4">
+                    <div id="results-avatar" class="avatar-container avatar-large mx-auto" style="border: 4px solid #ffd700; animation: results-glow 2s ease-in-out infinite;"></div>
+                </div>
+                
+                <!-- New Item Unlocked Banner -->
+                <div id="new-unlock-banner" class="hidden bg-gradient-to-r from-yellow-400 to-orange-400 text-gray-800 rounded-xl p-4 mb-4 animate-pulse">
+                    <div class="flex items-center justify-center gap-2">
+                        <i class="fas fa-gift text-2xl"></i>
+                        <div>
+                            <p class="font-bold">New item unlocked!</p>
+                            <p id="unlock-message" class="text-sm">You can now afford new items in the Avatar Shop!</p>
+                        </div>
+                        <a href="/avatar/shop" class="bg-gray-800 text-white px-3 py-1 rounded-lg text-sm hover:bg-gray-700 ml-2">Visit Shop</a>
+                    </div>
+                </div>
+                {% else %}
+                <i class="fas fa-trophy text-yellow-500 text-8xl mb-6"></i>
+                {% endif %}
+                <h2 class="text-4xl font-bold text-gray-800 mb-4">Quiz Complete!</h2>
+                <div id="percentage" class="text-6xl font-bold text-purple-600 mb-4"></div>
+                <p id="scoreText" class="text-2xl text-gray-700 mb-8"></p>
+                <div id="performanceMessage" class="text-xl font-semibold mb-6"></div>
+
+                <!-- WHO AM I: Bonus display -->
+                <div id="who-am-i-bonus-display" style="display: none;" class="bg-yellow-100 border-2 border-yellow-500 rounded-xl p-4 mb-6">
+                    <div class="flex items-center justify-center">
+                        <i class="fas fa-star text-yellow-600 text-3xl mr-3"></i>
+                        <div>
+                            <p class="font-bold text-lg text-yellow-800">Who Am I? Bonus!</p>
+                            <p class="text-yellow-700">+<span id="bonus-points-display">0</span> points</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DINO BONUS: Unlock for 85%+ scores -->
+                <div id="dino-bonus-unlock" class="bonus-question-unlock" style="display: none;">
+                    <h3>🦕 Bonus Challenge Unlocked!</h3>
+                    <p>Your excellent score (85%+) has unlocked a Dinosaur Challenge!</p>
+                    <p class="text-sm mb-3">Identify the dinosaur correctly for <strong>+100 bonus points!</strong></p>
+                    <div class="bonus-buttons">
+                        <button onclick="startBonusQuestion()" class="try-btn">
+                            <i class="fas fa-dragon"></i> Try Bonus Question
+                        </button>
+                        <button onclick="skipBonusQuestion()" class="skip-btn">
+                            Skip
+                        </button>
+                    </div>
+                </div>
+
+                <!-- PUZZLE OF THE WEEK: Answer Reveal Offer -->
+                <div id="puzzle-answer-offer" style="display: none;" class="bg-gradient-to-r from-purple-100 to-indigo-100 border-2 border-purple-300 rounded-xl p-4 mb-6">
+                    <div class="flex items-center justify-center mb-3">
+                        <i class="fas fa-puzzle-piece text-purple-600 text-2xl mr-3"></i>
+                        <p class="font-bold text-lg text-purple-800">🧩 Puzzle of the Week</p>
+                    </div>
+                    <p class="text-purple-700 mb-3">Ready to see the answer to this week's puzzle?</p>
+                    <div class="flex justify-center gap-3">
+                        <button onclick="revealPuzzleAnswer()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition">
+                            <i class="fas fa-eye mr-2"></i>Reveal Answer
+                        </button>
+                        <button onclick="dismissPuzzleAnswerOffer()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition">
+                            Not Now
+                        </button>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <button onclick="retryQuiz()" class="w-full bg-purple-600 text-white py-4 rounded-xl font-semibold hover:bg-purple-700 transition-colors">
+                        Try Again
+                    </button>
+                    <button onclick="refreshAndShowDifficulty()" class="w-full bg-blue-500 text-white py-4 rounded-xl font-semibold hover:bg-blue-600 transition-colors">
+                        Try Another Level
+                    </button>
+                    <button onclick="backToTopics()" class="w-full bg-gray-200 text-gray-800 py-4 rounded-xl font-semibold hover:bg-gray-300 transition-colors">
+                        Choose Another Topic
+                    </button>
+                    {% if feature_flags.AVATAR_SYSTEM_ENABLED %}
+                    <a href="/avatar/shop" class="block w-full bg-gradient-to-r from-pink-500 to-purple-500 text-white py-4 rounded-xl font-semibold hover:from-pink-600 hover:to-purple-600 transition-colors">
+                        🎨 Avatar Shop
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Student App JavaScript (extracted for maintainability) -->
+    <script src="{{ url_for('static', filename='js/student_app_main.js') }}"></script>
+
+    <!-- Flag Question Modal -->
+    <div id="flagQuestionModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-8 max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold">Report Question Issue</h2>
+                <button onclick="hideFlagModal()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+
+            <div id="flagQuestionContent" class="mb-6">
+                <p class="text-gray-700 mb-4" id="flagQuestionText"></p>
+            </div>
+
+            <form id="flagForm" class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 font-semibold mb-2">Issue Type:</label>
+                    <select id="flagType" required class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500">
+                        <option value="">-- Select issue type --</option>
+                        <option value="incorrect">Incorrect Answer</option>
+                        <option value="ambiguous">Ambiguous/Unclear Question</option>
+                        <option value="typo">Typo or Grammar Error</option>
+                        <option value="other">Other Issue</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-gray-700 font-semibold mb-2">Description:</label>
+                    <textarea id="flagDescription" required rows="4"
+                              class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              placeholder="Please describe the issue in detail..."></textarea>
+                </div>
+
+                <div class="flex gap-4">
+                    <button type="submit" class="flex-1 bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 font-semibold">
+                        <i class="fas fa-flag mr-2"></i>Submit Report
+                    </button>
+                    <button type="button" onclick="hideFlagModal()" class="flex-1 bg-gray-300 text-gray-800 py-3 rounded-lg hover:bg-gray-400 font-semibold">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- Password Change Modal -->
+    <div id="passwordModal" class="password-modal hidden">
+        <div class="password-modal-content">
+            <div class="password-modal-header">
+                <h2><i class="fas fa-key mr-2"></i>Change Password</h2>
+                <button onclick="closePasswordModal()" class="close-btn">&times;</button>
+            </div>
+            <form id="passwordForm" onsubmit="changePassword(event)" class="password-form">
+                <div class="form-group">
+                    <label for="currentPassword">
+                        <i class="fas fa-lock mr-2"></i>Current Password
+                    </label>
+                    <input
+                        type="password"
+                        id="currentPassword"
+                        required
+                        minlength="6"
+                        class="form-input"
+                        placeholder="Enter current password"
+                    >
+                </div>
+                <div class="form-group">
+                    <label for="newPassword">
+                        <i class="fas fa-key mr-2"></i>New Password
+                    </label>
+                    <input
+                        type="password"
+                        id="newPassword"
+                        required
+                        minlength="6"
+                        class="form-input"
+                        placeholder="Enter new password (min 6 characters)"
+                    >
+                    <small class="form-hint">Minimum 6 characters</small>
+                </div>
+                <div class="form-group">
+                    <label for="confirmPassword">
+                        <i class="fas fa-check-circle mr-2"></i>Confirm New Password
+                    </label>
+                    <input
+                        type="password"
+                        id="confirmPassword"
+                        required
+                        minlength="6"
+                        class="form-input"
+                        placeholder="Confirm new password"
+                    >
+                </div>
+                <div id="passwordError" class="error-message hidden"></div>
+                <div id="passwordSuccess" class="success-message hidden"></div>
+                <div class="form-actions">
+                    <button type="button" onclick="closePasswordModal()" class="btn-cancel">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn-submit">
+                        <i class="fas fa-check mr-2"></i>Change Password
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Password Modal Functions
+        function openPasswordModal() {
+            document.getElementById('passwordModal').classList.remove('hidden');
+            document.getElementById('currentPassword').focus();
+        }
+
+        function closePasswordModal() {
+            document.getElementById('passwordModal').classList.add('hidden');
+            document.getElementById('passwordForm').reset();
+            document.getElementById('passwordError').classList.add('hidden');
+            document.getElementById('passwordSuccess').classList.add('hidden');
+        }
+
+        async function changePassword(event) {
+            event.preventDefault();
+
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+
+            const errorDiv = document.getElementById('passwordError');
+            const successDiv = document.getElementById('passwordSuccess');
+
+            // Clear previous messages
+            errorDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
+
+            // Validate passwords match
+            if (newPassword !== confirmPassword) {
+                errorDiv.textContent = 'New passwords do not match';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            // Validate password length
+            if (newPassword.length < 6) {
+                errorDiv.textContent = 'Password must be at least 6 characters long';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword,
+                        confirm_password: confirmPassword
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    successDiv.textContent = data.message;
+                    successDiv.classList.remove('hidden');
+                    document.getElementById('passwordForm').reset();
+
+                    // Auto-close after 2 seconds
+                    setTimeout(() => {
+                        closePasswordModal();
+                    }, 2000);
+                } else {
+                    errorDiv.textContent = data.error || 'Failed to change password';
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error changing password:', error);
+                errorDiv.textContent = 'An error occurred. Please try again.';
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('click', function(event) {
+            const modal = document.getElementById('passwordModal');
+            if (event.target === modal) {
+                closePasswordModal();
+            }
+        });
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                const modal = document.getElementById('passwordModal');
+                if (!modal.classList.contains('hidden')) {
+                    closePasswordModal();
+                }
+            }
+        });
+
+
+        // =====================================================
+        // MILESTONE/ACHIEVEMENT SYSTEM MOVED TO EXTERNAL MODULE
+        // See: /static/js/agentmath-modules.js
+        // =====================================================
+
+</script>
+
+
+<!-- ========================================== -->
+<!-- TUTORIAL SYSTEM - Added for splash screens -->
+<!-- ========================================== -->
+
+<!-- Tutorial Data -->
+
+<script>
+// =====================================================
+// TUTORIALS DATA MOVED TO EXTERNAL MODULE  
+// See: /static/js/agentmath-modules.js
+// =====================================================
+</script>
+
+<!-- TUTORIAL MODAL COMPONENT -->
+<!-- Add this to student_app.html, just before the closing 
+<!-- Smart Quiz Modal (Adaptive Learning) -->
+<div id="smartQuizModal" class="fixed inset-0 bg-black bg-opacity-70 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 transform transition-all">
+        <div class="text-center mb-6">
+            <div class="text-6xl mb-4">🧠</div>
+            <h2 class="text-2xl font-bold text-gray-800">Smart Quiz</h2>
+            <p class="text-gray-600 mt-2">AI-powered personalised learning</p>
+        </div>
+        
+        <!-- Mode Selection -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Choose your focus:</label>
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="setSmartQuizMode('auto')" class="smart-mode-btn p-3 rounded-lg border-2 border-green-400 bg-green-50 transition-all text-left" data-mode="auto">
+                    <div class="text-xl">🎯</div>
+                    <div class="text-sm font-medium">Auto</div>
+                    <div class="text-xs text-gray-500">Best overall pick</div>
+                </button>
+                <button onclick="setSmartQuizMode('review')" class="smart-mode-btn p-3 rounded-lg border-2 border-gray-200 hover:border-green-400 transition-all text-left" data-mode="review">
+                    <div class="text-xl">🔄</div>
+                    <div class="text-sm font-medium">Review</div>
+                    <div class="text-xs text-gray-500">Refresh memory</div>
+                </button>
+                <button onclick="setSmartQuizMode('practice')" class="smart-mode-btn p-3 rounded-lg border-2 border-gray-200 hover:border-green-400 transition-all text-left" data-mode="practice">
+                    <div class="text-xl">💪</div>
+                    <div class="text-sm font-medium">Practice</div>
+                    <div class="text-xs text-gray-500">Work on weak areas</div>
+                </button>
+                <button onclick="setSmartQuizMode('challenge')" class="smart-mode-btn p-3 rounded-lg border-2 border-gray-200 hover:border-green-400 transition-all text-left" data-mode="challenge">
+                    <div class="text-xl">🚀</div>
+                    <div class="text-sm font-medium">Challenge</div>
+                    <div class="text-xs text-gray-500">Push your limits</div>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Loading State -->
+        <div id="smartQuizLoading" class="bg-gray-100 rounded-xl p-6 mb-6 text-center">
+            <div class="animate-spin text-4xl mb-2">⚙️</div>
+            <p class="text-gray-600">Analysing your progress...</p>
+        </div>
+        
+        <!-- Error State -->
+        <div id="smartQuizError" class="hidden bg-red-50 text-red-600 rounded-xl p-4 mb-6 text-center">
+            Error loading recommendation
+        </div>
+        
+        <!-- Recommendation Content -->
+        <div id="smartQuizContent" class="hidden bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 mb-6">
+            <h3 class="font-bold text-gray-800 mb-3">📊 Recommended for You:</h3>
+            <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-600">Topic:</span>
+                    <span id="smartQuizTopic" class="font-bold text-gray-800">Loading...</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-600">Difficulty:</span>
+                    <span id="smartQuizDifficulty" class="px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700">Loading...</span>
+                </div>
+                <div id="smartQuizMasteryContainer" class="hidden text-center pt-2 border-t border-green-200">
+                    <span id="smartQuizMastery" class="text-sm text-gray-600">Current mastery: 0%</span>
+                </div>
+                <div class="pt-2 border-t border-green-200">
+                    <p id="smartQuizReason" class="text-sm text-gray-600 italic">Loading reason...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex gap-3">
+            <button onclick="closeSmartQuizModal()" class="flex-1 py-3 px-6 rounded-xl border-2 border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-all">
+                Cancel
+            </button>
+            <button onclick="startSmartQuiz()" class="flex-1 py-3 px-6 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold hover:from-green-600 hover:to-emerald-600 transition-all">
+                🧠 Start!
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Tutorial Splash Screen Modal -->
+<div id="tutorialModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" style="display: none;">
+    <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center">
+                <i class="fas fa-book-open text-2xl mr-3"></i>
+                <h2 id="tutorialTitle" class="text-2xl font-bold">Tutorial</h2>
+            </div>
+            <button onclick="closeTutorial()" class="text-white hover:text-gray-200 text-2xl">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <!-- Content (Scrollable) -->
+        <div class="flex-1 overflow-y-auto p-6">
+            <!-- Introduction -->
+            <div id="tutorialIntro" class="mb-6 p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+                <!-- Dynamic content -->
+            </div>
+            
+            <!-- Key Principles -->
+            <div class="mb-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-3 flex items-center">
+                    <i class="fas fa-lightbulb text-yellow-500 mr-2"></i>
+                    Key Principles
+                </h3>
+                <div id="tutorialPrinciples" class="space-y-3">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+            
+            <!-- Worked Examples -->
+            <div class="mb-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-3 flex items-center">
+                    <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                    Worked Examples
+                </h3>
+                <div id="tutorialExamples" class="space-y-4">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+            
+            <!-- Tips -->
+            <div class="mb-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-3 flex items-center">
+                    <i class="fas fa-star text-purple-500 mr-2"></i>
+                    Quick Tips
+                </h3>
+                <div id="tutorialTips" class="space-y-2">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="bg-gray-50 px-6 py-4 border-t">
+            <div class="flex items-center justify-between">
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" id="dontShowAgain" class="mr-2 w-4 h-4">
+                    <span class="text-sm text-gray-600">Don't show this automatically again</span>
+                </label>
+                <button onclick="startTutorialQuiz()" class="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:shadow-lg transition-all">
+                    Got It - Start Quiz! 🚀
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Floating Help Button (shown during quiz) -->
+<button id="tutorialHelpBtn" class="fixed bottom-6 left-6 bg-purple-600 text-white px-4 py-3 rounded-full shadow-lg hover:shadow-xl transition-all z-40 hidden" onclick="showTutorialModal()">
+    <i class="fas fa-book-open mr-2"></i>
+    Need Help?
+</button>
+
+
+<!-- Tutorial Manager -->
+<script>
+/**
+ * TUTORIAL MANAGER
+ * 
+ * Handles showing/hiding tutorials based on topic and difficulty.
+ * Uses localStorage to remember user preferences.
+ * 
+ * HOW TO USE:
+ * 1. Include tutorial_data.js first
+ * 2. Include this script
+ * 3. Call initTutorial(topic, difficulty) when starting a quiz
+ * 
+ * Example: initTutorial('introductory_algebra', 'beginner')
+ */
+
+class TutorialManager {
+    constructor() {
+        this.currentTopic = null;
+        this.currentDifficulty = null;
+        this.storageKey = 'agentmath_tutorial_prefs';
+    }
+    
+    /**
+     * Initialize tutorial for a topic/difficulty
+     * Shows tutorial if user hasn't disabled it
+     */
+    initTutorial(topic, difficulty) {
+        this.currentTopic = topic;
+        this.currentDifficulty = difficulty;
+        
+        // Check if tutorial exists for this topic/difficulty
+        // Safety check: window.TUTORIALS might not be loaded yet
+        if (!window.TUTORIALS || !window.TUTORIALS[topic] || !window.TUTORIALS[topic][difficulty]) {
+            console.log(`No tutorial available for ${topic} - ${difficulty}`);
+            return;
+        }
+        
+        // Check if user has disabled auto-show for this combination
+        if (!this.shouldShowAuto(topic, difficulty)) {
+            console.log(`Tutorial auto-show disabled for ${topic} - ${difficulty}`);
+            this.showHelpButton(); // Still show the help button
+            return;
+        }
+        
+        // Show the tutorial
+        this.showTutorial(topic, difficulty);
+    }
+    
+    /**
+     * Check if tutorial should auto-show
+     */
+    shouldShowAuto(topic, difficulty) {
+        const prefs = this.getPreferences();
+        const key = `${topic}_${difficulty}`;
+        return !prefs[key]; // Show if NOT in preferences (not disabled)
+    }
+    
+    /**
+     * Get user preferences from localStorage
+     */
+    getPreferences() {
+        const stored = localStorage.getItem(this.storageKey);
+        return stored ? JSON.parse(stored) : {};
+    }
+    
+    /**
+     * Save preference to not show tutorial auto for this topic/difficulty
+     */
+    savePreference(topic, difficulty, dontShow) {
+        const prefs = this.getPreferences();
+        const key = `${topic}_${difficulty}`;
+        
+        if (dontShow) {
+            prefs[key] = true;
+        } else {
+            delete prefs[key];
+        }
+        
+        localStorage.setItem(this.storageKey, JSON.stringify(prefs));
+    }
+    
+    /**
+     * Show the tutorial modal
+     */
+    showTutorial(topic, difficulty) {
+        topic = topic || this.currentTopic;
+        difficulty = difficulty || this.currentDifficulty;
+        
+        // Safety check
+        if (!window.TUTORIALS || !window.TUTORIALS[topic] || !window.TUTORIALS[topic][difficulty]) {
+            console.log(`No tutorial data found for ${topic} - ${difficulty}`);
+            return;
+        }
+        
+        const tutorialData = window.TUTORIALS[topic][difficulty];
+        if (!tutorialData) {
+            console.error(`No tutorial data found for ${topic} - ${difficulty}`);
+            return;
+        }
+        
+        // Populate modal content
+        this.populateModal(tutorialData);
+        
+        // Show modal
+        const modal = document.getElementById('tutorialModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        
+        // Hide help button while modal is open
+        this.hideHelpButton();
+    }
+    
+    /**
+     * Populate the modal with tutorial content
+     */
+    populateModal(data) {
+        // Title
+        document.getElementById('tutorialTitle').textContent = data.title;
+        
+        // Introduction
+        document.getElementById('tutorialIntro').innerHTML = `
+            <p class="text-gray-700">${data.introduction}</p>
+        `;
+        
+        // Principles
+        const principlesHTML = data.principles.map(principle => `
+            <div class="tutorial-principle">
+                <h4 class="font-semibold text-purple-700 mb-2">${principle.title}</h4>
+                <p class="text-gray-700">${principle.content}</p>
+            </div>
+        `).join('');
+        document.getElementById('tutorialPrinciples').innerHTML = principlesHTML;
+        
+        // Examples
+        const examplesHTML = data.examples.map((example, idx) => `
+            <div class="tutorial-example">
+                <div class="tutorial-example-question">
+                    Example ${idx + 1}: ${example.question}
+                </div>
+                <div class="tutorial-example-steps">
+                    ${example.steps.map(step => `
+                        <div class="tutorial-example-step">${step}</div>
+                    `).join('')}
+                </div>
+                <div class="tutorial-example-answer">
+                    Answer: ${example.answer}
+                </div>
+            </div>
+        `).join('');
+        document.getElementById('tutorialExamples').innerHTML = examplesHTML;
+        
+        // Tips
+        const tipsHTML = data.tips.map(tip => {
+            const icon = tip.startsWith('✅') ? '✅' : '⚠️';
+            return `<div class="tutorial-tip" data-icon="${icon}">${tip.substring(2)}</div>`;
+        }).join('');
+        document.getElementById('tutorialTips').innerHTML = tipsHTML;
+    }
+    
+    /**
+     * Close the tutorial modal
+     */
+    closeTutorial() {
+        // Check if "don't show again" is checked
+        const dontShowAgain = document.getElementById('dontShowAgain').checked;
+        if (dontShowAgain && this.currentTopic && this.currentDifficulty) {
+            this.savePreference(this.currentTopic, this.currentDifficulty, true);
+        }
+        
+        // Hide modal
+        const modal = document.getElementById('tutorialModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        
+        // Show help button
+        this.showHelpButton();
+    }
+    
+    /**
+     * Start the quiz (close tutorial and begin)
+     */
+    startQuiz() {
+        this.closeTutorial();
+        // The quiz should already be loaded, just hidden behind modal
+    }
+    
+    /**
+     * Show the floating help button
+     */
+    showHelpButton() {
+        if (this.currentTopic && this.currentDifficulty) {
+            document.getElementById('tutorialHelpBtn').classList.remove('hidden');
+        }
+    }
+    
+    /**
+     * Hide the floating help button
+     */
+    hideHelpButton() {
+        document.getElementById('tutorialHelpBtn').classList.add('hidden');
+    }
+    
+    /**
+     * Reset all preferences (for testing)
+     */
+    resetAllPreferences() {
+        localStorage.removeItem(this.storageKey);
+        console.log('All tutorial preferences cleared');
+    }
+}
+
+// Create global instance
+const tutorialManager = new TutorialManager();
+
+// Global functions for onclick handlers
+function showTutorialModal() {
+    tutorialManager.showTutorial();
+}
+
+function closeTutorial() {
+    tutorialManager.closeTutorial();
+}
+
+function startTutorialQuiz() {
+    tutorialManager.startQuiz();
+}
+
+function initTutorial(topic, difficulty) {
+    tutorialManager.initTutorial(topic, difficulty);
+}
+
+// For debugging/testing
+function resetTutorialPreferences() {
+    tutorialManager.resetAllPreferences();
+}
+
+console.log('Tutorial Manager initialized');
+
+</script>
+
+<!-- ========================================== -->
+<!-- END TUTORIAL SYSTEM -->
+<!-- ========================================== -->
+
+<!-- WHO AM I: JavaScript for reveal functionality -->
+<script src="{{ url_for('static', filename='js/who_am_i.js') }}"></script>
+
+<!-- AVATAR: JavaScript for avatar rendering -->
+{% if feature_flags.AVATAR_SYSTEM_ENABLED %}
+<script src="{{ url_for('static', filename='js/avatar.js') }}"></script>
+<script>
+    // Store current avatar config globally for quiz header
+    window.currentAvatarConfig = null;
+    
+    // Store points before quiz for unlock detection
+    let pointsBeforeQuiz = 0;
+    
+    // Load and render avatar on page load
+    async function loadUserAvatar() {
+        try {
+            const response = await fetch('/api/avatar/equipped');
+            const data = await response.json();
+            
+            if (data.success && data.equipped) {
+                const config = data.equipped;
+                window.currentAvatarConfig = config; // Store for quiz header
+                
+                // Render in header
+                const headerAvatar = document.getElementById('header-avatar');
+                if (headerAvatar && typeof AvatarRenderer !== 'undefined') {
+                    AvatarRenderer.render(headerAvatar, config, 'small');
+                }
+                
+                // Render in results screen
+                const resultsAvatar = document.getElementById('results-avatar');
+                if (resultsAvatar && typeof AvatarRenderer !== 'undefined') {
+                    AvatarRenderer.render(resultsAvatar, config, 'large');
+                }
+                
+                // Render in quiz header if visible
+                const quizHeaderAvatar = document.getElementById('quiz-header-avatar');
+                if (quizHeaderAvatar && typeof AvatarRenderer !== 'undefined') {
+                    AvatarRenderer.render(quizHeaderAvatar, config, 'small');
+                }
+            }
+        } catch (error) {
+            console.log('Avatar loading skipped:', error.message);
+        }
+    }
+    
+    // Get current points before quiz starts
+    async function getPointsBeforeQuiz() {
+        try {
+            const response = await fetch('/api/avatar/inventory');
+            const data = await response.json();
+            if (data.points !== undefined) {
+                pointsBeforeQuiz = data.points;
+                console.log('📊 Points before quiz:', pointsBeforeQuiz);
+            }
+        } catch (error) {
+            console.log('Could not get points:', error);
+        }
+    }
+    
+    // Check for newly affordable items after quiz
+    async function checkForNewUnlocks(newTotalPoints) {
+        try {
+            const response = await fetch('/api/avatar/items');
+            const data = await response.json();
+            
+            if (data.items) {
+                // Find items that are now affordable but weren't before
+                const newlyAffordable = data.items.filter(item => 
+                    item.point_cost > pointsBeforeQuiz && 
+                    item.point_cost <= newTotalPoints &&
+                    !item.is_default
+                );
+                
+                if (newlyAffordable.length > 0) {
+                    const banner = document.getElementById('new-unlock-banner');
+                    const message = document.getElementById('unlock-message');
+                    if (banner && message) {
+                        const itemNames = newlyAffordable.slice(0, 3).map(i => i.display_name).join(', ');
+                        message.textContent = `You can now afford: ${itemNames}${newlyAffordable.length > 3 ? ' and more!' : '!'}`;
+                        banner.classList.remove('hidden');
+                    }
+                }
+            }
+        } catch (error) {
+            console.log('Could not check for unlocks:', error);
+        }
+    }
+    
+    // Load avatar when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+        loadUserAvatar();
+    });
+    
+    // Also refresh avatar after quiz results are shown (in case of new unlocks)
+    const originalShowResults = typeof showResults === 'function' ? showResults : null;
+    if (originalShowResults) {
+        window.showResults = function() {
+            originalShowResults.apply(this, arguments);
+            loadUserAvatar(); // Refresh avatar display
+        };
+    }
+</script>
+{% endif %}
+
+<!-- PUZZLE OF THE WEEK: Splash Modal -->
+<div id="puzzle-splash-modal" class="fixed inset-0 bg-black bg-opacity-70 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+        <div class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-6 text-center">
+            <i class="fas fa-puzzle-piece text-5xl mb-3"></i>
+            <h2 class="text-2xl font-bold">🧩 Puzzle of the Week</h2>
+            <p class="text-purple-200 mt-1">Week <span id="splash-puzzle-week">--</span>, <span id="splash-puzzle-year">----</span></p>
+        </div>
+        <div class="p-6">
+            <h3 id="splash-puzzle-title" class="text-xl font-bold text-gray-800 mb-2 text-center">--</h3>
+            <p id="splash-puzzle-description" class="text-gray-600 text-center mb-4"></p>
+            
+            <!-- Puzzle Content -->
+            <div id="splash-puzzle-content" class="border rounded-xl p-4 bg-gray-50 mb-4 min-h-48 flex items-center justify-center">
+                <!-- Puzzle image or text will be inserted here -->
+            </div>
+            
+            <!-- Hint Button -->
+            <div id="splash-hint-section" class="hidden">
+                <button id="splash-hint-btn" onclick="viewPuzzleHint()" class="w-full bg-yellow-100 text-yellow-700 py-2 rounded-lg hover:bg-yellow-200 transition mb-4">
+                    <i class="fas fa-lightbulb mr-2"></i>Need a Hint?
+                </button>
+                <div id="splash-hint-content" class="hidden bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                    <p class="font-semibold text-yellow-800 mb-1"><i class="fas fa-lightbulb mr-2"></i>Hint:</p>
+                    <p id="splash-hint-text" class="text-yellow-700"></p>
+                </div>
+            </div>
+            
+            <!-- Answer reveal info -->
+            <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-center">
+                <p class="text-green-700 text-sm">
+                    <i class="fas fa-gift mr-2"></i><strong>Complete any quiz</strong> to unlock the answer!
+                </p>
+            </div>
+            
+            <div class="flex gap-3">
+                <button onclick="closePuzzleSplash(true)" class="flex-1 bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700 transition">
+                    Continue to Quiz
+                </button>
+                <button onclick="closePuzzleSplash(false)" class="bg-gray-200 text-gray-700 px-6 py-3 rounded-xl hover:bg-gray-300 transition text-sm">
+                    Don't show<br>this week
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PUZZLE OF THE WEEK: Answer Reveal Modal -->
+<div id="puzzle-answer-modal" class="fixed inset-0 bg-black bg-opacity-70 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+        <div class="bg-gradient-to-r from-green-500 to-teal-500 text-white p-6 text-center">
+            <i class="fas fa-check-circle text-5xl mb-3"></i>
+            <h2 class="text-2xl font-bold">Puzzle Answer Revealed!</h2>
+        </div>
+        <div class="p-6">
+            <h3 id="answer-puzzle-title" class="text-xl font-bold text-gray-800 mb-4 text-center">--</h3>
+            
+            <!-- Answer Content -->
+            <div id="answer-puzzle-content" class="border-2 border-green-200 rounded-xl p-4 bg-green-50 mb-4 min-h-48">
+                <!-- Answer image or text will be inserted here -->
+            </div>
+            
+            <button onclick="closeAnswerModal()" class="w-full bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700 transition">
+                <i class="fas fa-check mr-2"></i>Got It!
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- FEEDBACK SYSTEM: Floating Button (bottom-left, mirrors puzzle button) -->
+<div id="feedback-button" class="fixed bottom-20 left-4 z-50" style="pointer-events: auto;">
+    <button onclick="openFeedbackModal()" class="bg-purple-600 text-white p-4 rounded-full shadow-xl hover:bg-purple-700 transition transform hover:scale-110" title="Give Feedback">
+        <i class="fas fa-comment-dots text-2xl"></i>
+    </button>
+</div>
+
+<!-- FEEDBACK SYSTEM: Modal -->
+<div id="feedback-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-[10001]" style="display: none;">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-11/12 mx-4 overflow-hidden">
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-comment-dots text-3xl"></i>
+                    <h2 class="text-xl font-bold">Share Your Feedback</h2>
+                </div>
+                <button onclick="closeFeedbackModal()" class="text-white hover:text-gray-200 transition">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <p class="mt-2 text-purple-100 text-sm">Help us make AgentMath better!</p>
+        </div>
+        
+        <!-- Body -->
+        <div class="p-6">
+            <!-- Star Rating -->
+            <div class="mb-5">
+                <label class="block text-gray-700 font-medium mb-2">How are you finding AgentMath?</label>
+                <div id="feedback-stars" class="flex gap-2 justify-center">
+                    <button type="button" onclick="setFeedbackRating(1)" class="feedback-star text-3xl text-gray-300 hover:text-yellow-400 transition" data-rating="1">★</button>
+                    <button type="button" onclick="setFeedbackRating(2)" class="feedback-star text-3xl text-gray-300 hover:text-yellow-400 transition" data-rating="2">★</button>
+                    <button type="button" onclick="setFeedbackRating(3)" class="feedback-star text-3xl text-gray-300 hover:text-yellow-400 transition" data-rating="3">★</button>
+                    <button type="button" onclick="setFeedbackRating(4)" class="feedback-star text-3xl text-gray-300 hover:text-yellow-400 transition" data-rating="4">★</button>
+                    <button type="button" onclick="setFeedbackRating(5)" class="feedback-star text-3xl text-gray-300 hover:text-yellow-400 transition" data-rating="5">★</button>
+                </div>
+            </div>
+            
+            <!-- Category -->
+            <div class="mb-5">
+                <label class="block text-gray-700 font-medium mb-2">Category</label>
+                <select id="feedback-category" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                    <option value="general">💬 General Feedback</option>
+                    <option value="bug">🐛 Bug Report</option>
+                    <option value="feature">💡 Feature Request</option>
+                    <option value="question">❓ Question</option>
+                    <option value="praise">🌟 Praise</option>
+                </select>
+            </div>
+            
+            <!-- Feedback Text -->
+            <div class="mb-5">
+                <label class="block text-gray-700 font-medium mb-2">Your Feedback</label>
+                <textarea id="feedback-text" rows="4" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none" placeholder="Tell us what's on your mind..."></textarea>
+            </div>
+            
+            <!-- Error/Success message -->
+            <div id="feedback-message" class="hidden mb-4 p-3 rounded-lg text-sm"></div>
+            
+            <!-- Buttons -->
+            <div class="flex gap-3">
+                <button onclick="closeFeedbackModal()" class="flex-1 px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium">
+                    Cancel
+                </button>
+                <button onclick="submitFeedback()" id="feedback-submit-btn" class="flex-1 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-medium">
+                    <i class="fas fa-paper-plane mr-2"></i>Submit
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Feedback system state
+let feedbackRating = 0;
+let feedbackPageContext = 'home';
+
+function openFeedbackModal() {
+    // Capture current page context
+    feedbackPageContext = getCurrentPageContext();
+    
+    // Reset form
+    feedbackRating = 0;
+    document.querySelectorAll('.feedback-star').forEach(star => star.classList.remove('active'));
+    document.getElementById('feedback-category').value = 'general';
+    document.getElementById('feedback-text').value = '';
+    document.getElementById('feedback-message').classList.add('hidden');
+    document.getElementById('feedback-submit-btn').disabled = false;
+    
+    // Show modal
+    const modal = document.getElementById('feedback-modal');
+    modal.style.display = 'flex';
+    modal.classList.remove('hidden');
+}
+
+function closeFeedbackModal() {
+    const modal = document.getElementById('feedback-modal');
+    modal.style.display = 'none';
+    modal.classList.add('hidden');
+}
+
+function setFeedbackRating(rating) {
+    feedbackRating = rating;
+    document.querySelectorAll('.feedback-star').forEach((star, index) => {
+        if (index < rating) {
+            star.classList.add('active');
+        } else {
+            star.classList.remove('active');
+        }
+    });
+}
+
+function getCurrentPageContext() {
+    // Determine which screen/page user is on
+    const adaptiveScreen = document.getElementById('adaptiveQuizScreenBeta');
+    const quizScreen = document.getElementById('quizScreen');
+    const topicScreen = document.getElementById('topicScreen');
+    const homeScreen = document.getElementById('homeScreen');
+    
+    if (adaptiveScreen && !adaptiveScreen.classList.contains('hidden')) {
+        return 'adaptive_quiz';
+    } else if (quizScreen && !quizScreen.classList.contains('hidden')) {
+        return 'practice_quiz';
+    } else if (topicScreen && !topicScreen.classList.contains('hidden')) {
+        return 'topic_selection';
+    } else if (homeScreen && !homeScreen.classList.contains('hidden')) {
+        return 'home';
+    }
+    return 'unknown';
+}
+
+function getCurrentTopicContext() {
+    // Get current topic if in a quiz
+    if (typeof adaptiveState !== 'undefined' && adaptiveState.topic) {
+        return adaptiveState.topic;
+    }
+    if (typeof currentTopic !== 'undefined' && currentTopic) {
+        return currentTopic;
+    }
+    return null;
+}
+
+async function submitFeedback() {
+    const feedbackText = document.getElementById('feedback-text').value.trim();
+    const category = document.getElementById('feedback-category').value;
+    const messageEl = document.getElementById('feedback-message');
+    const submitBtn = document.getElementById('feedback-submit-btn');
+    
+    // Validate
+    if (!feedbackText) {
+        messageEl.textContent = 'Please enter your feedback.';
+        messageEl.className = 'mb-4 p-3 rounded-lg text-sm bg-red-100 text-red-700';
+        messageEl.classList.remove('hidden');
+        return;
+    }
+    
+    // Disable button
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Sending...';
+    
+    try {
+        const response = await fetch('/api/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                rating: feedbackRating || null,
+                category: category,
+                feedback_text: feedbackText,
+                page_context: feedbackPageContext,
+                topic_context: getCurrentTopicContext()
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            messageEl.textContent = '✓ ' + (data.message || 'Thank you for your feedback!');
+            messageEl.className = 'mb-4 p-3 rounded-lg text-sm bg-green-100 text-green-700';
+            messageEl.classList.remove('hidden');
+            
+            // Close modal after brief delay
+            setTimeout(() => {
+                closeFeedbackModal();
+                if (typeof showToast === 'function') {
+                    showToast('Thank you for your feedback! 💬', 'success', 3000);
+                }
+            }, 1500);
+        } else {
+            messageEl.textContent = data.message || data.error || 'Failed to submit feedback. Please try again.';
+            messageEl.className = 'mb-4 p-3 rounded-lg text-sm bg-red-100 text-red-700';
+            messageEl.classList.remove('hidden');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i>Submit';
+        }
+    } catch (error) {
+        console.error('Feedback submission error:', error);
+        messageEl.textContent = 'Network error. Please try again.';
+        messageEl.className = 'mb-4 p-3 rounded-lg text-sm bg-red-100 text-red-700';
+        messageEl.classList.remove('hidden');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-paper-plane mr-2"></i>Submit';
+    }
+}
+
+// Close modal on escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeFeedbackModal();
+    }
+});
+
+// Close modal on backdrop click
+document.getElementById('feedback-modal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeFeedbackModal();
+    }
+});
+</script>
+
+<!-- PUZZLE OF THE WEEK: Indicator (shows when puzzle is available) -->
+<div id="puzzle-indicator" class="fixed bottom-20 right-4 z-50 hidden" style="pointer-events: auto;">
+    <button onclick="showPuzzleSplash()" class="bg-purple-600 text-white p-4 rounded-full shadow-xl hover:bg-purple-700 transition transform hover:scale-110" title="View Puzzle of the Week">
+        <i class="fas fa-puzzle-piece text-2xl"></i>
+    </button>
+    <span class="absolute -top-1 -right-1 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full">🧩</span>
+</div>
+
+<!-- PUZZLE OF THE WEEK: JavaScript -->
+<script>
+    // Puzzle state
+    let puzzleData = null;
+    let puzzleStatus = null;
+
+    // Check for puzzle on page load
+    async function checkPuzzleStatus() {
+        try {
+            console.log('Checking puzzle status...');
+            const response = await fetch('/api/puzzle/status');
+            puzzleStatus = await response.json();
+            console.log('Puzzle status:', puzzleStatus);
+            
+            if (puzzleStatus.has_puzzle && puzzleStatus.puzzle) {
+                puzzleData = puzzleStatus.puzzle;
+                console.log('Puzzle data loaded:', puzzleData.title);
+                
+                // Show splash if not dismissed
+                if (puzzleStatus.show_popup) {
+                    console.log('Showing puzzle splash popup');
+                    showPuzzleSplash();
+                }
+                
+                // Show indicator if puzzle available but dismissed (or after closing splash)
+                if (!puzzleStatus.show_popup && !puzzleStatus.already_revealed) {
+                    console.log('Showing puzzle indicator (popup dismissed, answer not revealed)');
+                    document.getElementById('puzzle-indicator').classList.remove('hidden');
+                }
+            } else {
+                console.log('No active puzzle');
+            }
+        } catch (error) {
+            console.error('Error checking puzzle status:', error);
+        }
+    }
+
+    function showPuzzleSplash() {
+        if (!puzzleData) return;
+        
+        // Populate splash modal
+        document.getElementById('splash-puzzle-week').textContent = puzzleData.week_number;
+        document.getElementById('splash-puzzle-year').textContent = puzzleData.year;
+        document.getElementById('splash-puzzle-title').textContent = puzzleData.title || 'Weekly Challenge';
+        document.getElementById('splash-puzzle-description').textContent = puzzleData.description || '';
+        
+        // Show puzzle content
+        const contentDiv = document.getElementById('splash-puzzle-content');
+        if (puzzleData.puzzle_type === 'image' && puzzleData.puzzle_image) {
+            contentDiv.innerHTML = `<img src="${puzzleData.puzzle_image}" alt="Puzzle" class="max-w-full max-h-96 rounded-lg">`;
+        } else if (puzzleData.puzzle_text) {
+            contentDiv.innerHTML = `<pre class="whitespace-pre-wrap font-mono text-lg text-center">${escapeHtmlPuzzle(puzzleData.puzzle_text)}</pre>`;
+        } else {
+            contentDiv.innerHTML = '<p class="text-gray-500 italic">No puzzle content available</p>';
+        }
+        
+        // Show hint section if hint available
+        if (puzzleStatus && puzzleStatus.hint_available) {
+            document.getElementById('splash-hint-section').classList.remove('hidden');
+            if (puzzleStatus.hint_viewed && puzzleData.hint) {
+                document.getElementById('splash-hint-content').classList.remove('hidden');
+                document.getElementById('splash-hint-text').textContent = puzzleData.hint;
+                document.getElementById('splash-hint-btn').innerHTML = '<i class="fas fa-lightbulb mr-2"></i>Hint (Viewed)';
+            }
+        }
+        
+        document.getElementById('puzzle-splash-modal').classList.remove('hidden');
+        document.getElementById('puzzle-indicator').classList.add('hidden');
+    }
+
+    function closePuzzleSplash(continueOnly = true) {
+        document.getElementById('puzzle-splash-modal').classList.add('hidden');
+        
+        if (!continueOnly) {
+            // Dismiss for this week
+            fetch('/api/puzzle/dismiss-popup', { method: 'POST' });
+        }
+        
+        // Show indicator if not revealed
+        console.log('closePuzzleSplash - puzzleStatus:', puzzleStatus);
+        if (puzzleStatus && !puzzleStatus.already_revealed) {
+            console.log('Showing puzzle indicator');
+            document.getElementById('puzzle-indicator').classList.remove('hidden');
+        }
+    }
+
+    async function viewPuzzleHint() {
+        try {
+            const response = await fetch('/api/puzzle/view-hint', { method: 'POST' });
+            const result = await response.json();
+            
+            if (result.success && result.hint) {
+                document.getElementById('splash-hint-content').classList.remove('hidden');
+                document.getElementById('splash-hint-text').textContent = result.hint;
+                document.getElementById('splash-hint-btn').innerHTML = '<i class="fas fa-lightbulb mr-2"></i>Hint (Viewed)';
+            }
+        } catch (error) {
+            console.error('Error viewing hint:', error);
+        }
+    }
+
+    // Called from results screen
+    async function revealPuzzleAnswer() {
+        try {
+            const response = await fetch('/api/puzzle/reveal-answer', { method: 'POST' });
+            const result = await response.json();
+            
+            if (result.success) {
+                // Hide the offer
+                document.getElementById('puzzle-answer-offer').style.display = 'none';
+                document.getElementById('puzzle-indicator').classList.add('hidden');
+                
+                // Show answer modal
+                document.getElementById('answer-puzzle-title').textContent = puzzleData ? puzzleData.title : 'Puzzle Answer';
+                
+                const contentDiv = document.getElementById('answer-puzzle-content');
+                if (result.answer_image) {
+                    contentDiv.innerHTML = `<img src="${result.answer_image}" alt="Answer" class="max-w-full max-h-96 rounded-lg mx-auto">`;
+                } else if (result.answer_text) {
+                    contentDiv.innerHTML = `<pre class="whitespace-pre-wrap font-mono text-lg">${escapeHtmlPuzzle(result.answer_text)}</pre>`;
+                } else {
+                    contentDiv.innerHTML = '<p class="text-gray-500 italic text-center">No answer content available</p>';
+                }
+                
+                document.getElementById('puzzle-answer-modal').classList.remove('hidden');
+                
+                // Update status
+                if (puzzleStatus) {
+                    puzzleStatus.already_revealed = true;
+                    puzzleStatus.can_reveal_answer = false;
+                }
+            }
+        } catch (error) {
+            console.error('Error revealing answer:', error);
+            alert('Error revealing answer. Please try again.');
+        }
+    }
+
+    function dismissPuzzleAnswerOffer() {
+        document.getElementById('puzzle-answer-offer').style.display = 'none';
+        // Optionally dismiss permanently
+        // fetch('/api/puzzle/dismiss-answer', { method: 'POST' });
+    }
+
+    function closeAnswerModal() {
+        document.getElementById('puzzle-answer-modal').classList.add('hidden');
+    }
+
+    function escapeHtmlPuzzle(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // Check for puzzle answer offer after quiz
+    function checkPuzzleAnswerOffer() {
+        if (puzzleStatus && puzzleStatus.has_puzzle && puzzleStatus.can_reveal_answer && !puzzleStatus.already_revealed) {
+            document.getElementById('puzzle-answer-offer').style.display = 'block';
+        } else {
+            document.getElementById('puzzle-answer-offer').style.display = 'none';
+        }
+    }
+
+    // Hook into page load
+    const originalWindowOnload = window.onload;
+    
+        // ==================== SESSION VALIDATION ====================
+        // Prevent cached pages from resuming after logout
+        
+        // Check if session is still valid
+        async function validateSession() {
+            try {
+                const response = await fetch('/api/current-user', {
+                    method: 'GET',
+                    credentials: 'include',
+                    cache: 'no-store'
+                });
+                
+                if (!response.ok) {
+                    // Session expired or user logged out
+                    console.log('Session invalid, redirecting to login...');
+                    window.location.href = '/login?session_expired=1';
+                    return false;
+                }
+                
+                const user = await response.json();
+                if (!user || (!user.id && !user.is_guest)) {
+                    console.log('No valid user session, redirecting to login...');
+                    window.location.href = '/login?session_expired=1';
+                    return false;
+                }
+                
+                return true;
+            } catch (error) {
+                console.error('Session validation error:', error);
+                window.location.href = '/login?session_expired=1';
+                return false;
+            }
+        }
+        
+        // Validate session when page is shown (catches back button navigation)
+        window.addEventListener('pageshow', function(event) {
+            // If page was restored from bfcache (back-forward cache)
+            if (event.persisted) {
+                console.log('Page restored from cache, validating session...');
+                validateSession();
+            }
+        });
+        
+        // Also validate when tab becomes visible (catches tab switching)
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                // Add small delay to avoid too many checks
+                setTimeout(validateSession, 500);
+            }
+        });
+        
+        // Check for logged_out parameter in URL (set by logout redirect)
+        if (window.location.search.includes('logged_out=1')) {
+            // Clear any cached state and redirect to clean login
+            sessionStorage.clear();
+            localStorage.removeItem('mathmaster_session');
+            window.location.href = '/login';
+        }
+        
+        // ==================== END SESSION VALIDATION ====================
+
+        window.onload = async function() {
+        if (originalWindowOnload) {
+            await originalWindowOnload();
+        }
+        // Check puzzle after other initialization
+        await checkPuzzleStatus();
+    };
+
+    // Hook into showResults to offer puzzle answer
+    const originalShowResultsForPuzzle = window.showResults;
+    if (originalShowResultsForPuzzle) {
+        window.showResults = function() {
+            originalShowResultsForPuzzle.apply(this, arguments);
+            // Check if we should offer puzzle answer
+            setTimeout(checkPuzzleAnswerOffer, 500);
+        };
+    }
+</script>
+
+<!-- ==================== PRIZE PIN MODALS ==================== -->
+
+<!-- PIN Setup Modal (shown when first crossing threshold) -->
+<div id="prizePinSetupModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-bounce-in">
+        <div class="bg-gradient-to-r from-yellow-400 to-orange-500 p-6 text-white">
+            <div class="text-center">
+                <div class="text-5xl mb-2">🔐</div>
+                <h2 class="text-2xl font-bold">Protect Your Points!</h2>
+                <p class="opacity-90 mt-1">You've earned a lot of points - let's keep them safe</p>
+            </div>
+        </div>
+        
+        <div class="p-6">
+            <p class="text-gray-600 mb-4">
+                Create a secret passcode to protect your Prize Shop access. Choose something memorable!
+            </p>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">
+                        Your Secret Passcode
+                    </label>
+                    <input type="text" id="pinSetupCode" 
+                           class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 text-lg"
+                           placeholder="e.g., fluffy, max, granny"
+                           maxlength="50">
+                    <p class="text-xs text-gray-500 mt-1">
+                        💡 Use a name you'll remember: a pet, family member, or friend
+                    </p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">
+                        Hint (to help you remember)
+                    </label>
+                    <select id="pinSetupHint" 
+                            class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 text-lg">
+                        <option value="">Choose a hint...</option>
+                        <option value="My pet's name">🐕 My pet's name</option>
+                        <option value="Family member">👨‍👩‍👧 Family member</option>
+                        <option value="Best friend">👫 Best friend</option>
+                        <option value="Favourite character">🦸 Favourite character</option>
+                        <option value="Favourite food">🍕 Favourite food</option>
+                        <option value="Special place">🏠 Special place</option>
+                    </select>
+                    <input type="text" id="pinSetupCustomHint" 
+                           class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-yellow-500 mt-2 hidden"
+                           placeholder="Or type your own hint...">
+                </div>
+            </div>
+            
+            <div id="pinSetupError" class="hidden mt-3 p-3 bg-red-100 text-red-700 rounded-lg text-sm"></div>
+            
+            <button onclick="savePrizePin()" 
+                    class="w-full mt-6 py-4 bg-gradient-to-r from-yellow-400 to-orange-500 text-white font-bold rounded-xl hover:from-yellow-500 hover:to-orange-600 transition-all transform hover:scale-[1.02]">
+                🔒 Save My Passcode
+            </button>
+            
+            <p class="text-center text-xs text-gray-400 mt-3">
+                You'll need this passcode to access the Prize Shop
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- PIN Entry Modal (shown when accessing Prize Shop) -->
+<div id="prizePinEntryModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-bounce-in">
+        <div class="bg-gradient-to-r from-purple-500 to-pink-500 p-6 text-white">
+            <div class="text-center">
+                <div class="text-5xl mb-2">🎁</div>
+                <h2 class="text-2xl font-bold">Prize Shop Access</h2>
+                <p class="opacity-90 mt-1">Enter your passcode to continue</p>
+            </div>
+        </div>
+        
+        <div class="p-6">
+            <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4">
+                <p class="text-yellow-800 text-sm">
+                    <strong>💡 Hint:</strong> <span id="pinEntryHint">Loading...</span>
+                </p>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">
+                    Your Passcode
+                </label>
+                <input type="text" id="pinEntryCode" 
+                       class="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 text-lg text-center tracking-widest"
+                       placeholder="Enter your passcode"
+                       maxlength="50"
+                       onkeypress="if(event.key==='Enter') verifyPrizePin()">
+            </div>
+            
+            <div id="pinEntryError" class="hidden mt-3 p-3 bg-red-100 text-red-700 rounded-lg text-sm"></div>
+            
+            <div class="flex gap-3 mt-6">
+                <button onclick="closePinEntryModal()" 
+                        class="flex-1 py-3 bg-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-300 transition-colors">
+                    Cancel
+                </button>
+                <button onclick="verifyPrizePin()" 
+                        class="flex-1 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold rounded-xl hover:from-purple-600 hover:to-pink-600 transition-all">
+                    🔓 Enter Shop
+                </button>
+            </div>
+            
+            <p class="text-center text-xs text-gray-400 mt-4">
+                Forgot your passcode? Ask your teacher for help.
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ==================== PRIZE PIN PROTECTION ====================
+    
+    let prizePinStatus = null;
+    let pendingPrizeShopAction = null;
+    
+    // Check PIN status on page load
+    async function checkPrizePinStatus() {
+        try {
+            const response = await fetch('/api/prize-pin/status');
+            prizePinStatus = await response.json();
+            console.log('Prize PIN status:', prizePinStatus);
+            return prizePinStatus;
+        } catch (error) {
+            console.error('Error checking prize PIN status:', error);
+            return null;
+        }
+    }
+    
+    // Check if user needs to set up PIN after quiz
+    async function checkPrizePinSetupNeeded() {
+        const status = await checkPrizePinStatus();
+        if (status && status.needs_setup) {
+            // Show PIN setup modal
+            document.getElementById('prizePinSetupModal').classList.remove('hidden');
+            return true;
+        }
+        return false;
+    }
+    
+    // Save new PIN
+    async function savePrizePin() {
+        const pin = document.getElementById('pinSetupCode').value.trim();
+        const hintSelect = document.getElementById('pinSetupHint').value;
+        const customHint = document.getElementById('pinSetupCustomHint').value.trim();
+        const hint = customHint || hintSelect;
+        
+        const errorEl = document.getElementById('pinSetupError');
+        errorEl.classList.add('hidden');
+        
+        if (!pin || pin.length < 2) {
+            errorEl.textContent = 'Please enter a passcode (at least 2 characters)';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+        
+        if (!hint || hint.length < 2) {
+            errorEl.textContent = 'Please select or enter a hint';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/prize-pin/set', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ pin: pin, hint: hint })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                document.getElementById('prizePinSetupModal').classList.add('hidden');
+                // Clear form
+                document.getElementById('pinSetupCode').value = '';
+                document.getElementById('pinSetupHint').value = '';
+                document.getElementById('pinSetupCustomHint').value = '';
+                
+                // Show success message
+                alert('✅ Your passcode is set! Remember your hint: ' + hint);
+                
+                // Update status
+                await checkPrizePinStatus();
+            } else {
+                errorEl.textContent = result.error || 'Failed to save passcode';
+                errorEl.classList.remove('hidden');
+            }
+        } catch (error) {
+            console.error('Error saving PIN:', error);
+            errorEl.textContent = 'Connection error. Please try again.';
+            errorEl.classList.remove('hidden');
+        }
+    }
+    
+    // Open Prize Shop (with PIN check)
+    async function openPrizeShop(url) {
+        const status = await checkPrizePinStatus();
+        
+        if (!status || !status.requires_pin) {
+            // No PIN required - go directly
+            window.location.href = url || '/prizes';
+            return;
+        }
+        
+        if (status.needs_setup) {
+            // Need to set up PIN first
+            pendingPrizeShopAction = url || '/prizes';
+            document.getElementById('prizePinSetupModal').classList.remove('hidden');
+            return;
+        }
+        
+        // PIN is set - verify it
+        pendingPrizeShopAction = url || '/prizes';
+        document.getElementById('pinEntryHint').textContent = status.hint || 'Think about your passcode...';
+        document.getElementById('pinEntryCode').value = '';
+        document.getElementById('pinEntryError').classList.add('hidden');
+        document.getElementById('prizePinEntryModal').classList.remove('hidden');
+        
+        // Focus the input
+        setTimeout(() => document.getElementById('pinEntryCode').focus(), 100);
+    }
+    
+    // Verify PIN and enter shop
+    async function verifyPrizePin() {
+        const pin = document.getElementById('pinEntryCode').value.trim();
+        const errorEl = document.getElementById('pinEntryError');
+        errorEl.classList.add('hidden');
+        
+        if (!pin) {
+            errorEl.textContent = 'Please enter your passcode';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/prize-pin/verify', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ pin: pin })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                document.getElementById('prizePinEntryModal').classList.add('hidden');
+                // Navigate to prize shop
+                window.location.href = pendingPrizeShopAction || '/prizes';
+            } else {
+                errorEl.textContent = result.error || 'Incorrect passcode';
+                errorEl.classList.remove('hidden');
+                document.getElementById('pinEntryCode').value = '';
+                document.getElementById('pinEntryCode').focus();
+            }
+        } catch (error) {
+            console.error('Error verifying PIN:', error);
+            errorEl.textContent = 'Connection error. Please try again.';
+            errorEl.classList.remove('hidden');
+        }
+    }
+    
+    // Close PIN entry modal
+    function closePinEntryModal() {
+        document.getElementById('prizePinEntryModal').classList.add('hidden');
+        pendingPrizeShopAction = null;
+    }
+    
+    // Handle custom hint option
+    document.getElementById('pinSetupHint')?.addEventListener('change', function() {
+        const customInput = document.getElementById('pinSetupCustomHint');
+        if (this.value === '') {
+            customInput.classList.remove('hidden');
+            customInput.focus();
+        } else {
+            customInput.classList.add('hidden');
+            customInput.value = '';
+        }
+    });
+    
+    // Hook into showResults to check for PIN setup
+    const originalShowResultsForPin = window.showResults;
+    if (originalShowResultsForPin) {
+        window.showResults = function() {
+            originalShowResultsForPin.apply(this, arguments);
+            // Check if PIN setup is needed after a short delay
+            setTimeout(checkPrizePinSetupNeeded, 1000);
+        };
+    }
+    
+    // Intercept Prize Shop links
+    document.addEventListener('DOMContentLoaded', function() {
+        // Find all Prize Shop links and add click handler
+        document.querySelectorAll('a[href="/prizes"], a[href*="prize"]').forEach(link => {
+            if (link.href.includes('/prizes') || link.href.includes('prize')) {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    openPrizeShop(this.href);
+                });
+            }
+        });
+        
+        // Initial PIN status check
+        checkPrizePinStatus();
+    });
+</script>
+
+<!-- Floating Calculator Overlay -->
+<div id="calculatorOverlay" class="calculator-overlay">
+    <div id="calculatorContainer" class="calculator-container" onclick="event.stopPropagation()">
+        <div class="calculator-header" id="calculatorHeader">
+            <h4><i class="fas fa-calculator"></i> Calculator <span class="drag-hint">⋮⋮ drag to move</span></h4>
+            <button class="calculator-close" onclick="toggleCalculator()" title="Close calculator">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <div class="calculator-display">
+            <div id="calcExpression" class="calc-expression"></div>
+            <div id="calcResult" class="calc-result">0</div>
+        </div>
+        
+        <div class="calculator-body">
+            <!-- Row 1: Clear, Brackets, Scientific -->
+            <div class="calc-row">
+                <button class="calc-btn calc-btn-clear" onclick="calcClear()">C</button>
+                <button class="calc-btn calc-btn-function" onclick="calcBackspace()">⌫</button>
+                <button class="calc-btn calc-btn-function" onclick="calcInput('(')">(</button>
+                <button class="calc-btn calc-btn-function" onclick="calcInput(')')">)</button>
+            </div>
+            
+            <!-- Row 2: Scientific functions -->
+            <div class="calc-row">
+                <button class="calc-btn calc-btn-function" onclick="calcSquare()">x²</button>
+                <button class="calc-btn calc-btn-function" onclick="calcSquareRoot()">√</button>
+                <button class="calc-btn calc-btn-function" onclick="calcPi()">π</button>
+                <button class="calc-btn calc-btn-operator" onclick="calcInput('÷')">÷</button>
+            </div>
+            
+            <!-- Row 3: 7, 8, 9, × -->
+            <div class="calc-row">
+                <button class="calc-btn calc-btn-number" onclick="calcInput('7')">7</button>
+                <button class="calc-btn calc-btn-number" onclick="calcInput('8')">8</button>
+                <button class="calc-btn calc-btn-number" onclick="calcInput('9')">9</button>
+                <button class="calc-btn calc-btn-operator" onclick="calcInput('×')">×</button>
+            </div>
+            
+            <!-- Row 4: 4, 5, 6, - -->
+            <div class="calc-row">
+                <button class="calc-btn calc-btn-number" onclick="calcInput('4')">4</button>
+                <button class="calc-btn calc-btn-number" onclick="calcInput('5')">5</button>
+                <button class="calc-btn calc-btn-number" onclick="calcInput('6')">6</button>
+                <button class="calc-btn calc-btn-operator" onclick="calcInput('-')">−</button>
+            </div>
+            
+            <!-- Row 5: 1, 2, 3, + -->
+            <div class="calc-row">
+                <button class="calc-btn calc-btn-number" onclick="calcInput('1')">1</button>
+                <button class="calc-btn calc-btn-number" onclick="calcInput('2')">2</button>
+                <button class="calc-btn calc-btn-number" onclick="calcInput('3')">3</button>
+                <button class="calc-btn calc-btn-operator" onclick="calcInput('+')">+</button>
+            </div>
+            
+            <!-- Row 6: ±, 0, ., = -->
+            <div class="calc-row">
+                <button class="calc-btn calc-btn-function" onclick="calcNegate()">±</button>
+                <button class="calc-btn calc-btn-number" onclick="calcInput('0')">0</button>
+                <button class="calc-btn calc-btn-number" onclick="calcInput('.')">.</button>
+                <button class="calc-btn calc-btn-equals" onclick="calcEquals()">=</button>
+            </div>
+        </div>
+        
+        <div class="calculator-footer">
+            <label class="calc-session-toggle">
+                <input type="checkbox" id="calcKeepOpen" onchange="saveCalcPreference()">
+                <span>Keep open for entire quiz</span>
+            </label>
+        </div>
+    </div>
+</div>
+
+<!-- Bonus Question Modal -->
+<div id="bonusQuestionModal" class="bonus-modal-overlay" onclick="closeBonusOnOverlay(event)">
+    <div class="bonus-modal" onclick="event.stopPropagation()">
+        <div class="bonus-modal-header">
+            <h2>🦕 Dino Challenge</h2>
+            <p>Identify this dinosaur for +100 points!</p>
+        </div>
+        <div class="bonus-modal-body">
+            <div class="bonus-image-container">
+                <img id="bonusImage" src="" alt="Mystery Dinosaur" style="display: none;">
+                <div id="bonusImageLoading" class="loading">
+                    <i class="fas fa-spinner fa-spin fa-2x"></i>
+                    <p class="mt-2">Loading dinosaur...</p>
+                </div>
+            </div>
+            <p class="bonus-question-text">Which dinosaur is this?</p>
+            <div id="bonusOptions" class="bonus-options">
+                <!-- Options populated by JS -->
+            </div>
+            <div id="bonusResult" class="bonus-result" style="display: none;">
+                <!-- Result populated by JS -->
+            </div>
+        </div>
+        <div class="bonus-modal-footer" id="bonusFooter" style="display: none;">
+            <button onclick="closeBonusModal()" class="bonus-close-btn">
+                Continue <i class="fas fa-arrow-right ml-2"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Dino Archive Modal -->
+<div id="dinoArchiveModal" class="dino-archive-overlay" onclick="closeDinoArchiveOnOverlay(event)">
+    <div class="dino-archive-modal" onclick="event.stopPropagation()">
+        <div class="dino-archive-header">
+            <button onclick="closeDinoArchive()" class="dino-archive-close">
+                <i class="fas fa-times"></i>
+            </button>
+            <h2>🦕 Your Dino Archive</h2>
+            <p>All the dinosaurs you've discovered!</p>
+            <div class="dino-archive-stats">
+                <div class="dino-archive-stat">
+                    <div class="dino-archive-stat-value" id="archiveTotalCount">0</div>
+                    <div class="dino-archive-stat-label">Total Attempted</div>
+                </div>
+                <div class="dino-archive-stat">
+                    <div class="dino-archive-stat-value" id="archiveCorrectCount">0</div>
+                    <div class="dino-archive-stat-label">Correct ✓</div>
+                </div>
+                <div class="dino-archive-stat">
+                    <div class="dino-archive-stat-value" id="archiveAccuracy">0%</div>
+                    <div class="dino-archive-stat-label">Accuracy</div>
+                </div>
+            </div>
+        </div>
+        <div class="dino-archive-body" id="dinoArchiveBody">
+            <div class="dino-archive-empty">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading your archive...</p>
+            </div>
+        </div>
+        <div class="dino-archive-footer">
+            <button onclick="closeDinoArchive()" class="bonus-close-btn">
+                Close Archive
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Day 2: Quick Play Modal -->
+<div id="quickPlayModal" class="fixed inset-0 bg-black bg-opacity-70 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 transform transition-all">
+        <div class="text-center mb-6">
+            <div class="text-6xl mb-4">⚡</div>
+            <h2 class="text-2xl font-bold text-gray-800">Quick Play</h2>
+            <p class="text-gray-600 mt-2">10 rapid-fire questions from mixed topics!</p>
+        </div>
+        
+        <div class="bg-gradient-to-r from-orange-100 to-red-100 rounded-xl p-4 mb-6">
+            <h3 class="font-bold text-gray-800 mb-3">🎮 Rules:</h3>
+            <ul class="text-sm text-gray-700 space-y-2">
+                <li>• <strong>10 questions</strong> from random topics</li>
+                <li>• <strong>Mixed difficulties</strong> - mostly your level</li>
+                <li>• <strong>2x Points</strong> for all correct answers!</li>
+                <li>• <strong>Speed bonus</strong> - finish fast for extra points</li>
+            </ul>
+        </div>
+        
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Select your base level:</label>
+            <div class="grid grid-cols-3 gap-2">
+                <button onclick="setQuickPlayDifficulty('beginner')" class="quick-diff-btn p-3 rounded-lg border-2 border-gray-200 hover:border-orange-400 transition-all" data-diff="beginner">
+                    <div class="text-2xl">🌱</div>
+                    <div class="text-xs font-medium">Beginner</div>
+                </button>
+                <button onclick="setQuickPlayDifficulty('intermediate')" class="quick-diff-btn p-3 rounded-lg border-2 border-orange-400 bg-orange-50 transition-all" data-diff="intermediate">
+                    <div class="text-2xl">📚</div>
+                    <div class="text-xs font-medium">Intermediate</div>
+                </button>
+                <button onclick="setQuickPlayDifficulty('advanced')" class="quick-diff-btn p-3 rounded-lg border-2 border-gray-200 hover:border-orange-400 transition-all" data-diff="advanced">
+                    <div class="text-2xl">🚀</div>
+                    <div class="text-xs font-medium">Advanced</div>
+                </button>
+            </div>
+        </div>
+        
+        <div class="flex gap-3">
+            <button onclick="closeQuickPlayModal()" class="flex-1 py-3 px-6 rounded-xl border-2 border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-all">
+                Cancel
+            </button>
+            <button onclick="startQuickPlay()" class="flex-1 py-3 px-6 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold hover:from-orange-600 hover:to-red-600 transition-all">
+                ⚡ Start!
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<!-- Smart Quiz Modal (Adaptive Learning) -->
+<div id="smartQuizModal" class="fixed inset-0 bg-black bg-opacity-70 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 transform transition-all">
+        <div class="text-center mb-6">
+            <div class="text-6xl mb-4">🧠</div>
+            <h2 class="text-2xl font-bold text-gray-800">Smart Quiz</h2>
+            <p class="text-gray-600 mt-2">AI-powered personalised learning</p>
+        </div>
+        
+        <!-- Mode Selection -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Choose your focus:</label>
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="setSmartQuizMode('auto')" class="smart-mode-btn p-3 rounded-lg border-2 border-green-400 bg-green-50 transition-all text-left" data-mode="auto">
+                    <div class="text-xl">🎯</div>
+                    <div class="text-sm font-medium">Auto</div>
+                    <div class="text-xs text-gray-500">Best overall pick</div>
+                </button>
+                <button onclick="setSmartQuizMode('review')" class="smart-mode-btn p-3 rounded-lg border-2 border-gray-200 hover:border-green-400 transition-all text-left" data-mode="review">
+                    <div class="text-xl">🔄</div>
+                    <div class="text-sm font-medium">Review</div>
+                    <div class="text-xs text-gray-500">Refresh memory</div>
+                </button>
+                <button onclick="setSmartQuizMode('practice')" class="smart-mode-btn p-3 rounded-lg border-2 border-gray-200 hover:border-green-400 transition-all text-left" data-mode="practice">
+                    <div class="text-xl">💪</div>
+                    <div class="text-sm font-medium">Practice</div>
+                    <div class="text-xs text-gray-500">Work on weak areas</div>
+                </button>
+                <button onclick="setSmartQuizMode('challenge')" class="smart-mode-btn p-3 rounded-lg border-2 border-gray-200 hover:border-green-400 transition-all text-left" data-mode="challenge">
+                    <div class="text-xl">🚀</div>
+                    <div class="text-sm font-medium">Challenge</div>
+                    <div class="text-xs text-gray-500">Push your limits</div>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Loading State -->
+        <div id="smartQuizLoading" class="bg-gray-100 rounded-xl p-6 mb-6 text-center">
+            <div class="animate-spin text-4xl mb-2">⚙️</div>
+            <p class="text-gray-600">Analysing your progress...</p>
+        </div>
+        
+        <!-- Error State -->
+        <div id="smartQuizError" class="hidden bg-red-50 text-red-600 rounded-xl p-4 mb-6 text-center">
+            Error loading recommendation
+        </div>
+        
+        <!-- Recommendation Content -->
+        <div id="smartQuizContent" class="hidden bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 mb-6">
+            <h3 class="font-bold text-gray-800 mb-3">📊 Recommended for You:</h3>
+            <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-600">Topic:</span>
+                    <span id="smartQuizTopic" class="font-bold text-gray-800">Loading...</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-600">Difficulty:</span>
+                    <span id="smartQuizDifficulty" class="px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700">Loading...</span>
+                </div>
+                <div id="smartQuizMasteryContainer" class="hidden text-center pt-2 border-t border-green-200">
+                    <span id="smartQuizMastery" class="text-sm text-gray-600">Current mastery: 0%</span>
+                </div>
+                <div class="pt-2 border-t border-green-200">
+                    <p id="smartQuizReason" class="text-sm text-gray-600 italic">Loading reason...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex gap-3">
+            <button onclick="closeSmartQuizModal()" class="flex-1 py-3 px-6 rounded-xl border-2 border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-all">
+                Cancel
+            </button>
+            <button onclick="startSmartQuiz()" class="flex-1 py-3 px-6 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold hover:from-green-600 hover:to-emerald-600 transition-all">
+                🧠 Start!
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<!-- Adaptive Quiz Modal (10-Level Progression) -->
+<div id="adaptiveQuizModal" class="fixed inset-0 bg-black bg-opacity-70 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 transform transition-all max-h-[90vh] overflow-y-auto">
+        <div class="text-center mb-6">
+            <div class="text-6xl mb-4">🎯</div>
+            <h2 class="text-2xl font-bold text-gray-800">Adaptive Quiz</h2>
+            <p class="text-gray-600 mt-2">Master topics through 10 progressive levels</p>
+        </div>
+        
+        <!-- Topic Selection -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-3">Choose your topic:</label>
+            <div id="adaptiveTopicGrid" class="grid grid-cols-1 gap-3">
+                <!-- Topics loaded dynamically -->
+                <div class="text-center py-8 text-gray-500">
+                    <div class="animate-spin text-3xl mb-2">⚙️</div>
+                    Loading topics...
+                </div>
+            </div>
+        </div>
+        
+        <!-- Selected Topic Info -->
+        <div id="adaptiveTopicInfo" class="hidden bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 mb-6">
+            <h3 class="font-bold text-gray-800 mb-3">📊 Your Progress:</h3>
+            <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-600">Starting Level:</span>
+                    <span id="adaptiveStartLevel" class="font-bold text-purple-700">Level 1</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span class="text-gray-600">Questions:</span>
+                    <span id="adaptiveQuestionCount" class="font-medium text-gray-800">10</span>
+                </div>
+                <div class="pt-2">
+                    <div class="text-xs text-gray-500 mb-1">Level progression:</div>
+                    <div class="flex gap-1">
+                        <div id="adaptiveLevelPreview" class="flex gap-1">
+                            <!-- Level dots preview -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Question Count Selection -->
+        <div id="adaptiveOptionsSection" class="hidden mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Number of questions:</label>
+            <div class="flex gap-2">
+                <button onclick="setAdaptiveQuestionCount(5)" class="adaptive-count-btn px-4 py-2 rounded-lg border-2 border-gray-200 hover:border-purple-400 transition-all" data-count="5">5</button>
+                <button onclick="setAdaptiveQuestionCount(10)" class="adaptive-count-btn px-4 py-2 rounded-lg border-2 border-purple-400 bg-purple-50 transition-all" data-count="10">10</button>
+                <button onclick="setAdaptiveQuestionCount(15)" class="adaptive-count-btn px-4 py-2 rounded-lg border-2 border-gray-200 hover:border-purple-400 transition-all" data-count="15">15</button>
+                <button onclick="setAdaptiveQuestionCount(20)" class="adaptive-count-btn px-4 py-2 rounded-lg border-2 border-gray-200 hover:border-purple-400 transition-all" data-count="20">20</button>
+            </div>
+        </div>
+        
+        <div class="flex gap-3">
+            <button onclick="closeAdaptiveQuizModal()" class="flex-1 py-3 px-6 rounded-xl border-2 border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-all">
+                Cancel
+            </button>
+            <button id="startAdaptiveBtn" onclick="startAdaptiveQuiz()" disabled class="flex-1 py-3 px-6 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold hover:from-purple-600 hover:to-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                🎯 Start!
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Adaptive Quiz Active Screen -->
+<div id="adaptiveQuizScreen" class="fixed inset-0 bg-gray-100 z-40 hidden overflow-y-auto">
+    <!-- Adaptive Quiz Header -->
+    <div class="adaptive-quiz-header bg-gradient-to-r from-purple-600 to-indigo-600 text-white p-4 shadow-lg">
+        <div class="max-w-4xl mx-auto flex items-center justify-between flex-wrap gap-3">
+            <div class="flex items-center gap-4">
+                <button onclick="abandonAdaptiveQuiz()" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg flex items-center gap-2 transition-all">
+                    <i class="fas fa-arrow-left"></i> Exit
+                </button>
+                <div>
+                    <div class="font-bold text-lg" id="adaptiveQuizTitle">Solving Equations</div>
+                    <div class="text-sm opacity-90">Question <span id="adaptiveQuestionNum">1</span> of <span id="adaptiveTotalQuestions">10</span></div>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <!-- Level Indicator -->
+                <div class="adaptive-level-indicator">
+                    <span>Level</span>
+                    <span id="adaptiveCurrentLevel" class="text-yellow-300 text-lg">1</span>
+                    <div class="adaptive-level-bar" id="adaptiveLevelBar">
+                        <!-- 10 dots for levels -->
+                    </div>
+                </div>
+                
+                <!-- Score -->
+                <div class="bg-white/20 px-4 py-2 rounded-lg">
+                    <span class="text-sm opacity-90">Score:</span>
+                    <span id="adaptiveScore" class="font-bold ml-1">0</span>/<span id="adaptiveMaxScore">10</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Question Area -->
+    <div class="max-w-3xl mx-auto p-6 pb-24">
+        <!-- Level Info Banner -->
+        <div id="adaptiveLevelBanner" class="bg-purple-100 border border-purple-200 rounded-xl p-3 mb-4 flex items-center justify-between">
+            <div>
+                <span class="text-purple-800 font-medium">Level <span id="adaptiveBannerLevel">1</span>:</span>
+                <span id="adaptiveLevelName" class="text-purple-600">Foundation</span>
+            </div>
+            <div class="text-sm text-purple-600">
+                <span id="adaptiveStreak">0</span> correct in a row
+            </div>
+        </div>
+        
+        <!-- Question Card -->
+        <div class="bg-white rounded-2xl shadow-lg p-8 mb-6">
+            <!-- Image Area (for visual questions) -->
+            <div id="adaptiveQuestionImage" class="hidden flex justify-center mb-6">
+                <!-- SVG will be inserted here -->
+            </div>
+            
+            <div id="adaptiveQuestionText" class="text-xl text-gray-800 mb-8 leading-relaxed">
+                Loading question...
+            </div>
+            
+            <div id="adaptiveOptionsContainer" class="space-y-3">
+                <!-- Options loaded dynamically -->
+            </div>
+        </div>
+        
+        <!-- Feedback Area -->
+        <div id="adaptiveFeedback" class="hidden rounded-2xl p-6 mb-6">
+            <div class="flex items-start gap-4">
+                <div id="adaptiveFeedbackIcon" class="text-4xl">✅</div>
+                <div class="flex-1">
+                    <div id="adaptiveFeedbackTitle" class="font-bold text-lg mb-2">Correct!</div>
+                    <div id="adaptiveFeedbackExplanation" class="text-gray-600"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Action Button -->
+        <div class="text-center">
+            <button id="adaptiveNextBtn" onclick="adaptiveNextQuestion()" class="hidden px-8 py-4 bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold rounded-xl hover:from-purple-600 hover:to-indigo-600 transition-all text-lg">
+                Next Question →
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Adaptive Quiz Results Screen -->
+<div id="adaptiveResultsScreen" class="fixed inset-0 bg-gradient-to-br from-purple-600 to-indigo-700 z-40 hidden flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-3xl max-w-md w-full p-8 text-center">
+        <div class="text-6xl mb-4" id="adaptiveResultEmoji">🎉</div>
+        <h2 class="text-3xl font-bold text-gray-800 mb-2">Quiz Complete!</h2>
+        
+        <div class="text-6xl font-bold text-purple-600 my-6">
+            <span id="adaptiveFinalScore">8</span>/<span id="adaptiveFinalTotal">10</span>
+        </div>
+        
+        <div class="text-xl text-gray-600 mb-6">
+            <span id="adaptiveFinalPercent">80</span>% Correct
+        </div>
+        
+        <!-- Level Progress -->
+        <div class="bg-purple-50 rounded-xl p-4 mb-6">
+            <div class="text-sm text-gray-600 mb-2">Level Progress</div>
+            <div class="flex items-center justify-center gap-3">
+                <span class="text-2xl font-bold text-gray-400" id="adaptiveStartLevelResult">1</span>
+                <span class="text-3xl">→</span>
+                <span class="text-3xl font-bold text-purple-600" id="adaptiveEndLevelResult">3</span>
+            </div>
+            <div id="adaptiveLevelChangeText" class="text-sm text-green-600 font-medium mt-2">
+                +2 Levels! 🚀
+            </div>
+        </div>
+        
+        <div class="space-y-3">
+            <button onclick="restartAdaptiveQuiz()" class="w-full py-3 px-6 bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold rounded-xl hover:from-purple-600 hover:to-indigo-600 transition-all">
+                🔄 Play Again
+            </button>
+            <button onclick="closeAdaptiveResults()" class="w-full py-3 px-6 border-2 border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-all">
+                Back to Dashboard
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<!-- Adaptive Quiz System (extracted for maintainability) -->
+<script src="{{ url_for('static', filename='js/adaptive_quiz.js') }}"></script>
+
+
+<!-- External JS Module (Rev 3.1.2 - Combined for performance) -->
+<!-- Single combined file minimizes HTTP requests, defer prevents blocking -->
+
+
+<script defer src="{{ url_for('static', filename='js/agentmath-modules.js') }}"></script>
+
+<!-- ========== FLOW SUMS GAME CONTAINER ========== -->
+<div id="flowSumsContainer" class="flow-sums-container">
+    <div class="flow-sums-header">
+        <div>
+            <div class="flow-sums-title">🌊 Flow Sums</div>
+        </div>
+        <span id="flowSumsLevelBadge" class="flow-sums-level-badge">Level 1</span>
+        <button class="flow-sums-close" onclick="closeFlowSums()">✕</button>
+    </div>
+    
+    <div class="flow-sums-game">
+        <div id="flowGateway" class="flow-gateway">
+            <div class="flow-gateway-label">Gateway Number</div>
+            <div id="flowGatewayNumber" class="flow-gateway-number">14</div>
+        </div>
+        
+        <div class="flow-progress-bar">
+            <div id="flowProgressFill" class="flow-progress-fill" style="width: 0%"></div>
+        </div>
+        
+        <div id="flowStepsContainer" class="flow-steps-container layout-arrow_down">
+            <!-- Steps will be dynamically generated -->
+        </div>
+        
+        <div id="flowFinalAnswer" class="flow-final-answer" style="display: none;">
+            <div class="flow-final-label">🎯 Final Answer</div>
+            <div id="flowFinalValue" class="flow-final-value pending">?</div>
+        </div>
+        
+        <div class="flow-stats">
+            <div class="flow-stat">
+                <div id="flowStatsHints" class="flow-stat-value">0</div>
+                <div class="flow-stat-label">Hints Used</div>
+            </div>
+            <div class="flow-stat">
+                <div id="flowStatsAttempts" class="flow-stat-value">0</div>
+                <div class="flow-stat-label">Attempts</div>
+            </div>
+            <div class="flow-stat">
+                <div id="flowStatsTime" class="flow-stat-value">0:00</div>
+                <div class="flow-stat-label">Time</div>
+            </div>
+            <button onclick="resetFlowSumsLevel()" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; color: #6b7280; cursor: pointer;">↩ Reset to L1</button>
+        </div>
+    </div>
+</div>
+
+<!-- Flow Sums Celebration Modal -->
+<div id="flowCelebration" class="flow-celebration">
+    <div class="flow-celebration-content">
+        <div class="flow-celebration-emoji">🎉</div>
+        <div class="flow-celebration-title">Excellent Work!</div>
+        <div id="flowCelebrationSubtitle" class="flow-celebration-subtitle">You completed the Flow Sum!</div>
+        <div id="flowCelebrationPoints" class="flow-celebration-points">+15 Points</div>
+        <div class="flow-celebration-buttons">
+            <button class="flow-celebration-btn secondary" onclick="closeFlowSums()">Exit</button>
+            <button class="flow-celebration-btn primary" onclick="nextFlowSum()">Next Question →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END FLOW SUMS ========== -->
+
+<!-- ========== NUMBER PYRAMIDS GAME CONTAINER ========== -->
+<div id="pyramidContainer" class="pyramid-container">
+    <div class="pyramid-header">
+        <div>
+            <div class="pyramid-title">🔺 Number Pyramids</div>
+        </div>
+        <span id="pyramidLevelBadge" class="pyramid-level-badge">Level 1</span>
+        <button class="pyramid-close" onclick="closePyramid()">✕</button>
+    </div>
+    
+    <div class="pyramid-game">
+        <div class="pyramid-instructions">
+            Each brick = sum of the two bricks below it. Fill in the missing numbers!
+        </div>
+        
+        <div class="pyramid-progress-bar">
+            <div id="pyramidProgressFill" class="pyramid-progress-fill" style="width: 0%"></div>
+        </div>
+        
+        <div id="pyramidGrid" class="pyramid-grid">
+            <!-- Pyramid cells will be generated here -->
+        </div>
+        
+        <div class="pyramid-input-area">
+            <input type="number" id="pyramidInputField" class="pyramid-input-field" placeholder="?" disabled>
+            <button id="pyramidSubmitBtn" class="pyramid-submit-btn" onclick="submitPyramidAnswer()" disabled>Check ✓</button>
+        </div>
+        
+        <div id="pyramidHintText" class="pyramid-hint-text">Click a blank cell to select it</div>
+        
+        <div class="pyramid-stats">
+            <div class="pyramid-stat">
+                <div id="pyramidStatsCorrect" class="pyramid-stat-value">0</div>
+                <div class="pyramid-stat-label">Correct</div>
+            </div>
+            <div class="pyramid-stat">
+                <div id="pyramidStatsHints" class="pyramid-stat-value">0</div>
+                <div class="pyramid-stat-label">Hints</div>
+            </div>
+            <div class="pyramid-stat">
+                <div id="pyramidStatsTime" class="pyramid-stat-value">0:00</div>
+                <div class="pyramid-stat-label">Time</div>
+            </div>
+            <button onclick="resetPyramidLevel()" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; color: #6b7280; cursor: pointer;">↩ Reset to L1</button>
+        </div>
+    </div>
+</div>
+
+<!-- Number Pyramids Celebration Modal -->
+<div id="pyramidCelebration" class="pyramid-celebration">
+    <div class="pyramid-celebration-content">
+        <div class="pyramid-celebration-emoji">🏆</div>
+        <div class="pyramid-celebration-title">Pyramid Complete!</div>
+        <div id="pyramidCelebrationSubtitle" class="pyramid-celebration-subtitle">You solved the pyramid!</div>
+        <div id="pyramidCelebrationPoints" class="pyramid-celebration-points">+15 Points</div>
+        <div class="pyramid-celebration-buttons">
+            <button class="pyramid-celebration-btn secondary" onclick="closePyramid()">Exit</button>
+            <button class="pyramid-celebration-btn primary" onclick="nextPyramid()">Next Pyramid →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END NUMBER PYRAMIDS ========== -->
+
+<!-- ========== CODE BREAKER GAME CONTAINER ========== -->
+<div id="codeBreakerContainer" class="code-breaker-container">
+    <div class="code-breaker-header">
+        <div>
+            <div class="code-breaker-title">🔐 Code Breaker</div>
+        </div>
+        <span id="codeBreakerLevelBadge" class="code-breaker-level-badge">Level 1</span>
+        <button class="code-breaker-close" onclick="closeCodeBreaker()">✕</button>
+    </div>
+    
+    <div class="code-breaker-game">
+        <div class="code-breaker-clues">
+            <div class="code-breaker-clues-title">🔍 CLUES</div>
+            <div id="codeBreakerClues">
+                <!-- Clues will be added here -->
+            </div>
+        </div>
+        
+        <div id="codeBreakerTip" class="code-breaker-tip">
+            Use the clues to crack the code!
+        </div>
+        
+        <div id="codeBreakerInputArea" class="code-breaker-input-area">
+            <!-- Digit inputs will be generated here -->
+        </div>
+        
+        <button id="codeBreakerSubmitBtn" class="code-breaker-submit-btn" onclick="submitCodeGuess()">
+            Check My Guess ✓
+        </button>
+        
+        <div class="code-breaker-history">
+            <div class="code-breaker-history-title">📝 Your Guesses</div>
+            <div id="codeBreakerHistory">
+                <!-- History will be added here -->
+            </div>
+        </div>
+        
+        <div class="code-breaker-stats">
+            <div class="code-breaker-stat">
+                <div id="codeBreakerStatsGuesses" class="code-breaker-stat-value">0/8</div>
+                <div class="code-breaker-stat-label">Guesses</div>
+            </div>
+            <div class="code-breaker-stat">
+                <div id="codeBreakerStatsTime" class="code-breaker-stat-value">0:00</div>
+                <div class="code-breaker-stat-label">Time</div>
+            </div>
+            <button onclick="resetCodeBreakerLevel()" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; color: #6b7280; cursor: pointer;">↩ Reset to L1</button>
+        </div>
+        
+        <div id="codeBreakerFailed" class="code-breaker-failed" style="display: none;">
+            <div class="code-breaker-failed-title">The code was:</div>
+            <div id="codeBreakerRevealedCode" class="code-breaker-failed-code"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Code Breaker Celebration Modal -->
+<div id="codeBreakerCelebration" class="code-breaker-celebration">
+    <div class="code-breaker-celebration-content">
+        <div class="code-breaker-celebration-emoji">🔓</div>
+        <div class="code-breaker-celebration-title">Code Cracked!</div>
+        <div id="codeBreakerCelebrationSubtitle" class="code-breaker-celebration-subtitle">You cracked the code!</div>
+        <div id="codeBreakerCelebrationPoints" class="code-breaker-celebration-points">+15 Points</div>
+        <div class="code-breaker-celebration-buttons">
+            <button class="code-breaker-celebration-btn secondary" onclick="closeCodeBreaker()">Exit</button>
+            <button class="code-breaker-celebration-btn primary" onclick="nextCodeBreaker()">Next Code →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END CODE BREAKER ========== -->
+
+<!-- ========== MASTERING COUNTING GAME CONTAINER ========== -->
+<div id="countingContainer" class="counting-container">
+    <div class="counting-header">
+        <div>
+            <div class="counting-title">🔢 Mastering Counting</div>
+        </div>
+        <span id="countingLevelBadge" class="counting-level-badge">Level 1</span>
+        <button class="counting-close" onclick="closeCounting()">✕</button>
+    </div>
+    
+    <div class="counting-game">
+        <div id="countingInstruction" class="counting-instruction">
+            Fill in the missing numbers. Count forward by 1.
+        </div>
+        
+        <div class="counting-progress-bar">
+            <div id="countingProgressFill" class="counting-progress-fill" style="width: 0%"></div>
+            <span id="countingProgressText" class="counting-progress-text">0 / 24</span>
+        </div>
+        
+        <div id="countingGrid" class="counting-grid">
+            <!-- Grid rows will be generated here -->
+        </div>
+        
+        <div class="counting-stats">
+            <div class="counting-stat">
+                <div id="countingStatsCorrect" class="counting-stat-value">0</div>
+                <div class="counting-stat-label">Correct</div>
+            </div>
+            <div class="counting-stat">
+                <div id="countingStatsTime" class="counting-stat-value">0:00</div>
+                <div class="counting-stat-label">Time</div>
+            </div>
+            <div class="counting-stat">
+                <div id="countingStatsStreak" class="counting-stat-value">0</div>
+                <div class="counting-stat-label">Streak 🔥</div>
+            </div>
+            <button onclick="resetCountingLevel()" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; color: #6b7280; cursor: pointer;">↩ Reset to L1</button>
+        </div>
+    </div>
+</div>
+
+<!-- Mastering Counting Row Toast -->
+<div id="countingRowToast" class="counting-row-toast">
+    ✓ Row Complete!
+</div>
+
+<!-- Mastering Counting Celebration Modal -->
+<div id="countingCelebration" class="counting-celebration">
+    <div class="counting-celebration-content">
+        <div class="counting-celebration-emoji">🎉</div>
+        <div class="counting-celebration-title">Amazing Work!</div>
+        <div id="countingCelebrationSubtitle" class="counting-celebration-subtitle">You completed the counting grid!</div>
+        <div id="countingCelebrationPoints" class="counting-celebration-points">+15 Points</div>
+        <div class="counting-celebration-buttons">
+            <button class="counting-celebration-btn secondary" onclick="closeCounting()">Exit</button>
+            <button class="counting-celebration-btn primary" onclick="nextCounting()">Next Level →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END MASTERING COUNTING ========== -->
+
+<!-- ========== WORDS TO NUMBERS GAME CONTAINER ========== -->
+<div id="wordsContainer" class="words-container">
+    <div class="words-header">
+        <div>
+            <div class="words-title">🔤 Words & Numbers</div>
+        </div>
+        <span id="wordsLevelBadge" class="words-level-badge">Level 1</span>
+        <button class="words-close" onclick="closeWords()">✕</button>
+    </div>
+    
+    <div class="words-game">
+        <!-- Mode Selector -->
+        <div class="words-mode-selector">
+            <button class="words-mode-btn active" data-mode="chain" onclick="setWordsMode('chain')">
+                ⛓️ Chain
+            </button>
+            <button class="words-mode-btn" data-mode="jigsaw" onclick="setWordsMode('jigsaw')">
+                🧩 Jigsaw
+            </button>
+            <button class="words-mode-btn" data-mode="balloon" onclick="setWordsMode('balloon')">
+                🎈 Balloon
+            </button>
+        </div>
+        
+        <div id="wordsInstruction" class="words-instruction">
+            Tap a word, then tap its matching number!
+        </div>
+        
+        <div class="words-timer">
+            <div class="words-timer-item">
+                <div id="wordsTimerValue" class="words-timer-value">1:30</div>
+                <div class="words-timer-label">Time Left</div>
+            </div>
+            <div class="words-timer-item">
+                <div id="wordsMatchedValue" class="words-timer-value">0/6</div>
+                <div class="words-timer-label">Matched</div>
+            </div>
+            <button onclick="resetWordsLevel()" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; color: #6b7280; cursor: pointer;">↩ Reset to L1</button>
+        </div>
+        
+        <div class="words-progress-bar">
+            <div id="wordsProgressFill" class="words-progress-fill" style="width: 0%"></div>
+        </div>
+        
+        <!-- Game Area - Changes based on mode -->
+        <div id="wordsGameArea">
+            <!-- Chain/Jigsaw/Balloon content generated here -->
+        </div>
+    </div>
+</div>
+
+<!-- Words to Numbers Celebration Modal -->
+<div id="wordsCelebration" class="words-celebration">
+    <div class="words-celebration-content">
+        <div class="words-celebration-emoji">🎉</div>
+        <div class="words-celebration-title">Perfect Match!</div>
+        <div id="wordsCelebrationSubtitle" class="words-celebration-subtitle">All pairs matched!</div>
+        <div id="wordsCelebrationPoints" class="words-celebration-points">+15 Points</div>
+        <div class="words-celebration-buttons">
+            <button class="words-celebration-btn secondary" onclick="closeWords()">Exit</button>
+            <button class="words-celebration-btn primary" onclick="nextWords()">Next Level →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END WORDS TO NUMBERS ========== -->
+
+<!-- ========== ORDERING & NUMBER LINES GAME CONTAINER ========== -->
+<div id="orderingContainer" class="ordering-container">
+    <div class="ordering-header">
+        <div>
+            <div class="ordering-title">📏 Ordering & Number Lines</div>
+        </div>
+        <span id="orderingLevelBadge" class="ordering-level-badge">Level 1</span>
+        <button class="ordering-close" onclick="closeOrdering()">✕</button>
+    </div>
+    
+    <div class="ordering-game">
+        <div id="orderingInstruction" class="ordering-instruction">
+            Put these numbers in order from smallest to largest
+        </div>
+        
+        <div class="ordering-progress-bar">
+            <div id="orderingProgressFill" class="ordering-progress-fill" style="width: 0%"></div>
+        </div>
+        
+        <!-- Game Area - Changes based on mode -->
+        <div id="orderingGameArea">
+            <!-- Sort or Line content generated here -->
+        </div>
+        
+        <div class="ordering-stats">
+            <div class="ordering-stat">
+                <div id="orderingStatsPlaced" class="ordering-stat-value">0/4</div>
+                <div class="ordering-stat-label">Placed</div>
+            </div>
+            <div class="ordering-stat">
+                <div id="orderingStatsTime" class="ordering-stat-value">0:00</div>
+                <div class="ordering-stat-label">Time</div>
+            </div>
+            <button onclick="resetOrderingLevel()" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; color: #6b7280; cursor: pointer;">↩ Reset to L1</button>
+        </div>
+    </div>
+</div>
+
+<!-- Ordering Celebration Modal -->
+<div id="orderingCelebration" class="ordering-celebration">
+    <div class="ordering-celebration-content">
+        <div class="ordering-celebration-emoji">🎯</div>
+        <div class="ordering-celebration-title">Perfect Order!</div>
+        <div id="orderingCelebrationSubtitle" class="ordering-celebration-subtitle">All numbers placed correctly!</div>
+        <div id="orderingCelebrationPoints" class="ordering-celebration-points">+15 Points</div>
+        <div class="ordering-celebration-buttons">
+            <button class="ordering-celebration-btn secondary" onclick="closeOrdering()">Exit</button>
+            <button class="ordering-celebration-btn primary" onclick="nextOrdering()">Next Level →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END ORDERING ========== -->
+
+<!-- ========== NUMBER BONDS POP GAME CONTAINER ========== -->
+<div id="bondsContainer" class="bonds-container">
+    <div class="bonds-header">
+        <div class="bonds-title">🫧 Number Bonds Pop</div>
+        <div class="bonds-target" id="bondsTarget">Target: 10</div>
+        <button class="bonds-close" onclick="closeBonds()">✕</button>
+    </div>
+    <div class="bonds-game-area" id="bondsGameArea">
+        <!-- Bubbles rendered here -->
+    </div>
+    <div class="bonds-stats">
+        <div class="bonds-stat">
+            <div id="bondsPairsFound" class="bonds-stat-value">0/4</div>
+            <div class="bonds-stat-label">Pairs Found</div>
+        </div>
+        <div class="bonds-stat">
+            <div id="bondsTime" class="bonds-stat-value">0:00</div>
+            <div class="bonds-stat-label">Time</div>
+        </div>
+        <div class="bonds-stat">
+            <div id="bondsLevel" class="bonds-stat-value">Level 1</div>
+            <div class="bonds-stat-label">Level</div>
+        </div>
+        <button onclick="resetBondsLevel()" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; color: #6b7280; cursor: pointer;">↩ Reset to L1</button>
+    </div>
+</div>
+<div id="bondsCelebration" class="bonds-celebration">
+    <div class="bonds-celebration-content">
+        <div style="font-size: 4rem; margin-bottom: 15px;">🎉</div>
+        <div style="font-size: 1.8rem; font-weight: 700; color: #1f2937; margin-bottom: 10px;">All Pairs Found!</div>
+        <div id="bondsCelebrationSubtitle" style="color: #6b7280; margin-bottom: 20px;"></div>
+        <div id="bondsCelebrationPoints" style="background: linear-gradient(135deg, #ec4899, #be185d); color: white; padding: 15px 25px; border-radius: 12px; font-size: 1.3rem; font-weight: 700; margin-bottom: 20px;"></div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+            <button onclick="closeBonds()" style="padding: 12px 24px; background: #e5e7eb; color: #374151; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Exit</button>
+            <button onclick="nextBonds()" style="padding: 12px 24px; background: #be185d; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Next Level →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END NUMBER BONDS ========== -->
+
+<!-- ========== PLACE VALUE BUILDER GAME CONTAINER ========== -->
+<div id="placevalueContainer" class="placevalue-container">
+    <div class="placevalue-header">
+        <div class="placevalue-title">🏗️ Place Value Builder</div>
+        <span id="placevalueLevelBadge" class="placevalue-level-badge">Level 1</span>
+        <button class="placevalue-close" onclick="closePlaceValue()">✕</button>
+    </div>
+    <div class="placevalue-game">
+        <div id="placevalueClue" class="placevalue-clue">Loading...</div>
+        <div id="placevalueColumns" class="placevalue-columns">
+            <!-- Place value columns rendered here -->
+        </div>
+        <div id="placevalueDigits" class="placevalue-digits">
+            <!-- Draggable digits rendered here -->
+        </div>
+        <button id="placevalueCheckBtn" class="placevalue-check-btn" onclick="checkPlaceValue()" disabled>Check Answer</button>
+        <button onclick="resetPlaceValueLevel()" style="margin-top: 12px; width: 100%; padding: 10px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.9rem; color: #6b7280; cursor: pointer;">↩ Reset to Level 1</button>
+    </div>
+</div>
+<div id="placevalueCelebration" class="bonds-celebration">
+    <div class="bonds-celebration-content">
+        <div style="font-size: 4rem; margin-bottom: 15px;">🎯</div>
+        <div style="font-size: 1.8rem; font-weight: 700; color: #1f2937; margin-bottom: 10px;">Correct!</div>
+        <div id="placevalueCelebrationSubtitle" style="color: #6b7280; margin-bottom: 20px;"></div>
+        <div id="placevalueCelebrationPoints" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; padding: 15px 25px; border-radius: 12px; font-size: 1.3rem; font-weight: 700; margin-bottom: 20px;"></div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+            <button onclick="closePlaceValue()" style="padding: 12px 24px; background: #e5e7eb; color: #374151; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Exit</button>
+            <button onclick="nextPlaceValue()" style="padding: 12px 24px; background: #7c3aed; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Next Level →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END PLACE VALUE ========== -->
+
+<!-- ========== DOUBLE TROUBLE GAME CONTAINER ========== -->
+<div id="doubleContainer" class="double-container">
+    <div class="double-header">
+        <div class="double-title">⚡ Double Trouble</div>
+        <div class="double-progress" id="doubleProgress">Q 1/10</div>
+        <button class="double-close" onclick="closeDouble()">✕</button>
+    </div>
+    <div class="double-game">
+        <div class="double-timer-bar">
+            <div id="doubleTimerFill" class="double-timer-fill" style="width: 100%;"></div>
+        </div>
+        <div id="doubleQuestion" class="double-question">Double 7</div>
+        <input type="number" id="doubleInput" class="double-input" placeholder="?" autofocus onkeypress="if(event.key==='Enter')submitDoubleAnswer()">
+        <div id="doubleStreak" class="double-streak"></div>
+    </div>
+    <div class="double-stats">
+        <div class="double-stat">
+            <div id="doubleCorrect" class="double-stat-value">0</div>
+            <div class="double-stat-label">Correct</div>
+        </div>
+        <div class="double-stat">
+            <div id="doubleStreakStat" class="double-stat-value">0</div>
+            <div class="double-stat-label">Streak</div>
+        </div>
+        <div class="double-stat">
+            <div id="doubleLevelStat" class="double-stat-value">Level 1</div>
+            <div class="double-stat-label">Level</div>
+        </div>
+        <button onclick="resetDoubleLevel()" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; color: #6b7280; cursor: pointer;">↩ Reset to L1</button>
+    </div>
+</div>
+<div id="doubleCelebration" class="double-celebration">
+    <div class="double-celebration-content">
+        <div style="font-size: 4rem; margin-bottom: 15px;">⚡</div>
+        <div style="font-size: 1.8rem; font-weight: 700; color: #1f2937; margin-bottom: 10px;">Speed Demon!</div>
+        <div id="doubleCelebrationSubtitle" style="color: #6b7280; margin-bottom: 20px;"></div>
+        <div id="doubleCelebrationPoints" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 15px 25px; border-radius: 12px; font-size: 1.3rem; font-weight: 700; margin-bottom: 20px;"></div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+            <button onclick="closeDouble()" style="padding: 12px 24px; background: #e5e7eb; color: #374151; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Exit</button>
+            <button onclick="nextDouble()" style="padding: 12px 24px; background: #d97706; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Next Level →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END DOUBLE TROUBLE ========== -->
+
+<!-- ========== ADDITION BLITZ GAME CONTAINER ========== -->
+<div id="additionBlitzContainer" class="addition-blitz-container">
+    <div class="addition-blitz-header">
+        <div class="addition-blitz-title">➕ Addition Blitz</div>
+        <span id="additionBlitzProgress" class="addition-blitz-progress">1/10</span>
+        <button class="addition-blitz-close" onclick="closeAdditionBlitz()">✕</button>
+    </div>
+    
+    <div class="addition-blitz-game">
+        <div class="addition-blitz-timer-bar">
+            <div id="additionBlitzTimerFill" class="addition-blitz-timer-fill" style="width: 100%"></div>
+        </div>
+        <div id="additionBlitzQuestion" class="addition-blitz-question">3 + 5</div>
+        <input type="number" id="additionBlitzInput" class="addition-blitz-input" 
+               placeholder="?" 
+               onkeypress="if(event.key==='Enter')submitAdditionBlitzAnswer()"
+               inputmode="numeric">
+        <div class="addition-blitz-streak">Current Streak: <span id="additionBlitzStreak">0</span> 🔥</div>
+    </div>
+    
+    <div class="addition-blitz-stats">
+        <div class="addition-blitz-stat">
+            <div id="additionBlitzCorrect" class="addition-blitz-stat-value">0</div>
+            <div class="addition-blitz-stat-label">Correct</div>
+        </div>
+        <div class="addition-blitz-stat">
+            <div id="additionBlitzStreakStat" class="addition-blitz-stat-value">0</div>
+            <div class="addition-blitz-stat-label">Streak</div>
+        </div>
+        <div class="addition-blitz-stat">
+            <div id="additionBlitzLevelStat" class="addition-blitz-stat-value">Level 1</div>
+            <div class="addition-blitz-stat-label">Level</div>
+        </div>
+        <button onclick="resetAdditionBlitzLevel()" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; color: #6b7280; cursor: pointer;">↩ Reset to L1</button>
+    </div>
+</div>
+
+<!-- Addition Blitz Celebration Modal -->
+<div id="additionBlitzCelebration" class="addition-blitz-celebration">
+    <div class="addition-blitz-celebration-content">
+        <div style="font-size: 4rem; margin-bottom: 20px;">🎯</div>
+        <div style="font-size: 1.8rem; font-weight: 700; color: #166534; margin-bottom: 10px;">Round Complete!</div>
+        <div id="additionBlitzCelebrationSubtitle" style="font-size: 1rem; color: #6b7280; margin-bottom: 20px;">8/10 correct (80%)</div>
+        <div id="additionBlitzCelebrationPoints" style="font-size: 1.5rem; font-weight: 700; color: #22c55e; margin-bottom: 30px;">+15 Points</div>
+        <div style="display: flex; gap: 12px; justify-content: center;">
+            <button onclick="closeAdditionBlitz()" style="padding: 12px 24px; background: #e5e7eb; color: #374151; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Exit</button>
+            <button onclick="nextAdditionBlitz()" style="padding: 12px 24px; background: #22c55e; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Next Level →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END ADDITION BLITZ ========== -->
+
+<!-- ========== TIMES TABLES BLITZ GAME CONTAINER ========== -->
+<div id="timesTablesContainer" class="times-tables-container">
+    <div class="times-tables-header">
+        <div class="times-tables-title">✖️ Times Tables Blitz</div>
+        <span id="timesTablesProgress" class="times-tables-progress">1/10</span>
+        <button class="times-tables-close" onclick="closeTimesTables()">✕</button>
+    </div>
+    
+    <div class="times-tables-game">
+        <div class="times-tables-timer-bar">
+            <div id="timesTablesTimerFill" class="times-tables-timer-fill" style="width: 100%"></div>
+        </div>
+        <div id="timesTablesQuestion" class="times-tables-question">3 × 5</div>
+        <input type="number" id="timesTablesInput" class="times-tables-input" 
+               placeholder="?" 
+               onkeypress="if(event.key==='Enter')submitTimesTablesAnswer()"
+               inputmode="numeric">
+        <div class="times-tables-streak">Current Streak: <span id="timesTablesStreak">0</span> 🔥</div>
+    </div>
+    
+    <div class="times-tables-stats">
+        <div class="times-tables-stat">
+            <div id="timesTablesCorrect" class="times-tables-stat-value">0</div>
+            <div class="times-tables-stat-label">Correct</div>
+        </div>
+        <div class="times-tables-stat">
+            <div id="timesTablesStreakStat" class="times-tables-stat-value">0</div>
+            <div class="times-tables-stat-label">Streak</div>
+        </div>
+        <div class="times-tables-stat">
+            <div id="timesTablesLevelStat" class="times-tables-stat-value">Level 1</div>
+            <div class="times-tables-stat-label">Level</div>
+        </div>
+        <button onclick="resetTimesTablesLevel()" style="padding: 8px 16px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.85rem; color: #6b7280; cursor: pointer;">↩ Reset to L1</button>
+    </div>
+</div>
+
+<!-- Times Tables Blitz Celebration Modal -->
+<div id="timesTablesCelebration" class="times-tables-celebration">
+    <div class="times-tables-celebration-content">
+        <div style="font-size: 4rem; margin-bottom: 20px;">⭐</div>
+        <div style="font-size: 1.8rem; font-weight: 700; color: #6d28d9; margin-bottom: 10px;">Round Complete!</div>
+        <div id="timesTablesCelebrationSubtitle" style="font-size: 1rem; color: #6b7280; margin-bottom: 20px;">8/10 correct (80%)</div>
+        <div id="timesTablesCelebrationPoints" style="font-size: 1.5rem; font-weight: 700; color: #8b5cf6; margin-bottom: 30px;">+15 Points</div>
+        <div style="display: flex; gap: 12px; justify-content: center;">
+            <button onclick="closeTimesTables()" style="padding: 12px 24px; background: #e5e7eb; color: #374151; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Exit</button>
+            <button onclick="nextTimesTables()" style="padding: 12px 24px; background: #8b5cf6; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Next Level →</button>
+        </div>
+    </div>
+</div>
+<!-- ========== END TIMES TABLES BLITZ ========== -->
+
+<!-- ========== TEAM PLAY SYSTEM ========== -->
+<script src="{{ url_for('static', filename='js/team-play.js') }}"></script>
+<!-- ========== END TEAM PLAY ========== -->
+
+</body>
+</html>

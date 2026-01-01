@@ -1,0 +1,8 @@
+# requirements_test.txt
+# AgentMath Test Suite Dependencies
+# Install with: pip install -r requirements_test.txt --break-system-packages
+
+pytest>=7.0.0
+pytest-html>=3.0.0
+pytest-cov>=4.0.0
+beautifulsoup4>=4.9.0
