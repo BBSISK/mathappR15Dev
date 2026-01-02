@@ -1,9 +1,8 @@
 <!-- Admin Question Validator -->
-<!-- Revision 1.4 - 2025-01-01 -->
+<!-- Revision 1.5 - 2025-01-01 -->
+<!-- Fixed inline SVG rendering (questions_adaptive uses image_svg with SVG code, not URLs) -->
 <!-- Added "Unreviewed only" toggle filter -->
 <!-- Fixed text visibility - dark colors for all text -->
-<!-- Added keyboard shortcuts (← →) for navigation -->
-<!-- Improved efficiency: filter, review, advance workflow -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -114,6 +113,11 @@
         }
         .question-text {
             color: #111827;
+        }
+        #svgContainer svg {
+            max-width: 100%;
+            height: auto;
+            max-height: 300px;
         }
     </style>
 </head>
@@ -245,6 +249,7 @@
                         <span id="questionId" class="text-sm bg-gray-100 px-2 py-1 rounded">ID: -</span>
                     </div>
                     <div id="questionImage" class="mb-4 hidden">
+                        <div id="svgContainer" class="flex justify-center items-center" style="display: none;"></div>
                         <img id="previewImage" src="" alt="Question image" class="max-w-full rounded-lg mx-auto">
                     </div>
                     <h3 id="questionText" class="text-xl text-gray-800 mb-6 math-render"></h3>
@@ -570,13 +575,26 @@
             // Preview
             document.getElementById('questionText').innerHTML = q.question_text;
             
-            // Image
+            // Image - handle both SVG code and URLs
             const imageDiv = document.getElementById('questionImage');
             if (q.image_url) {
-                document.getElementById('previewImage').src = q.image_url;
+                // Check if it's inline SVG code or a URL
+                if (q.image_url.trim().startsWith('<svg')) {
+                    // Inline SVG - render directly
+                    document.getElementById('previewImage').style.display = 'none';
+                    document.getElementById('svgContainer').innerHTML = q.image_url;
+                    document.getElementById('svgContainer').style.display = 'block';
+                } else {
+                    // URL - use img tag
+                    document.getElementById('svgContainer').style.display = 'none';
+                    document.getElementById('svgContainer').innerHTML = '';
+                    document.getElementById('previewImage').src = q.image_url;
+                    document.getElementById('previewImage').style.display = 'block';
+                }
                 imageDiv.classList.remove('hidden');
             } else {
                 imageDiv.classList.add('hidden');
+                document.getElementById('svgContainer').innerHTML = '';
             }
             
             // Options

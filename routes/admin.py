@@ -2,18 +2,17 @@
 # Admin routes for AgentMath
 # Extracted from app.py for better maintainability
 #
-# Revision: 1.1.0
-# Date: 2025-01-01
+# Revision: 1.1.2
+# Date: 2025-01-02
 # Phase 7: Admin routes extraction
 #
-# Fixes in 1.1.0:
-# - Fixed questions_adaptive schema differences (difficulty_level, image_svg, integer correct_answer)
-# - Added proper column mapping for each table
-# - Convert correct_answer between A-D and 1-4 formats
+# Fixes in 1.1.2:
+# - Fixed legacy questions table query - was missing times_shown/times_correct/is_active columns
+# - Added COALESCE for image_url/question_image_svg in legacy table
+# - Both tables use 0-indexed correct_answer (0=A, 1=B, 2=C, 3=D)
 #
-# Fixes in 1.0.9:
-# - Fixed question_validation_tracking table - removed source_table from JOIN
-# - Simplified tracking to use topic name only (avoids schema migration issues)
+# Fixes in 1.1.1:
+# - CRITICAL: Fixed correct_answer conversion - database uses 0-indexed (0-3), not 1-indexed (1-4)
 #
 # Fixes in 1.0.5:
 # - Fixed datetime handling in feedback API (SQLite returns strings)
@@ -5964,11 +5963,13 @@ def get_validator_questions():
     try:
         # Different schemas for each table
         if source_table == 'questions':
+            # Legacy questions table - different column names
             query = text("""
                 SELECT 
                     id, topic, question_text, option_a, option_b, option_c, option_d,
-                    correct_answer, explanation, difficulty, image_url, 
-                    times_shown, times_correct, is_active
+                    correct_answer, explanation, difficulty, 
+                    COALESCE(image_url, question_image_svg) as image_url,
+                    0 as times_shown, 0 as times_correct, 1 as is_active
                 FROM questions
                 WHERE topic = :topic
                 ORDER BY id
@@ -5988,10 +5989,11 @@ def get_validator_questions():
         
         results = db.session.execute(query, {'topic': topic}).fetchall()
         
-        # Convert correct_answer for adaptive questions (1-4 → A-D)
+        # Convert correct_answer for both tables (0-3 → A-D, 0-indexed!)
+        # Both questions and questions_adaptive use 0=A, 1=B, 2=C, 3=D
         def convert_answer(ans, source):
-            if source == 'questions_adaptive' and isinstance(ans, int):
-                return ['A', 'B', 'C', 'D'][ans - 1] if 1 <= ans <= 4 else 'A'
+            if isinstance(ans, int):
+                return ['A', 'B', 'C', 'D'][ans] if 0 <= ans <= 3 else 'A'
             return ans
         
         questions = [{
@@ -6121,10 +6123,10 @@ def update_validator_question(question_id):
         for key, column in field_mapping.items():
             if key in data:
                 value = data[key]
-                # Convert correct_answer from A-D to 1-4 for adaptive table
-                if key == 'correct_answer' and source_table == 'questions_adaptive':
-                    answer_map = {'A': 1, 'B': 2, 'C': 3, 'D': 4}
-                    value = answer_map.get(value, 1)
+                # Convert correct_answer from A-D to 0-3 for both tables (0-indexed!)
+                if key == 'correct_answer':
+                    answer_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
+                    value = answer_map.get(value, 0)
                 update_fields.append(f"{column} = :{key}")
                 params[key] = value
         
