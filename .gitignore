@@ -16,3 +16,4 @@ Thumbs.db
 # Large data or temporary files
 *.log
 *.sqlite3
+instance/
